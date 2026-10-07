@@ -23,6 +23,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Firma con clave debug SOLO para pruebas locales instalables;
+            // la distribución pública exige keystore propio (ver TODO.md).
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
