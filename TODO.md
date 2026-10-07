@@ -18,7 +18,8 @@
 | 10 | **App Android de Pairing (SPEC-002/DES-002)** | Máquina de estados pura U1–U5, handshake Kotlin (HKDF+HMAC paridad con core), cliente TCP con timeouts E1, UI Compose con strings canónicas §9; TEST-010..014 = 12 tests JVM verdes; APK debug generado | `feat(android)` |
 | 11 | **Scripts de build/test/instalación** | `scripts/build.sh`, `test.sh` (6 gates §8), `install-apk.sh` (adb), `build-apk.sh [debug\|release]` — todos verificados ejecutándolos; release firmado con debug key para pruebas | `702028f` `13c8dbd` |
 | 12 | **Adaptador TCP del Servidor PC (REQ-001/002)** | `server::tokens` (R2/R3/R6/R7, RNG/reloj inyectados), `server::session` (bucle TCP con timeouts §9), binario `twinpad-server` (listener LAN, R7 automático); 7 tests de integración en loopback + 6 unitarios; verificado punta a punta: pair_ack + E3 al reintentar token consumido | `feat(server)` |
-| 13 | **QR renderizado + decodificador de cámara** | Server: QR Unicode en terminal (`server::qr_render`, qrcodegen MIT/Apache). App: analyzer ML Kit en `PairingCameraController` (SPEC-002 §6 U2, diferido de DES-002 §14 ya resuelto) — falta instrumentación en dispositivo con cámara para validar el escaneo real | `feat(server)` `feat(android)` |
+| 13 | **QR renderizado + decodificador de cámara** | Server: QR Unicode en terminal (`server::qr_render`, qrcodegen MIT/Apache). App: analyzer ML Kit en `PairingCameraController` (SPEC-002 §6 U2, diferido de DES-002 §14 ya resuelto) | `feat(server)` `feat(android)` |
+| 14 | **Cadena de conexión verificada de punta a punta** | Fixes de la primera ronda de pruebas: preview de cámara no cableado a la Activity (salía negro); carrera Connect/SendLine en `TcpPairingClient` descartaba el `pair_request` (E1 siempre); polaridad invertida del QR terminal recortaba el lado izquierdo. Permiso INTERNET explícito; scripts `run-server.sh` / `test-qr.sh` | `fix(android)` `fix(server)` `build(scripts)` |
 
 ## ⬜ TODO (pendiente)
 

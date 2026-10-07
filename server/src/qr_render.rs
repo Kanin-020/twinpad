@@ -6,8 +6,9 @@ use qrcodegen::{QrCode, QrCodeEcc};
 
 use crate::qr_render::QrEncodeError::UriTooLong;
 
-/// Borde en módulos alrededor del QR (zona silenciosa para lectores).
-const QUIET_ZONE: i32 = 2;
+/// Borde en módulos alrededor del QR: 4 (zona silenciosa que pide la norma
+/// QR; con 2 algunos lectores recortan los bordes).
+const QUIET_ZONE: i32 = 4;
 
 /// Error al renderizar el QR de vinculación.
 #[derive(Debug)]
@@ -35,10 +36,10 @@ pub fn render_terminal(uri: &str) -> Result<String, QrEncodeError> {
             let top = module_is_dark(&code, x, y - border);
             let bottom = module_is_dark(&code, x, y + 1 - border);
             out.push_str(match (top, bottom) {
-                (true, true) => " ",
-                (true, false) => "▄",
-                (false, true) => "▀",
-                (false, false) => "█",
+                (true, true) => "█",
+                (true, false) => "▀",
+                (false, true) => "▄",
+                (false, false) => " ",
             });
         }
         out.push('\n');
@@ -70,8 +71,9 @@ mod tests {
         let widths: std::collections::HashSet<usize> =
             lines.iter().map(|l| l.chars().count()).collect();
         assert_eq!(widths.len(), 1);
-        // La primera y última línea son solo borde claro (zona silenciosa).
-        let border_line: String = std::iter::repeat_n('█', lines[0].chars().count()).collect();
+        // Polaridad natural: la zona silenciosa (borde claro) se pinta como
+        // espacio; la primera y última línea son solo fondo.
+        let border_line: String = std::iter::repeat_n(' ', lines[0].chars().count()).collect();
         assert_eq!(lines.first().unwrap(), &border_line);
         assert_eq!(lines.last().unwrap(), &border_line);
     }
