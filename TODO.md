@@ -15,6 +15,7 @@
 | 7 | **Protocolo de sesión implementado en `core/`** | Codec QR (E5), mensajes NDJSON (E4), PairError E1–E5, HKDF-SHA256 + HMAC-SHA256 con verificación en tiempo constante, máquinas de estado servidor/cliente (R2 single-use, R3 300 s, timeout 10 s) | `feat(core)` |
 | 8 | TEST-001/003/004/005/006 en código | 30 tests unitarios en verde (incluye vector RFC 5869 contra oráculo independiente); gates fmt/clippy/test verdes | `feat(core)` |
 | 9 | README + TODO tracker | Comandos de build/gates verificados; este archivo | `9f2002f` `776f5af` |
+| 10 | **App Android de Pairing (SPEC-002/DES-002)** | Máquina de estados pura U1–U5, handshake Kotlin (HKDF+HMAC paridad con core), cliente TCP con timeouts E1, UI Compose con strings canónicas §9; TEST-010..014 = 12 tests JVM verdes; APK debug generado | `feat(android)` |
 
 ## ⬜ TODO (pendiente)
 
@@ -22,7 +23,7 @@
 |---|---|---|---|
 | 1 | **Adaptador TCP del Servidor PC** (`server/`): listener en LAN, registro de tokens/sesiones (mutex), genera QR y lo muestra; conecta `ServerHandshake` | SPEC-001 Approved ✓, DES-001 §12 | Eng/agent |
 | 2 | **TEST-002 (E1), TEST-007 (reanudación), TEST-008 (revocación), TEST-009 (R7)** — integración en `server/tests/` en loopback TCP | Ítem 1 | Eng/agent |
-| 3 | **App Android: escáner QR + pantalla de Pairing** con `ClientHandshake` vía FFI o re-implementación (REQ-002 AC-1/3) | Ítem 1; decisión DES sobre FFI (ENG §2) | Eng/agent |
+| 3 | **Decodificador de QR en la app** (CameraX ImageAnalysis + analyzer, p.ej. ML Kit) — el preview ya está; falta decodificar (DES-002 §14) | Requiere dispositivo/emulador con cámara | Eng/agent |
 | 4 | **SPEC-002+ drafts** — candidatos en `specs/_index.md`: Signature HID (REQ-003), pipeline framebuffer (REQ-004/005), SDK (REQ-006), Config externa (REQ-007), controles táctiles (REQ-008) | Pueden redactarse en Draft en paralelo | Eng lead + agent |
 | 5 | **Aprobar documentos base en `Draft`**: CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy | Revisión del dueño | Eng lead (tú) |
 | 6 | **`gradle.lockfile`** comprometido (ENG §11) cuando el proyecto Android tenga dependencias reales | Ítem 3 | Eng/agent |

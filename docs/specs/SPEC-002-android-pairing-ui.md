@@ -11,7 +11,7 @@
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
-| Realized by | `-` (hasta asignar DES) |
+| Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
 | Verified by | TEST-010 … TEST-014 (registrados en `testing/traceability.md`, aún sin código) |
 | Last updated | 2026-10-07 |
 
