@@ -6,13 +6,13 @@
 
 | Type | Next |
 |---|---|
-| DES | DES-001 |
+| DES | DES-002 |
 
 ## Active designs
 
 | ID | Title | Realizes | Status | File |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| DES-001 | Realización del protocolo de Pairing y Handshake | SPEC-001 (parcial) | `Approved` | [DES-001-session-protocol.md](DES-001-session-protocol.md) |
 
 ## Superseded / Deprecated
 
@@ -24,6 +24,6 @@
 
 | Metric | Value |
 |---|---|
-| Active DES | 0 |
+| Active DES | 1 |
 | Approved SPECs without DES | 0 |
 | Last reviewed | 2026-10-07 |
