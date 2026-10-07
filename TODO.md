@@ -16,21 +16,24 @@
 | 8 | TEST-001/003/004/005/006 en código | 30 tests unitarios en verde (incluye vector RFC 5869 contra oráculo independiente); gates fmt/clippy/test verdes | `feat(core)` |
 | 9 | README + TODO tracker | Comandos de build/gates verificados; este archivo | `9f2002f` `776f5af` |
 | 10 | **App Android de Pairing (SPEC-002/DES-002)** | Máquina de estados pura U1–U5, handshake Kotlin (HKDF+HMAC paridad con core), cliente TCP con timeouts E1, UI Compose con strings canónicas §9; TEST-010..014 = 12 tests JVM verdes; APK debug generado | `feat(android)` |
+| 11 | **Scripts de build/test/instalación** | `scripts/build.sh`, `test.sh` (6 gates §8), `install-apk.sh` (adb), `build-apk.sh [debug\|release]` — todos verificados ejecutándolos; release firmado con debug key para pruebas | `702028f` `13c8dbd` |
+| 12 | **Adaptador TCP del Servidor PC (REQ-001/002)** | `server::tokens` (R2/R3/R6/R7, RNG/reloj inyectados), `server::session` (bucle TCP con timeouts §9), binario `twinpad-server` (listener LAN, QR en stdout, R7 automático); 7 tests de integración en loopback + 6 unitarios; verificado punta a punta: pair_ack + E3 al reintentar token consumido | `feat(server)` |
 
 ## ⬜ TODO (pendiente)
 
 | # | Ítem | Bloqueado por / dependencia | Dueño |
 |---|---|---|---|
-| 1 | **Adaptador TCP del Servidor PC** (`server/`): listener en LAN, registro de tokens/sesiones (mutex), genera QR y lo muestra; conecta `ServerHandshake` | SPEC-001 Approved ✓, DES-001 §12 | Eng/agent |
-| 2 | **TEST-002 (E1), TEST-007 (reanudación), TEST-008 (revocación), TEST-009 (R7)** — integración en `server/tests/` en loopback TCP | Ítem 1 | Eng/agent |
+| 1 | **Completar TEST-007 (reanudación §8.2) y TEST-008 (revocación por UI)** — los aspectos de TEST-002/005/006/009 ya están en verde en loopback | Registro de sesiones activas en `server/` | Eng/agent |
+| 2 | **Renderizado gráfico del QR** (hoy el binario imprime el URI en stdout; falta imagen/ventana para escanear cómodamente desde el teléfono) | Ítem 3 (decodificador) | Eng/agent |
 | 3 | **Decodificador de QR en la app** (CameraX ImageAnalysis + analyzer, p.ej. ML Kit) — el preview ya está; falta decodificar (DES-002 §14) | Requiere dispositivo/emulador con cámara | Eng/agent |
 | 4 | **SPEC-002+ drafts** — candidatos en `specs/_index.md`: Signature HID (REQ-003), pipeline framebuffer (REQ-004/005), SDK (REQ-006), Config externa (REQ-007), controles táctiles (REQ-008) | Pueden redactarse en Draft en paralelo | Eng lead + agent |
 | 5 | **Aprobar documentos base en `Draft`**: CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy | Revisión del dueño | Eng lead (tú) |
 | 6 | **`gradle.lockfile`** comprometido (ENG §11) cuando el proyecto Android tenga dependencias reales | Ítem 3 | Eng/agent |
+| 6b | **Keystore propio para APK release** — hoy se firma con debug key solo para pruebas locales | Antes de cualquier distribución | Eng lead |
 | 7 | **CI remota en verde** — el workflow nunca corrió en GitHub (sin push); primer push valida el job Android | Push autorizado por ti | Eng lead (tú) |
 | 8 | **Verificación NFR-001..007** (latencias, CPU, batería, seguridad NFR-004 end-to-end) — requieren banco de pruebas físico PC+Android | Release, no merge | QA/Eng lead |
 | 9 | **Edge cases REQ-001 §8**: comportamiento tras suspensión/hibernación y cierre de sesión Windows → SPEC futuro | SPEC de REQ-001 | Eng lead |
 
 ## Camino mínimo actual
 
-1 (adaptador server + QR) → 2 (TESTs de integración) → primer pairing de punta a punta en loopback TCP.
+Primer pairing de punta a punta PC↔app real: decodificador QR en la app (ítem 3) + render del QR en el server (ítem 2) — el protocolo y el binario del server ya están verificados punta a punta.

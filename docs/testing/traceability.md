@@ -16,14 +16,14 @@
 | REQ | SPEC | DES | TEST | Status | Notes |
 |---|---|---|---|---|---|
 | REQ-002 | SPEC-001 | DES-001 | TEST-001 | Approved | Flujo principal del Handshake (SPEC-001 §7) — implementado en `core::handshake` |
-| REQ-002 | SPEC-001 | DES-001 | TEST-002 | Approved | E1 servidor no disponible (REQ-001 AC-3) — pendiente del adaptador `server/` |
+| REQ-002 | SPEC-001 | DES-001 | TEST-002 | Approved | E1 servidor no disponible (REQ-001 AC-3) — aspecto servidor: cierre tras rechazo verificado en loopback (`server/tests/loopback_integration.rs`); aspecto cliente en TEST-011 |
 | REQ-002 | SPEC-001 | DES-001 | TEST-003 | Approved | E2 QR expirado (REQ-002 AC-3) — implementado en `core::crypto::is_expired` |
-| REQ-002 | SPEC-001 | DES-001 | TEST-004 | Approved | E3 sin token / consumido / proof inválido (NFR-004, REQ-002 AC-2) — implementado en `core::handshake` |
-| REQ-002 | SPEC-001 | DES-001 | TEST-005 | Approved | E3 segundo dispositivo con el mismo QR — implementado en `core::handshake` |
-| REQ-002 | SPEC-001 | DES-001 | TEST-006 | Approved | E4 mensaje malformado / schema desconocido — implementado en `core::message` + `core::qr` (E5) |
+| REQ-002 | SPEC-001 | DES-001 | TEST-004 | Approved | E3 sin token / consumido / proof inválido (NFR-004, REQ-002 AC-2) — implementado en `core::handshake` + E3 por el wire en loopback |
+| REQ-002 | SPEC-001 | DES-001 | TEST-005 | Approved | E3 segundo dispositivo con el mismo QR — implementado en `core::handshake` + R2 en `server::tokens` y por el wire |
+| REQ-002 | SPEC-001 | DES-001 | TEST-006 | Approved | E4 mensaje malformado / schema desconocido — implementado en `core::message` + `core::qr` (E5) + E4 por el wire en loopback |
 | REQ-002 | SPEC-001 | DES-001 | TEST-007 | Approved | Reanudación de sesión (SPEC-001 §8.2) — pendiente del registro de sesiones en `server/` |
-| REQ-002 | SPEC-001 | DES-001 | TEST-008 | Approved | Revocación del emparejamiento (SPEC-001 §8.3) — pendiente del registro en `server/` |
-| REQ-002 | SPEC-001 | DES-001 | TEST-009 | Approved | R7: regeneración automática del QR — pendiente del temporizador en `server/` |
+| REQ-002 | SPEC-001 | DES-001 | TEST-008 | Approved | Revocación del emparejamiento (SPEC-001 §8.3) — `TokenStore::revoke` implementado y testeado; revocación por UI pendiente |
+| REQ-002 | SPEC-001 | DES-001 | TEST-009 | Approved | R7: regeneración automática del QR — implementado en `TokenStore::ensure_fresh_qr` + listener del binario (unit + integración) |
 | REQ-002 | SPEC-002 | DES-002 | TEST-010 | Approved | Flujo completo en la app: escaneo → Vinculado (§7) — implementado, proof verificado con HMAC independiente |
 | REQ-002 | SPEC-002 | DES-002 | TEST-011 | Approved | E1 Servidor no disponible desde la app (§9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-012 | Approved | E5 QR inválido + permiso de cámara denegado (§8.1/§9) — implementado |
