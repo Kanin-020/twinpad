@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-001 |
+| TEST | TEST-009 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -15,7 +15,14 @@
 
 | REQ | SPEC | DES | TEST | Status | Notes |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| REQ-002 | SPEC-001 | - | TEST-001 | Draft | Flujo principal del Handshake (SPEC-001 §7) |
+| REQ-002 | SPEC-001 | - | TEST-002 | Draft | E1 servidor no disponible (REQ-001 AC-3) |
+| REQ-002 | SPEC-001 | - | TEST-003 | Draft | E2 QR expirado (REQ-002 AC-3) |
+| REQ-002 | SPEC-001 | - | TEST-004 | Draft | E3 sin token / consumido / proof inválido (NFR-004, REQ-002 AC-2) |
+| REQ-002 | SPEC-001 | - | TEST-005 | Draft | E3 segundo dispositivo con el mismo QR |
+| REQ-002 | SPEC-001 | - | TEST-006 | Draft | E4 mensaje malformado / schema desconocido |
+| REQ-002 | SPEC-001 | - | TEST-007 | Draft | Reanudación de sesión (SPEC-001 §8.2) |
+| REQ-002 | SPEC-001 | - | TEST-008 | Draft | Revocación del emparejamiento (SPEC-001 §8.3) |
 
 ## NFR verification
 
@@ -33,7 +40,10 @@
 
 | REQ | AC | Verified by |
 |---|---|---|
-| — | — | — |
+| REQ-001 | AC-3 | TEST-002 |
+| REQ-002 | AC-1 | TEST-001 |
+| REQ-002 | AC-2 | TEST-004, TEST-005 |
+| REQ-002 | AC-3 | TEST-003 |
 
 ## ADR links
 

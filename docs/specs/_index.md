@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| SPEC | SPEC-001 |
+| SPEC | SPEC-002 |
 
 > 💡 Reserve here when creating a Draft. Numbers are never reused.
 
@@ -36,7 +36,7 @@
 
 | ID | Title | Implements | Status | Realized by | Verified by | File |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — |
+| SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `Draft` | - | TEST-001..008 (sin código aún) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
 
 ## Deprecated
 
@@ -48,7 +48,7 @@
 
 | Metric | Value |
 |---|---|
-| Active SPECs | 0 |
+| Active SPECs | 1 |
 | Approved SPECs without TEST | 0 |
 | SPECs whose REQ is Deprecated | 0 |
 | Last reviewed | 2026-10-07 |
