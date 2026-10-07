@@ -34,7 +34,10 @@ class PairingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        cameraController = PairingCameraController(this)
+        cameraController =
+            PairingCameraController(this) { raw ->
+                viewModel.onEvent(PairingEvent.QrScanned(raw))
+            }
         setContent { PairingScreenRoot() }
     }
 

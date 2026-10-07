@@ -9,5 +9,6 @@
 //! con listener real, entropía del SO y QR en stdout (REQ-001 AC-1/2).
 
 pub mod qr;
+pub mod qr_render;
 pub mod session;
 pub mod tokens;

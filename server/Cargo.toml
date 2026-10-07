@@ -8,6 +8,9 @@ rust-version.workspace = true
 [dependencies]
 twinpad-core = { path = "../core" }
 getrandom = "0.3"
+# Render del QR de vinculación en terminal (ENG §11: MIT/Apache, sin unsafe,
+# sin deps transitivas, mantenido por Nayuki)
+qrcodegen = "1.8"
 
 [[bin]]
 name = "twinpad-server"

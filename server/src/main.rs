@@ -61,10 +61,15 @@ fn main() {
     ));
 
     println!("Twinpad Servidor PC — escuchando en {addr}:{port}");
-    println!("Escanea este QR con la app (o pásale el URI):");
+    println!("Escanea este QR con la app Twinpad:");
     println!();
-    println!("  {}", store.ensure_fresh_qr().qr_uri);
-    println!();
+    let current = store.ensure_fresh_qr();
+    match twinpad_server::qr_render::render_terminal(&current.qr_uri) {
+        Ok(qr_text) => println!("{qr_text}"),
+        // El URI canónico de §4.1 siempre cabe; si no, mostramos solo el URI.
+        Err(_) => println!("(QR no renderizable) {}", current.qr_uri),
+    }
+    println!("URI (por si necesitas copiarlo): {}", current.qr_uri);
     println!("El QR se regenera automáticamente cada 300 s si nadie lo escanea (R7).");
 
     for stream in listener.incoming() {

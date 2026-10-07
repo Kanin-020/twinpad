@@ -2,21 +2,29 @@ package com.twinpad.android.app.ui
 
 import android.content.Context
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
  * Adaptador de cámara (DES-002 §4): ejecuta los efectos `StartCamera` /
- * `StopCamera` con CameraX. El decodificador de QR (analizador) entra con
- * la iteración de instrumentación en dispositivo (DES-002 §14 diferido);
- * `onQrScanned` queda listo para recibirlo.
+ * `StopCamera` con CameraX y decodifica QRs con ML Kit (SPEC-002 §6 U2:
+ * cada payload crudo llega al evento `QrScanned` para su validación §4.1).
  */
-class PairingCameraController(private val context: Context) {
+class PairingCameraController(
+    private val context: Context,
+    private val onQrScanned: (String) -> Unit,
+) {
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
 
@@ -34,11 +42,18 @@ class PairingCameraController(private val context: Context) {
                     Preview.Builder().build().also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
+                val analysis =
+                    ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { it.setAnalyzer(cameraExecutor, QrAnalyzer(onQrScanned)) }
                 provider.unbindAll()
-                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview)
-                // El decodificador de QR (ImageAnalysis + analyzer) se integra
-                // en la iteración de instrumentación (DES-002 §14 diferido):
-                // cada QR leído invocará onQrScanned(raw).
+                provider.bindToLifecycle(
+                    owner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    analysis,
+                )
             } catch (e: Exception) {
                 // La cámara no está disponible; la máquina permanece en U2.
             }
@@ -55,5 +70,39 @@ class PairingCameraController(private val context: Context) {
 
     fun release() {
         cameraExecutor.shutdown()
+    }
+}
+
+/**
+ * Analizador ML Kit: decodifica QRs y entrega el string crudo a la máquina
+ * de estados, que valida §4.1 (el analyzer no valida: única responsabilidad).
+ */
+private class QrAnalyzer(
+    private val onQrScanned: (String) -> Unit,
+) : ImageAnalysis.Analyzer {
+    private val scanner =
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build(),
+        )
+
+    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+    override fun analyze(imageProxy: ImageProxy) {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
+        val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        scanner
+            .process(input)
+            .addOnSuccessListener { barcodes ->
+                // El primero que cumpla el esquema twinpad basta (SPEC-002 §7 paso 2);
+                // la validación del payload vive en la máquina de estados (§4.1).
+                val raw = barcodes.firstOrNull()?.rawValue
+                if (raw != null) onQrScanned(raw)
+            }
+            .addOnCompleteListener { imageProxy.close() }
     }
 }

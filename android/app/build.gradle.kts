@@ -59,6 +59,8 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
+    // Decodificador QR (SPEC-002 §6 U2): ML Kit barcode (Google, Apache-2.0)
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     // NDJSON del protocolo (SPEC-001 §4.2)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
