@@ -20,6 +20,8 @@
 | 12 | **Adaptador TCP del Servidor PC (REQ-001/002)** | `server::tokens` (R2/R3/R6/R7, RNG/reloj inyectados), `server::session` (bucle TCP con timeouts §9), binario `twinpad-server` (listener LAN, R7 automático); 7 tests de integración en loopback + 6 unitarios; verificado punta a punta: pair_ack + E3 al reintentar token consumido | `feat(server)` |
 | 13 | **QR renderizado + decodificador de cámara** | Server: QR Unicode en terminal (`server::qr_render`, qrcodegen MIT/Apache). App: analyzer ML Kit en `PairingCameraController` (SPEC-002 §6 U2, diferido de DES-002 §14 ya resuelto) | `feat(server)` `feat(android)` |
 | 14 | **Cadena de conexión verificada de punta a punta** | Fixes de la primera ronda de pruebas: preview de cámara no cableado a la Activity (salía negro); carrera Connect/SendLine en `TcpPairingClient` descartaba el `pair_request` (E1 siempre); polaridad invertida del QR terminal recortaba el lado izquierdo. Permiso INTERNET explícito; scripts `run-server.sh` / `test-qr.sh` | `fix(android)` `fix(server)` `build(scripts)` |
+| 15 | **Conexión persistente (SPEC-001 §8.2)** | `SessionRegistry` retiene cada stream tras el pair_ack; hilo de conexión queda en bucle de lectura (EOF libera la sesión). Verificado con cliente de prueba: conexión viva 5 s tras pair_ack; ganchos para TEST-007/008 | `feat(server)` |
+| 16 | **SPEC-003 (video) en Draft** | Transporte de framebuffers sobre la sesión de SPEC-001: `stream_start`/`video_frame`/`stream_gap`/`stream_stop` NDJSON, orden por `fn`, reanudación < 10 s sin re-pairing, degradación fps→resolución; TEST-015..017 reservados — **pendiente de tu aprobación** | `docs(specs)` |
 
 ## ⬜ TODO (pendiente)
 
@@ -27,7 +29,7 @@
 |---|---|---|---|
 | 1 | **Completar TEST-007 (reanudación §8.2) y TEST-008 (revocación por UI)** — los aspectos de TEST-002/005/006/009 ya están en verde en loopback | Registro de sesiones activas en `server/` | Eng/agent |
 | 2 | **Validación en dispositivo del escaneo real** (cámara → QR → handshake de punta a punta) y transcripción de hallazgos | Dispositivo/emulador con cámara | Eng/agent + tú |
-| 4 | **SPEC-002+ drafts** — candidatos en `specs/_index.md`: Signature HID (REQ-003), pipeline framebuffer (REQ-004/005), SDK (REQ-006), Config externa (REQ-007), controles táctiles (REQ-008) | Pueden redactarse en Draft en paralelo | Eng lead + agent |
+| 4 | **SPEC-003+ drafts** — Signature HID (REQ-003), audio (REQ-005), SDK (REQ-006), Config externa (REQ-007), controles táctiles (REQ-008) | Pueden redactarse en Draft en paralelo | Eng lead + agent |
 | 5 | **Aprobar documentos base en `Draft`**: CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy | Revisión del dueño | Eng lead (tú) |
 | 6 | **`gradle.lockfile`** comprometido (ENG §11) cuando el proyecto Android tenga dependencias reales | Ítem 3 | Eng/agent |
 | 6b | **Keystore propio para APK release** — hoy se firma con debug key solo para pruebas locales | Antes de cualquier distribución | Eng lead |
@@ -37,4 +39,6 @@
 
 ## Camino mínimo actual
 
-Primer escaneo real: correr `twinpad-server` en el PC (QR en terminal) → instalar el APK en el teléfono (misma WiFi) → escanear. Después: TEST-007/008 (sesiones) y SPEC-003 de imagen (REQ-004/005).
+1. Aprobar SPEC-003 (video) → DES → implementación: stream de frames sobre la conexión persistente ya existente.
+2. Probar el pairing real de punta a punta en tu banco PC+teléfono.
+3. TEST-007/008 (reanudación y revocación por UI) sobre el registro de sesiones ya implementado.

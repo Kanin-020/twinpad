@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-015 |
+| TEST | TEST-018 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -29,6 +29,9 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-012 | Approved | E5 QR inválido + permiso de cámara denegado (§8.1/§9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-013 | Approved | E2/E3 mensajes exactos desde `pair_error` (REQ-002 AC-3, §9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-014 | Approved | Edge cases de UI: cancelar, segundo plano, código desconocido, reintento (§10) — implementado |
+| REQ-004 | SPEC-003 | `-` | TEST-015 | Draft | Flujo principal del stream de video (SPEC-003 §7, REQ-004 AC-1) — pendiente de DES |
+| REQ-004 | SPEC-003 | `-` | TEST-016 | Draft | Frame corrupto/tardío y edge cases §10 (REQ-004 AC-3) — pendiente de DES |
+| REQ-005 | SPEC-003 | `-` | TEST-017 | Draft | Reanudación tras corte breve < 10 s sin re-pairing (§8.2, REQ-005 AC-2) — pendiente de DES |
 
 ## NFR verification
 
