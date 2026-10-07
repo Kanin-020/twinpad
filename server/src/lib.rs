@@ -3,5 +3,11 @@
 //! Responsabilidad (ARCH §2): gestionar sesiones, exponer el QR de
 //! vinculación y coordinar los streams (REQ-001, REQ-002).
 //!
-//! El mecanismo de autoarranque (REQ-001 §11) está como pregunta abierta
-//! en ARCH §11; no se implementa hasta que su SPEC esté `Approved`.
+//! Módulos (DES-001): `qr` (payload canónico §4.1), `tokens` (almacén
+//! R2/R3/R6/R7, owner único ARCH §5), `session` (bucle TCP que alimenta
+//! `ServerHandshake`). El binario ejecutable (`main.rs`) es el adaptador
+//! con listener real, entropía del SO y QR en stdout (REQ-001 AC-1/2).
+
+pub mod qr;
+pub mod session;
+pub mod tokens;

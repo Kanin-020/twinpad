@@ -7,6 +7,11 @@ rust-version.workspace = true
 
 [dependencies]
 twinpad-core = { path = "../core" }
+getrandom = "0.3"
+
+[[bin]]
+name = "twinpad-server"
+path = "src/main.rs"
 
 [lints]
 workspace = true

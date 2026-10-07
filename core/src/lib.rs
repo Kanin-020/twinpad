@@ -19,7 +19,7 @@ pub mod message;
 pub mod qr;
 
 /// Token de sesión: 32 bytes de entropía, un solo uso (SPEC-001 R2, ADR-004).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Token(pub [u8; 32]);
 
 /// Nonce criptográfico de 32 bytes (SPEC-001 §2).
