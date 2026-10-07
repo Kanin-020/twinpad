@@ -11,7 +11,7 @@
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
-| Realized by | `-` (hasta asignar DES) |
+| Realized by | DES-001 (núcleo puro implementado en `core/`; adaptadores TCP/servidor pendientes) |
 | Verified by | TEST-001 … TEST-009 (registrados en `testing/traceability.md`, aún sin código) |
 | Last updated | 2026-10-07 |
 
