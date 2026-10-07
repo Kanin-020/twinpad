@@ -31,4 +31,4 @@ echo "==> Instalando APK en $( "$ADB" get-state )"
 
 echo ""
 echo "OK. Twinpad instalado. Ábrelo y pulsa 'Escanear QR'."
-echo "(El escaneo aún no decodifica: falta el analyzer de cámara y el servidor PC — ver TODO.md)"
+echo "(Ejecuta ./scripts/run-server.sh en el PC para mostrar el QR de pairing)"
