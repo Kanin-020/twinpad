@@ -22,11 +22,16 @@ private const val FIVE_SECONDS_MS: Int = 5_000
  * Conexión TCP del lado app sobre WiFi LAN (ADR-002). Envía líneas NDJSON
  * y expone las recibidas como `Flow<String?>` (el `null` cierra: conexión
  * rechazada, timeout E1 o corte — SPEC-002 §10).
+ *
+ * Las líneas a enviar se encolan en [pendingWrites] y un único escritor las
+ * drena en orden estricto una vez el socket está establecido (la máquina
+ * emite `Connect` + `SendLine` seguidos; el envío no se pierde aunque el
+ * handshake de TCP siga en curso — ENG P10: FIFO determinista).
  */
 class TcpPairingClient {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val writeDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val lineChannel = Channel<String?>(capacity = Channel.UNLIMITED)
+    private val pendingWrites = Channel<String>(capacity = Channel.UNLIMITED)
     private var readerJob: Job? = null
     private var socket: Socket? = null
 
@@ -44,6 +49,7 @@ class TcpPairingClient {
                     s.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
                     s.soTimeout = FIVE_SECONDS_MS // sin respuesta en 5 s → E1
                     socket = s
+                    startWriter(s)
                     val reader = s.getInputStream().bufferedReader()
                     while (true) {
                         val line =
@@ -65,20 +71,28 @@ class TcpPairingClient {
             }
     }
 
-    /** Envía una línea NDJSON con `\n` final (SPEC-001 §4.2). */
-    fun send(line: String) {
-        val s = socket ?: return
-        scope.launch(writeDispatcher) {
+    /** Inicia el único escritor: drena [pendingWrites] hacia `s` en FIFO. */
+    private fun startWriter(s: Socket) {
+        scope.launch {
             try {
                 val writer = BufferedWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8))
-                writer.write(line)
-                writer.write("\n")
-                writer.flush()
+                for (line in pendingWrites) {
+                    writer.write(line)
+                    writer.write("\n")
+                    writer.flush()
+                }
             } catch (e: java.io.IOException) {
+                // El socket cerró con escrituras en vuelo: señal de fin.
                 closeQuietly()
                 lineChannel.trySend(null)
             }
         }
+    }
+
+    /** Encola una línea NDJSON con `\n` final (SPEC-001 §4.2); el escritor
+     * la transmite cuando la conexión esté lista. */
+    fun send(line: String) {
+        pendingWrites.trySend(line)
     }
 
     /** Desactiva el timeout de lectura al entrar en U4 (la sesión no envía
@@ -97,8 +111,13 @@ class TcpPairingClient {
         closeQuietly()
     }
 
+    /** Cierra el socket y descarta escrituras pendientes: sin conexión ya
+     * no tienen destino (un intento abortado no deja basura para el siguiente). */
     private fun closeQuietly() {
         runCatching { socket?.close() }
         socket = null
+        while (true) {
+            if (pendingWrites.tryReceive().getOrNull() == null) break
+        }
     }
 }
