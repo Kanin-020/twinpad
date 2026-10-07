@@ -15,15 +15,15 @@
 
 | REQ | SPEC | DES | TEST | Status | Notes |
 |---|---|---|---|---|---|
-| REQ-002 | SPEC-001 | - | TEST-001 | In review | Flujo principal del Handshake (SPEC-001 §7) |
-| REQ-002 | SPEC-001 | - | TEST-002 | In review | E1 servidor no disponible (REQ-001 AC-3) |
-| REQ-002 | SPEC-001 | - | TEST-003 | In review | E2 QR expirado (REQ-002 AC-3) |
-| REQ-002 | SPEC-001 | - | TEST-004 | In review | E3 sin token / consumido / proof inválido (NFR-004, REQ-002 AC-2) |
-| REQ-002 | SPEC-001 | - | TEST-005 | In review | E3 segundo dispositivo con el mismo QR |
-| REQ-002 | SPEC-001 | - | TEST-006 | In review | E4 mensaje malformado / schema desconocido |
-| REQ-002 | SPEC-001 | - | TEST-007 | In review | Reanudación de sesión (SPEC-001 §8.2) |
-| REQ-002 | SPEC-001 | - | TEST-008 | In review | Revocación del emparejamiento (SPEC-001 §8.3) |
-| REQ-002 | SPEC-001 | - | TEST-009 | In review | R7: regeneración automática del QR al expirar |
+| REQ-002 | SPEC-001 | - | TEST-001 | Approved | Flujo principal del Handshake (SPEC-001 §7) |
+| REQ-002 | SPEC-001 | - | TEST-002 | Approved | E1 servidor no disponible (REQ-001 AC-3) |
+| REQ-002 | SPEC-001 | - | TEST-003 | Approved | E2 QR expirado (REQ-002 AC-3) |
+| REQ-002 | SPEC-001 | - | TEST-004 | Approved | E3 sin token / consumido / proof inválido (NFR-004, REQ-002 AC-2) |
+| REQ-002 | SPEC-001 | - | TEST-005 | Approved | E3 segundo dispositivo con el mismo QR |
+| REQ-002 | SPEC-001 | - | TEST-006 | Approved | E4 mensaje malformado / schema desconocido |
+| REQ-002 | SPEC-001 | - | TEST-007 | Approved | Reanudación de sesión (SPEC-001 §8.2) |
+| REQ-002 | SPEC-001 | - | TEST-008 | Approved | Revocación del emparejamiento (SPEC-001 §8.3) |
+| REQ-002 | SPEC-001 | - | TEST-009 | Approved | R7: regeneración automática del QR al expirar |
 
 ## NFR verification
 

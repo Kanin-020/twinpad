@@ -7,8 +7,8 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 0.3.0 |
-| Status | `In review` |
+| Version | 1.0.0 |
+| Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
 | Realized by | `-` (hasta asignar DES) |
@@ -249,14 +249,14 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 
 ## Definition of Done
 
-- [ ] Deterministic: two readers cannot reasonably interpret any statement differently.
-- [ ] All flows, errors and edge cases enumerated — no "etc.", "and so on", "as appropriate".
-- [ ] Every error and edge case has exact expected behavior.
-- [ ] Inputs/outputs fully enumerated with types and constraints.
-- [ ] No implementation detail beyond the boundary contract.
-- [ ] Every aspect has a TEST row; rows mirrored in traceability.md.
-- [ ] No contradictions with the implementing REQ.
-- [ ] No placeholders; Status updated.
+- [x] Deterministic: two readers cannot reasonably interpret any statement differently.
+- [x] All flows, errors and edge cases enumerated — no "etc.", "and so on", "as appropriate".
+- [x] Every error and edge case has exact expected behavior.
+- [x] Inputs/outputs fully enumerated with types and constraints.
+- [x] No implementation detail beyond the boundary contract.
+- [x] Every aspect has a TEST row; rows mirrored in traceability.md.
+- [x] No contradictions with the implementing REQ.
+- [x] No placeholders; Status updated.
 
 ## Changelog
 
@@ -265,3 +265,4 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: QR de vinculación + Handshake autenticado; validez QR 5 min (decisión del dueño) |
 | 0.2.0 | 2026-10-07 | Twinpad team | OQ-1 resuelta: regeneración automática del QR al expirar (R7, TEST-009) |
 | 0.3.0 | 2026-10-07 | Twinpad team | OQ-2 resuelta: primitivas HKDF-SHA256 + HMAC-SHA256 definitivas; Status → `In review` |
+| 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |

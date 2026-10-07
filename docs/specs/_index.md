@@ -36,7 +36,7 @@
 
 | ID | Title | Implements | Status | Realized by | Verified by | File |
 |---|---|---|---|---|---|---|
-| SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `In review` | - | TEST-001..009 (sin código aún) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
+| SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `Approved` | - | TEST-001..009 (sin código aún) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
 
 ## Deprecated
 
