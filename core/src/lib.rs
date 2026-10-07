@@ -1,10 +1,35 @@
 //! Twinpad Core — protocolo de sesión y tipos de dominio compartidos (ENG §2).
 //!
-//! Este crate es la frontera común entre el Servidor PC y la app Android.
-//! Regla arquitectural (ARCH §3, ENG §5 S5/P11): `core` no realiza I/O
-//! (red, HID, captura, archivos); los módulos de plataforma le inyectan
-//! sus puertos.
+//! Núcleo puro del protocolo de Pairing/Handshake (SPEC-001 `Approved`,
+//! realizado por DES-001): codec del payload QR, mensajes NDJSON,
+//! criptografía HKDF/HMAC-SHA256 y máquinas de estado del Handshake.
 //!
-//! El comportamiento del protocolo de sesión se define en los SPECs de
-//! `docs/specs/` (el primero, SPEC-001, está en Draft). No se implementa
-//! ningún comportamiento hasta que su SPEC esté `Approved`.
+//! Regla arquitectural (ARCH §3, ENG §5 P11/S5): `core` no realiza I/O
+//! (red, HID, captura, archivos, RNG); la entropía y el reloj entran por
+//! parámetro y los adaptadores (`server/`, app Android) inyectan los
+//! efectos.
+//!
+//! El comportamiento está definido por SPEC-001; nada de lo que no esté
+//! allí es requerido (SPEC-001 §15).
+
+pub mod crypto;
+pub mod error;
+pub mod handshake;
+pub mod message;
+pub mod qr;
+
+/// Token de sesión: 32 bytes de entropía, un solo uso (SPEC-001 R2, ADR-004).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Token(pub [u8; 32]);
+
+/// Nonce criptográfico de 32 bytes (SPEC-001 §2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Nonce(pub [u8; 32]);
+
+/// Identificador opaco de sesión: 16 bytes aleatorios (SPEC-001 §2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SessionId(pub [u8; 16]);
+
+/// Clave de sesión derivada: 32 bytes, nunca viaja por la red (SPEC-001 R5/R6).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SessionKey(pub [u8; 32]);
