@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-010 |
+| TEST | TEST-015 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -24,6 +24,11 @@
 | REQ-002 | SPEC-001 | DES-001 | TEST-007 | Approved | Reanudación de sesión (SPEC-001 §8.2) — pendiente del registro de sesiones en `server/` |
 | REQ-002 | SPEC-001 | DES-001 | TEST-008 | Approved | Revocación del emparejamiento (SPEC-001 §8.3) — pendiente del registro en `server/` |
 | REQ-002 | SPEC-001 | DES-001 | TEST-009 | Approved | R7: regeneración automática del QR — pendiente del temporizador en `server/` |
+| REQ-002 | SPEC-002 | - | TEST-010 | Draft | Flujo completo en la app: escaneo → Vinculado (SPEC-002 §7) |
+| REQ-002 | SPEC-002 | - | TEST-011 | Draft | E1 Servidor no disponible desde la app (SPEC-002 §9) |
+| REQ-002 | SPEC-002 | - | TEST-012 | Draft | E5 QR inválido + permiso de cámara denegado (SPEC-002 §8.1/§9) |
+| REQ-002 | SPEC-002 | - | TEST-013 | Draft | E2/E3 mensajes exactos desde `pair_error` (REQ-002 AC-3, SPEC-002 §9) |
+| REQ-002 | SPEC-002 | - | TEST-014 | Draft | Edge cases de UI: cancelar, segundo plano, código desconocido, rotación (SPEC-002 §10) |
 
 ## NFR verification
 

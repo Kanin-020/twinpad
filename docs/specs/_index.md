@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| SPEC | SPEC-002 |
+| SPEC | SPEC-003 |
 
 > 💡 Reserve here when creating a Draft. Numbers are never reused.
 
@@ -37,6 +37,7 @@
 | ID | Title | Implements | Status | Realized by | Verified by | File |
 |---|---|---|---|---|---|---|
 | SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `Approved` | DES-001 | TEST-001..009 (5 en código `core/`) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
+| SPEC-002 | App Android: escaneo del QR y pantalla de Pairing | REQ-002 | `Draft` | - | TEST-010..014 (sin código aún) | [SPEC-002-android-pairing-ui.md](SPEC-002-android-pairing-ui.md) |
 
 ## Deprecated
 
@@ -48,7 +49,7 @@
 
 | Metric | Value |
 |---|---|
-| Active SPECs | 1 |
+| Active SPECs | 2 |
 | Approved SPECs without TEST | 0 |
 | SPECs whose REQ is Deprecated | 0 |
 | Last reviewed | 2026-10-07 |
