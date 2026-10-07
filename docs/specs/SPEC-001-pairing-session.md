@@ -7,7 +7,7 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Draft` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
@@ -76,7 +76,7 @@ Un mensaje recibido con `type` desconocido, campo faltante o campo con longitud/
 
 | Result | Value / shape | Condition |
 |---|---|---|
-| QR de vinculación visible | imagen en pantalla del Servidor PC con el payload §4.1 | el Jugador lo genera desde la PC |
+| QR de vinculación visible | imagen en pantalla del Servidor PC con el payload §4.1 | el Jugador lo genera desde la PC; se regenera automáticamente al expirar (R7) |
 | `pair_ack` con `session_id` | mensaje §4.2 | Handshake exitoso |
 | Estado Sesión autenticada | app y servidor comparten `session_id` + `session_key` | tras `pair_ack` |
 | Token consumido | registro interno del servidor | exactamente un Handshake exitoso por token (R2) |
@@ -151,6 +151,7 @@ Sin respuesta a `pair_challenge` en 10 s: el servidor cierra la conexión sin `p
 |---|---|
 | Dos dispositivos escanean el mismo QR simultáneamente | el primero que completa el paso 9 gana; el otro recibe E3 (R2, un solo uso) |
 | QR escaneado tras 300 s de emitido | error E2 al presentar `pair_request` |
+| QR expirado sin que ningún dispositivo lo haya escaneado | el Servidor PC genera un token nuevo y muestra el QR nuevo automáticamente, sin intervención del Jugador (R7); el token expirado sigue respondiendo E2 si se presenta |
 | Cámara o decodificación produce un payload parcial | E5 sin abrir conexión (§9) |
 | Dos celulares con distintas sesiones activas a la vez | permitido (NFR-006); cada ligadura tiene su propia `session_key` y `session_id` |
 | QR fotografiado por un observador y reutilizándose dentro de los 300 s | puede autenticar una sesión válidamente (R2 + R3: la ventana de 5 min es el límite aceptado en ADR-004 §6) |
@@ -166,6 +167,7 @@ Sin respuesta a `pair_challenge` en 10 s: el servidor cierra la conexión sin `p
 - **R4:** La autenticación usa HKDF-SHA256 para derivar la `session_key` del token, y HMAC-SHA256 para el challenge mutuo; las primitives exactas están sujetas a revisión criptográfica (§17).
 - **R5:** El servidor no registra tokens, `session_key` ni `proof` en logs (ENG §7); los eventos de sesión citan `session_id`.
 - **R6:** El token y la credencial de sesión residen solo en memoria del servidor o en el almacén cifrado local (ARCH §5); owner: Servidor PC.
+- **R7:** Al expirar el QR vigente (300 s, R3) sin haber sido consumido, el Servidor PC genera automáticamente un token nuevo y muestra el QR nuevo, sin intervención del Jugador (decisión del dueño — 2026-10-07). El token expirado no se reutiliza y responde E2.
 
 ## 12. Contracts
 
@@ -207,11 +209,17 @@ Scenario: Servidor no disponible
   Given el Servidor PC inactivo
   When la app intenta conectar al endpoint (REQ-001 AC-3)
   Then la app muestra "Servidor no disponible" E1 sin crear sesión
+
+Scenario: Regeneración automática del QR
+  Given un QR mostrado cuyo token alcanza los 300 s sin consumirse
+  When el token expira
+  Then el Servidor PC muestra automáticamente un QR nuevo con un token nuevo, sin intervención del Jugador
 ```
 
 ## 14. Invariants
 
 - Un token expira (R3) o se consume (R2), nunca ambos; ningún consumo parcial.
+- El QR mostrado en pantalla del Servidor PC es siempre vigente: al expirar se regenera automáticamente (R7).
 - En S2 el token sigue de un solo uso: un intento abortado no lo consume; solo el paso 10 lo hace.
 - Dentro de S3, cada `session_id` identifica exactamente una ligadura activa con su propia `session_key`; un reinicio del servidor elimina todas las ligaduras (la reanudación §8.2 ya no es posible).
 - `session_key` nunca sale de la memoria del proceso y no se firma en ningún mensaje (solo derivados como `proof`).
@@ -232,10 +240,11 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | E4 mensaje malformado / schema desconocido | TEST-006 |
 | §8.2 reanudación | TEST-007 |
 | §8.3 revocación | TEST-008 |
+| R7 regeneración automática del QR al expirar | TEST-009 |
 
 ## 17. Open questions
 
-- ¿Regeneración automática del QR al expirar, o solo a petición del Jugador? — Eng lead — 2026-10-07 — abierta
+- ¿Regeneración automática del QR al expirar, o solo a petición del Jugador? — Eng lead — 2026-10-07 — resuelta: regeneración automática (decisión del dueño, 2026-10-07; R7)
 - ¿Las primitivas HKDF-SHA256 + HMAC-SHA256 del §7 son definitivas (requieren revisión criptográfica del Eng lead antes de `Approved`)? — Eng lead — 2026-10-07 — abierta
 
 ## Definition of Done
@@ -254,3 +263,4 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: QR de vinculación + Handshake autenticado; validez QR 5 min (decisión del dueño) |
+| 0.2.0 | 2026-10-07 | Twinpad team | OQ-1 resuelta: regeneración automática del QR al expirar (R7, TEST-009) |

@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-009 |
+| TEST | TEST-010 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -23,6 +23,7 @@
 | REQ-002 | SPEC-001 | - | TEST-006 | Draft | E4 mensaje malformado / schema desconocido |
 | REQ-002 | SPEC-001 | - | TEST-007 | Draft | Reanudación de sesión (SPEC-001 §8.2) |
 | REQ-002 | SPEC-001 | - | TEST-008 | Draft | Revocación del emparejamiento (SPEC-001 §8.3) |
+| REQ-002 | SPEC-001 | - | TEST-009 | Draft | R7: regeneración automática del QR al expirar |
 
 ## NFR verification
 
