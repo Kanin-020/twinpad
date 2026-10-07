@@ -7,8 +7,8 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 0.1.0 |
-| Status | `Draft` |
+| Version | 1.0.0 |
+| Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
 | Realized by | `-` (hasta asignar DES) |
@@ -203,17 +203,18 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 
 ## Definition of Done
 
-- [ ] Deterministic: two readers cannot reasonably interpret any statement differently.
-- [ ] All flows, errors and edge cases enumerated — no "etc.", "and so on", "as appropriate".
-- [ ] Every error and edge case has exact expected behavior.
-- [ ] Inputs/outputs fully enumerated with types and constraints.
-- [ ] No implementation detail (frameworks, file names, SQL, endpoints' internals) beyond the boundary contract.
-- [ ] Every aspect has a TEST row; rows mirrored in traceability.md.
-- [ ] No contradictions with the implementing REQ.
-- [ ] No placeholders; Status updated.
+- [x] Deterministic: two readers cannot reasonably interpret any statement differently.
+- [x] All flows, errors and edge cases enumerated — no "etc.", "and so on", "as appropriate".
+- [x] Every error and edge case has exact expected behavior.
+- [x] Inputs/outputs fully enumerated with types and constraints.
+- [x] No implementation detail (frameworks, file names, SQL, endpoints' internals) beyond the boundary contract.
+- [x] Every aspect has a TEST row; rows mirrored in traceability.md.
+- [x] No contradictions with the implementing REQ.
+- [x] No placeholders; Status updated.
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
+| 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
