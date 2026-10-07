@@ -1,0 +1,9 @@
+[package]
+name = "twinpad-config-loader"
+description = "Cargador de Config externa: carga y valida configuraciones de juegos no integrados (REQ-007)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

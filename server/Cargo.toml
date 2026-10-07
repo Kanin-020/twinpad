@@ -1,0 +1,12 @@
+[package]
+name = "twinpad-server"
+description = "Servidor PC: gestiona sesiones, expone el QR de vinculación y coordina los streams (REQ-001, REQ-002)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+twinpad-core = { path = "../core" }
+
+[lints]
+workspace = true

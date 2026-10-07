@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "server",
+    "server/capture",
+    "server/config-loader",
+    "sdk",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+# ENG §4: `#![deny(unsafe_code)]` fuera de los módulos FFI (hid/, sdk wrapper).
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+# ENG §6: sin unwrap/expect en producción; ENG §13.5: sin TODO en código entregado.
+# Los tests pueden relajar esto localmente con allow justificado.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+panic = "deny"

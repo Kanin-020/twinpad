@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Requiere lint:lintVitalRelease para builds release (no usados en gates).
+      No hay Activity declarada: la UI de Pairing llega con su SPEC Approved
+      (mandato de workflow §2; sin comportamiento aprobado no se implementa).
+    -->
+</manifest>

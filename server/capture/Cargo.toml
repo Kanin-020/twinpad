@@ -1,0 +1,9 @@
+[package]
+name = "twinpad-capture"
+description = "Captura de framebuffer y audio en el PC host (REQ-004, REQ-005)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

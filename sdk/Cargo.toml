@@ -1,0 +1,12 @@
+[package]
+name = "twinpad-sdk"
+description = "SDK Twinpad: permite a un juego anunciar contenido de segunda pantalla y recibir inputs (REQ-006)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+twinpad-core = { path = "../core" }
+
+[lints]
+workspace = true

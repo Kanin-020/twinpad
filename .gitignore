@@ -1,0 +1,14 @@
+# Rust
+/target/
+
+# Gradle / Android
+/android/.gradle/
+/android/build/
+/android/*/build/
+/android/local.properties
+/android/.kotlin/
+
+# IDE
+.idea/
+*.iml
+.vscode/

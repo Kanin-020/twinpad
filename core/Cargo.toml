@@ -1,0 +1,9 @@
+[package]
+name = "twinpad-core"
+description = "Twinpad Core: protocolo de sesión y tipos de dominio compartidos (sin I/O)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
