@@ -55,7 +55,10 @@ class PairingCameraController(
                     analysis,
                 )
             } catch (e: Exception) {
-                // La cámara no está disponible; la máquina permanece en U2.
+                // La cámara no está disponible; la máquina permanece en U2
+                // (SPEC-002 §6). Dejamos rastro: un preview negro sin log
+                // sería indistinguible de un error de cableado.
+                android.util.Log.w("PairingCamera", "Cámara no disponible", e)
             }
         }, ContextCompat.getMainExecutor(context))
     }

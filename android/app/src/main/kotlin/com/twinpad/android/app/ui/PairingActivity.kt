@@ -71,7 +71,7 @@ class PairingActivity : ComponentActivity() {
                     onRetry = { viewModel.onEvent(PairingEvent.Retry) },
                     onQrScanned = { raw -> viewModel.onEvent(PairingEvent.QrScanned(raw)) },
                 )
-            PairingScreen(state = state, actions = actions)
+            PairingScreen(state = state, actions = actions, cameraController = cameraController)
         }
     }
 }
