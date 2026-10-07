@@ -1,0 +1,40 @@
+build:
+  maxIssues: 0
+
+complexity:
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 15
+  LongParameterList:
+    active: true
+    functionThreshold: 6
+  TooManyFunctions:
+    active: true
+    thresholdInObjects: 11
+
+exceptions:
+  SwallowedException:
+    active: false # los fallos de parseo se envuelven en PairingException(cause) — ENG §6
+  TooGenericExceptionCaught:
+    active: false # IOException es el contrato de java.net en el adaptador TCP
+
+naming:
+  FunctionNaming:
+    active: true
+    # Los composables (@Composable) usan PascalCase por convención oficial de Jetpack Compose.
+    ignoreAnnotated: ['Composable']
+
+style:
+  ThrowsCount:
+    active: true
+    max: 5 # QrParser.parse lanza E5 por cada violación de la gramática §4.1
+  MagicNumber:
+    active: true
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+  ReturnCount:
+    active: true
+    max: 3
+  LoopWithTooManyJumpStatements:
+    active: true
+    maxJumpCount: 2 # read loop: break por timeout y por EOF son semánticas distintas

@@ -1,0 +1,6 @@
+root = true
+
+[*.{kt,kts}]
+# Los composables anotados con @Composable usan PascalCase por convención
+# oficial de Jetpack Compose (DES-002 §11).
+ktlint_function_naming_ignore_when_annotated_with = Composable

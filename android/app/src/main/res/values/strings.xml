@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos canónicos de SPEC-002 §9 (R4: i18n-ready; cambio de texto → CR). -->
+<resources>
+    <string name="app_name">Twinpad</string>
+    <string name="pairing_title">Vinculación con la PC</string>
+    <string name="pairing_scan_button">Escanear QR</string>
+    <string name="pairing_cancel_button">Cancelar</string>
+    <string name="pairing_retry_button">Reintentar</string>
+    <string name="pairing_scanning">Apunta la cámara al QR de la PC…</string>
+    <string name="pairing_handshaking">Conectando con la PC…</string>
+    <string name="pairing_linked">Vinculado</string>
+    <string name="pairing_error_server_unavailable">Servidor no disponible</string>
+    <string name="pairing_error_qr_expired">QR expirado, generar uno nuevo</string>
+    <string name="pairing_error_rejected">Vinculación rechazada</string>
+    <string name="pairing_error_invalid_response">Respuesta no válida</string>
+    <string name="pairing_error_invalid_qr">QR no válido</string>
+    <string name="pairing_error_camera_denied">Se necesita la cámara para escanear el QR</string>
+    <string name="pairing_session_ended">Sesión terminada</string>
+</resources>
