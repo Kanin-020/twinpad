@@ -17,15 +17,15 @@
 | 9 | README + TODO tracker | Comandos de build/gates verificados; este archivo | `9f2002f` `776f5af` |
 | 10 | **App Android de Pairing (SPEC-002/DES-002)** | Máquina de estados pura U1–U5, handshake Kotlin (HKDF+HMAC paridad con core), cliente TCP con timeouts E1, UI Compose con strings canónicas §9; TEST-010..014 = 12 tests JVM verdes; APK debug generado | `feat(android)` |
 | 11 | **Scripts de build/test/instalación** | `scripts/build.sh`, `test.sh` (6 gates §8), `install-apk.sh` (adb), `build-apk.sh [debug\|release]` — todos verificados ejecutándolos; release firmado con debug key para pruebas | `702028f` `13c8dbd` |
-| 12 | **Adaptador TCP del Servidor PC (REQ-001/002)** | `server::tokens` (R2/R3/R6/R7, RNG/reloj inyectados), `server::session` (bucle TCP con timeouts §9), binario `twinpad-server` (listener LAN, QR en stdout, R7 automático); 7 tests de integración en loopback + 6 unitarios; verificado punta a punta: pair_ack + E3 al reintentar token consumido | `feat(server)` |
+| 12 | **Adaptador TCP del Servidor PC (REQ-001/002)** | `server::tokens` (R2/R3/R6/R7, RNG/reloj inyectados), `server::session` (bucle TCP con timeouts §9), binario `twinpad-server` (listener LAN, R7 automático); 7 tests de integración en loopback + 6 unitarios; verificado punta a punta: pair_ack + E3 al reintentar token consumido | `feat(server)` |
+| 13 | **QR renderizado + decodificador de cámara** | Server: QR Unicode en terminal (`server::qr_render`, qrcodegen MIT/Apache). App: analyzer ML Kit en `PairingCameraController` (SPEC-002 §6 U2, diferido de DES-002 §14 ya resuelto) — falta instrumentación en dispositivo con cámara para validar el escaneo real | `feat(server)` `feat(android)` |
 
 ## ⬜ TODO (pendiente)
 
 | # | Ítem | Bloqueado por / dependencia | Dueño |
 |---|---|---|---|
 | 1 | **Completar TEST-007 (reanudación §8.2) y TEST-008 (revocación por UI)** — los aspectos de TEST-002/005/006/009 ya están en verde en loopback | Registro de sesiones activas en `server/` | Eng/agent |
-| 2 | **Renderizado gráfico del QR** (hoy el binario imprime el URI en stdout; falta imagen/ventana para escanear cómodamente desde el teléfono) | Ítem 3 (decodificador) | Eng/agent |
-| 3 | **Decodificador de QR en la app** (CameraX ImageAnalysis + analyzer, p.ej. ML Kit) — el preview ya está; falta decodificar (DES-002 §14) | Requiere dispositivo/emulador con cámara | Eng/agent |
+| 2 | **Validación en dispositivo del escaneo real** (cámara → QR → handshake de punta a punta) y transcripción de hallazgos | Dispositivo/emulador con cámara | Eng/agent + tú |
 | 4 | **SPEC-002+ drafts** — candidatos en `specs/_index.md`: Signature HID (REQ-003), pipeline framebuffer (REQ-004/005), SDK (REQ-006), Config externa (REQ-007), controles táctiles (REQ-008) | Pueden redactarse en Draft en paralelo | Eng lead + agent |
 | 5 | **Aprobar documentos base en `Draft`**: CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy | Revisión del dueño | Eng lead (tú) |
 | 6 | **`gradle.lockfile`** comprometido (ENG §11) cuando el proyecto Android tenga dependencias reales | Ítem 3 | Eng/agent |
@@ -36,4 +36,4 @@
 
 ## Camino mínimo actual
 
-Primer pairing de punta a punta PC↔app real: decodificador QR en la app (ítem 3) + render del QR en el server (ítem 2) — el protocolo y el binario del server ya están verificados punta a punta.
+Primer escaneo real: correr `twinpad-server` en el PC (QR en terminal) → instalar el APK en el teléfono (misma WiFi) → escanear. Después: TEST-007/008 (sesiones) y SPEC-003 de imagen (REQ-004/005).
