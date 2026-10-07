@@ -7,12 +7,12 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 0.2.0 |
-| Status | `Draft` |
+| Version | 0.3.0 |
+| Status | `In review` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
 | Realized by | `-` (hasta asignar DES) |
-| Verified by | TEST-001 … TEST-008 (registrados en `testing/traceability.md`, aún sin código) |
+| Verified by | TEST-001 … TEST-009 (registrados en `testing/traceability.md`, aún sin código) |
 | Last updated | 2026-10-07 |
 
 ## 1. Purpose
@@ -245,7 +245,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 ## 17. Open questions
 
 - ¿Regeneración automática del QR al expirar, o solo a petición del Jugador? — Eng lead — 2026-10-07 — resuelta: regeneración automática (decisión del dueño, 2026-10-07; R7)
-- ¿Las primitivas HKDF-SHA256 + HMAC-SHA256 del §7 son definitivas (requieren revisión criptográfica del Eng lead antes de `Approved`)? — Eng lead — 2026-10-07 — abierta
+- ¿Las primitivas HKDF-SHA256 + HMAC-SHA256 del §7 son definitivas (requieren revisión criptográfica del Eng lead antes de `Approved`)? — Eng lead — 2026-10-07 — resuelta: sí, definitivas (confirmación del dueño, 2026-10-07)
 
 ## Definition of Done
 
@@ -264,3 +264,4 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: QR de vinculación + Handshake autenticado; validez QR 5 min (decisión del dueño) |
 | 0.2.0 | 2026-10-07 | Twinpad team | OQ-1 resuelta: regeneración automática del QR al expirar (R7, TEST-009) |
+| 0.3.0 | 2026-10-07 | Twinpad team | OQ-2 resuelta: primitivas HKDF-SHA256 + HMAC-SHA256 definitivas; Status → `In review` |
