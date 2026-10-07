@@ -10,6 +10,7 @@
 //! aquí; el resto del programa sigue siendo determinista y testeable.
 
 use std::net::TcpListener;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use twinpad_server::session::{SessionDeps, SessionOutcome, run_handshake};
@@ -53,12 +54,13 @@ fn main() {
         std::process::exit(1);
     };
     let addr = local_addr_for_qr();
-    let store = std::sync::Arc::new(TokenStore::new(
+    let store = Arc::new(TokenStore::new(
         OsRandomBytes,
         SystemClock,
         addr.clone(),
         port,
     ));
+    let registry = Arc::new(twinpad_server::registry::SessionRegistry::new());
 
     println!("Twinpad Servidor PC — escuchando en {addr}:{port}");
     println!("Escanea este QR con la app Twinpad:");
@@ -78,7 +80,8 @@ fn main() {
         // el almacén con exclusión mutua (DES-001 §10).
         let record = store.ensure_fresh_qr().record;
         let token_for_thread = record.token;
-        let store_ref = std::sync::Arc::clone(&store);
+        let store_ref = Arc::clone(&store);
+        let registry_ref = Arc::clone(&registry);
         std::thread::spawn(move || {
             let mut deps = SessionDeps {
                 now_ms: &mut || SystemClock.now_ms(),
@@ -100,11 +103,39 @@ fn main() {
                     session_key,
                 } => {
                     store_ref.mark_consumed(&token_for_thread); // R2, §14
-                    println!(
-                        "Vinculación exitosa: session_id={} clave derivada OK",
-                        twinpad_core::message::b64_16(&session_id.0)
-                    );
+                    // Conexión persistente (SPEC-001 §8.2): el server retiene
+                    // un duplicado del stream para enviarle a la app; la
+                    // conexión no se cierra tras el pair_ack.
+                    if let Ok(held) = stream.try_clone() {
+                        registry_ref.insert(
+                            twinpad_server::registry::ActiveSession {
+                                session_id,
+                                session_id_b64: twinpad_core::message::b64_16(&session_id.0),
+                            },
+                            held,
+                        );
+                        println!(
+                            "Vinculación exitosa: session_id={} — sesión activa ({} en total)",
+                            twinpad_core::message::b64_16(&session_id.0),
+                            registry_ref.len(),
+                        );
+                    }
                     let _ = session_key; // se usará por el canal cifrado (futuro)
+                    // El hilo retiene `stream` abierto (lectura keepalive del
+                    // cliente; EOF cae aquí sin cortar a otros).
+                    use std::io::Read;
+                    let mut buf = [0u8; 64];
+                    loop {
+                        match stream.read(&mut buf) {
+                            Ok(0) | Err(_) => {
+                                // El cliente cerró: liberar la sesión.
+                                registry_ref.remove(&session_id);
+                                println!("Sesión finalizada.");
+                                break;
+                            }
+                            Ok(_) => {} // tráfico de sesión posterior (futuro)
+                        }
+                    }
                 }
                 SessionOutcome::Rejected(e) => {
                     println!("Vinculación rechazada ({}).", e.code());

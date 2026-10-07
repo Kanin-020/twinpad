@@ -27,7 +27,7 @@ pub struct Token(pub [u8; 32]);
 pub struct Nonce(pub [u8; 32]);
 
 /// Identificador opaco de sesión: 16 bytes aleatorios (SPEC-001 §2).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SessionId(pub [u8; 16]);
 
 /// Clave de sesión derivada: 32 bytes, nunca viaja por la red (SPEC-001 R5/R6).
