@@ -106,6 +106,7 @@ fn main() {
                     // Conexión persistente (SPEC-001 §8.2): el server retiene
                     // un duplicado del stream para enviarle a la app; la
                     // conexión no se cierra tras el pair_ack.
+                    let mut session_alive = false;
                     if let Ok(held) = stream.try_clone() {
                         registry_ref.insert(
                             twinpad_server::registry::ActiveSession {
@@ -119,21 +120,56 @@ fn main() {
                             twinpad_core::message::b64_16(&session_id.0),
                             registry_ref.len(),
                         );
+                        session_alive = true;
                     }
                     let _ = session_key; // se usará por el canal cifrado (futuro)
-                    // El hilo retiene `stream` abierto (lectura keepalive del
-                    // cliente; EOF cae aquí sin cortar a otros).
-                    use std::io::Read;
-                    let mut buf = [0u8; 64];
-                    loop {
-                        match stream.read(&mut buf) {
-                            Ok(0) | Err(_) => {
-                                // El cliente cerró: liberar la sesión.
-                                registry_ref.remove(&session_id);
-                                println!("Sesión finalizada.");
-                                break;
+
+                    if session_alive {
+                        // SPEC-003 §7: stream de demostración sobre la sesión
+                        // (v1 sin Plugin: patrón animado generado en server).
+                        // Corre en otro hilo: este queda leyendo del cliente
+                        // para detectar su cierre.
+                        let writer = match stream.try_clone() {
+                            Ok(w) => Some(StreamSink { inner: w }),
+                            Err(_) => None,
+                        };
+                        let video_thread = writer.map(|mut sink| {
+                            std::thread::spawn(move || {
+                                let result = twinpad_server::video::run_demo_stream(
+                                    &mut sink,
+                                    900, // 30 s a 30 fps
+                                    twinpad_server::video::DEMO_FPS,
+                                    twinpad_server::video::DEMO_WIDTH,
+                                    twinpad_server::video::DEMO_HEIGHT,
+                                );
+                                match result {
+                                    Ok(()) => println!("Stream de demostración terminado."),
+                                    Err(_) => {
+                                        println!("Emisión detenida (receptor fuera de línea).")
+                                    }
+                                }
+                            })
+                        });
+
+                        // El hilo retiene `stream` abierto (lectura keepalive;
+                        // EOF = el cliente cerró).
+                        use std::io::Read;
+                        let mut buf = [0u8; 64];
+                        loop {
+                            match stream.read(&mut buf) {
+                                Ok(0) | Err(_) => {
+                                    // El cliente cerró: liberar la sesión y
+                                    // detener la emisión (el drop del SinkSpy
+                                    // del emisor falla al escribir y termina).
+                                    registry_ref.remove(&session_id);
+                                    println!("Sesión finalizada.");
+                                    break;
+                                }
+                                Ok(_) => {} // tráfico de sesión posterior (futuro)
                             }
-                            Ok(_) => {} // tráfico de sesión posterior (futuro)
+                        }
+                        if let Some(handle) = video_thread {
+                            let _ = handle.join();
                         }
                     }
                 }
@@ -142,6 +178,23 @@ fn main() {
                 }
             }
         });
+    }
+}
+
+/// Adaptador del stream retenido a `FrameSink` (la escritura va por el
+/// duplicado del stream; la lectura sigue en el hilo de la sesión).
+struct StreamSink {
+    inner: std::net::TcpStream,
+}
+
+impl twinpad_server::video::FrameSink for StreamSink {
+    fn send_line(&mut self, line: &str) -> bool {
+        use std::io::Write;
+        self.inner
+            .write_all(line.as_bytes())
+            .and_then(|_| self.inner.write_all(b"\n"))
+            .and_then(|_| self.inner.flush())
+            .is_ok()
     }
 }
 

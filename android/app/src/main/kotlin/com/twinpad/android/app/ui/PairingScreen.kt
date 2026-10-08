@@ -1,6 +1,7 @@
 package com.twinpad.android.app.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -31,6 +33,7 @@ fun PairingScreen(
     state: PairingUiState,
     actions: PairingActions,
     cameraController: PairingCameraController? = null,
+    streamState: com.twinpad.android.app.stream.StreamUiState? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -65,6 +68,10 @@ fun PairingScreen(
 
             is PairingUiState.Linked -> {
                 Text(stringResource(R.string.pairing_linked))
+                // SPEC-003 §5: vista de Segunda pantalla del stream activo.
+                streamState?.let { s ->
+                    SecondScreenView(s)
+                }
             }
 
             is PairingUiState.Failure -> {
@@ -72,6 +79,36 @@ fun PairingScreen(
                 RetryButton(actions.onRetry)
             }
         }
+    }
+}
+
+/**
+ * Vista de Segunda pantalla (SPEC-003 §5): presenta el Frame activo a
+ * pantalla completa del área asignada, o el estado "sin segunda pantalla
+ * activa" (REQ-004 AC-3) cuando no hay stream.
+ */
+@Composable
+private fun SecondScreenView(streamState: com.twinpad.android.app.stream.StreamUiState) {
+    val frame = streamState.lastFrame
+    if (streamState.state == com.twinpad.android.app.stream.StreamState.STREAMING &&
+        frame is android.graphics.Bitmap
+    ) {
+        androidx.compose.foundation.Image(
+            bitmap = frame.asImageBitmap(),
+            contentDescription = stringResource(R.string.second_screen_active),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(320.dp),
+        )
+    } else {
+        val message =
+            if (streamState.state == com.twinpad.android.app.stream.StreamState.INTERRUPTED) {
+                stringResource(R.string.second_screen_reconnecting)
+            } else {
+                stringResource(R.string.second_screen_inactive)
+            }
+        Text(message)
     }
 }
 

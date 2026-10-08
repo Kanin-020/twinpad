@@ -49,6 +49,7 @@ class PairingActivity : ComponentActivity() {
     @Composable
     private fun PairingScreenRoot(viewModel: PairingViewModel = viewModel()) {
         val state by viewModel.uiState.collectAsState()
+        val streamState by viewModel.streamState.collectAsState()
 
         LaunchedEffect(Unit) {
             viewModel.cameraEffects.collect { effect ->
@@ -71,7 +72,12 @@ class PairingActivity : ComponentActivity() {
                     onRetry = { viewModel.onEvent(PairingEvent.Retry) },
                     onQrScanned = { raw -> viewModel.onEvent(PairingEvent.QrScanned(raw)) },
                 )
-            PairingScreen(state = state, actions = actions, cameraController = cameraController)
+            PairingScreen(
+                state = state,
+                actions = actions,
+                cameraController = cameraController,
+                streamState = streamState,
+            )
         }
     }
 }

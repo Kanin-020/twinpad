@@ -38,7 +38,7 @@
 |---|---|---|---|---|---|---|
 | SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `Approved` | DES-001 | TEST-001..009 (5 en código `core/`) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
 | SPEC-002 | App Android: escaneo del QR y pantalla de Pairing | REQ-002 | `Approved` | DES-002 | TEST-010..014 (implementados, 12 casos JVM) | [SPEC-002-android-pairing-ui.md](SPEC-002-android-pairing-ui.md) |
-| SPEC-003 | Stream de video de la Segunda pantalla (framebuffers) | REQ-004, REQ-005 (video) | `Draft` | `-` | TEST-015..017 (reservados) | [SPEC-003-video-stream.md](SPEC-003-video-stream.md) |
+| SPEC-003 | Stream de video de la Segunda pantalla (framebuffers) | REQ-004, REQ-005 (video) | `Approved` | `-` | TEST-015..017 (reservados) | [SPEC-003-video-stream.md](SPEC-003-video-stream.md) |
 
 ## Deprecated
 

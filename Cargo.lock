@@ -234,6 +234,7 @@ dependencies = [
 name = "twinpad-server"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "getrandom",
  "qrcodegen",
  "twinpad-core",

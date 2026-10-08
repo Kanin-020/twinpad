@@ -16,4 +16,7 @@
     <string name="pairing_error_invalid_qr">QR no válido</string>
     <string name="pairing_error_camera_denied">Se necesita la cámara para escanear el QR</string>
     <string name="pairing_session_ended">Sesión terminada</string>
+    <string name="second_screen_active">Segunda pantalla</string>
+    <string name="second_screen_inactive">Sin segunda pantalla activa</string>
+    <string name="second_screen_reconnecting">Reconectando segunda pantalla…</string>
 </resources>

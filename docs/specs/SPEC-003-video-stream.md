@@ -4,8 +4,8 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (framebuffers) |
-| Version | 0.1.0 |
-| Status | `Draft` |
+| Version | 1.0.0 |
+| Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-XXX (`-` hasta asignar) |
@@ -195,8 +195,8 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 
 ## 17. Open questions
 
-- ¿Confirmar `rgb8` como formato de v1 (sin compresión) o exigir compresión desde el día 1 para cumplir NFR-001 en 802.11ac? — owner: Eng lead — 2026-10-07 — abierta
-- ¿Umbral de degradación (§8.3): qué métrica exacta dispara la reducción (cola de envío en frames, % de pérdida)? — owner: Eng lead — 2026-10-07 — abierta
+- ¿Formato v1 sin compresión o con compresión desde el día 1? — owner: Eng lead — 2026-10-07 — **resuelta: sin compresión en v1; `rgb8` es el único formato requerido en la primera implementación (`gray8` queda definido pero no exigido). Si la medición de NFR-001 fallara, la compresión entra por CR.**
+- ¿Umbral de degradación (§8.3): qué métrica exacta dispara la reducción (cola de envío en frames, % de pérdida)? — owner: Eng lead — 2026-10-07 — abierta (la implementación puede dejarla parametrizada; no bloquea AC-1/AC-3)
 
 ## Definition of Done
 
@@ -214,3 +214,4 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
+| 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |

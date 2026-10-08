@@ -13,3 +13,4 @@ pub mod qr_render;
 pub mod registry;
 pub mod session;
 pub mod tokens;
+pub mod video;

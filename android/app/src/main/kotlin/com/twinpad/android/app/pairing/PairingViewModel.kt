@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val machine = PairingStateMachine()
     private val network = TcpPairingClient()
+    private val streamMachine = com.twinpad.android.app.stream.StreamStateMachine()
 
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
@@ -32,10 +33,53 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val _cameraEffects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     val cameraEffects: SharedFlow<Effect> = _cameraEffects
 
+    /** Estado de la Segunda pantalla (SPEC-003 §5) para la vista de stream. */
+    private val _streamState =
+        MutableStateFlow(com.twinpad.android.app.stream.StreamUiState())
+    val streamState: StateFlow<com.twinpad.android.app.stream.StreamUiState> = _streamState
+
     init {
         viewModelScope.launch {
-            network.lines.collect { line -> feed(PairingEvent.WireMessage(line)) }
+            network.lines.collect { line ->
+                if (_uiState.value is PairingUiState.Linked) {
+                    onStreamLine(line) // SPEC-003: tráfico de sesión
+                } else {
+                    feed(PairingEvent.WireMessage(line))
+                }
+            }
         }
+        // SPEC-003 §6: marcar V2 si el stream se queda sin frames.
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(com.twinpad.android.app.wire.ProtocolConstants.STREAM_TICK_MS)
+                val s = streamMachine.tick(System.currentTimeMillis())
+                if (s != _streamState.value.state) {
+                    _streamState.value = _streamState.value.copy(state = s)
+                }
+            }
+        }
+    }
+
+    /** SPEC-003: una línea de la fase de sesión (post-pair_ack).
+     * Actualiza el estado del stream y publica el frame si aplica. */
+    private fun onStreamLine(line: String?) {
+        if (line == null) {
+            // Corte de conexión con sesión activa: V0 y sesión terminada
+            // (SPEC-002 §9 la reporta; aquí solo limpiamos el stream).
+            streamMachine.reset()
+            _streamState.value = com.twinpad.android.app.stream.StreamUiState()
+            feed(PairingEvent.WireMessage(null))
+            return
+        }
+        val frame = streamMachine.onLine(line)
+        val newState = streamMachine
+        _streamState.value =
+            com.twinpad.android.app.stream.StreamUiState(
+                state = newState.state,
+                lastFrame = frame ?: _streamState.value.lastFrame,
+                width = newState.width,
+                height = newState.height,
+            )
     }
 
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
