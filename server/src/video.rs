@@ -59,6 +59,36 @@ pub fn run_demo_stream(
     w: u16,
     h: u16,
 ) -> Result<(), VideoSourceError> {
+    let mut source = |fn_: u64| Some((w, h, demo_frame(fn_, w, h)));
+    run_frame_stream(sink, frames, fps, &mut source)
+}
+
+/// Fuente de frames rgb8: recibe el `fn` y devuelve `(w, h, data)` o `None`
+/// para terminar el stream limpio (p. ej. la captura falló o se detuvo).
+pub type FrameSource<'a> = &'a mut dyn FnMut(u64) -> Option<(u16, u16, Vec<u8>)>;
+
+/// Emite un stream de `frames` cuadros a `fps`, pidiendo cada framebuffer a
+/// `source` (SPEC-003 §7 pasos 1–5). `None` de la fuente → `stream_stop`.
+/// Bloquea el hilo caller; pensado para correr en su propio hilo por sesión.
+///
+/// # Errors
+/// `Disconnected` si el receptor deja de estar disponible a mitad del stream.
+pub fn run_frame_stream(
+    sink: &mut dyn FrameSink,
+    frames: u64,
+    fps: u8,
+    source: FrameSource,
+) -> Result<(), VideoSourceError> {
+    let Some((w, h, _)) = source(0) else {
+        // Sin primer frame no hay stream que anunciar: fin limpio.
+        return send(
+            sink,
+            &StreamMsg::StreamStop {
+                reason: twinpad_core::stream::StreamStopReason::PluginStopped,
+            },
+        );
+    };
+    let (mut w, mut h) = (w, h);
     let start = StreamMsg::StreamStart {
         w,
         h,
@@ -70,14 +100,31 @@ pub fn run_demo_stream(
     let frame_period = std::time::Duration::from_millis(1_000 / u64::from(fps));
     let mut next_deadline = Instant::now();
     for fn_ in 0..frames {
-        let data = base64_url(&demo_frame(fn_, w, h));
+        let Some((fw, fh, data)) = source(fn_) else {
+            break; // la fuente se detuvo: §7 paso 5
+        };
+        // §8.1: si la resolución cambió a mitad de sesión, se anuncia un
+        // `stream_start` nuevo con los parámetros vigentes; `fn` continúa.
+        if fw != w || fh != h {
+            w = fw;
+            h = fh;
+            send(
+                sink,
+                &StreamMsg::StreamStart {
+                    w,
+                    h,
+                    fmt: FrameFormat::Rgb8,
+                    fps,
+                },
+            )?;
+        }
         let frame = StreamMsg::VideoFrame {
             fn_,
             ts: next_deadline.elapsed().as_millis() as u64,
-            w,
-            h,
+            w: fw,
+            h: fh,
             fmt: FrameFormat::Rgb8,
-            data,
+            data: base64_url(&data),
         };
         send(sink, &frame)?;
         next_deadline += frame_period;
@@ -102,6 +149,35 @@ fn send(sink: &mut dyn FrameSink, msg: &StreamMsg) -> Result<(), VideoSourceErro
     } else {
         Err(VideoSourceError::Disconnected)
     }
+}
+
+/// Resolución de salida de la captura de escritorio (v1 demo; 16:9).
+pub const CAPTURE_WIDTH: u16 = 640;
+pub const CAPTURE_HEIGHT: u16 = 360;
+
+/// Emite el escritorio del PC capturado a `fps` (fuente temporal mientras
+/// no hay Plugin: SPEC-003 §17, decisión del owner). Escala a 640×360.
+///
+/// # Errors
+/// `Disconnected` si el receptor deja de estar disponible; un fallo de
+/// captura detiene el stream limpio (no es un error del transporte).
+pub fn run_desktop_stream(
+    sink: &mut dyn FrameSink,
+    frames: u64,
+    fps: u8,
+    grabber: &twinpad_capture::DesktopGrabber,
+) -> Result<(), VideoSourceError> {
+    let mut source = |fn_: u64| {
+        let _ = fn_;
+        grabber.frame().ok().map(|(sw, sh, rgba)| {
+            (
+                CAPTURE_WIDTH,
+                CAPTURE_HEIGHT,
+                twinpad_capture::rgb8_scaled(&rgba, sw, sh, CAPTURE_WIDTH, CAPTURE_HEIGHT),
+            )
+        })
+    };
+    run_frame_stream(sink, frames, fps, &mut source)
 }
 
 /// base64url canónico sin relleno (igual criterio que `core::message`).

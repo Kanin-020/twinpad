@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 twinpad-core = { path = "../core" }
+twinpad-capture = { path = "capture" }
 getrandom = "0.3"
 base64 = "0.22"
 # Render del QR de vinculación en terminal (ENG §11: MIT/Apache, sin unsafe,

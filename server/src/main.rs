@@ -125,25 +125,54 @@ fn main() {
                     let _ = session_key; // se usará por el canal cifrado (futuro)
 
                     if session_alive {
-                        // SPEC-003 §7: stream de demostración sobre la sesión
-                        // (v1 sin Plugin: patrón animado generado en server).
-                        // Corre en otro hilo: este queda leyendo del cliente
-                        // para detectar su cierre.
+                        // SPEC-003 §7: fuente temporal sin Plugin (§17 del
+                        // SPEC + decisión del owner): duplicado del escritorio
+                        // capturado con xcap; TWINPAD_SOURCE=demo fuerza el
+                        // patrón animado. Si la captura no está disponible
+                        // (permisos, Wayland), cae al patrón con aviso.
                         let writer = match stream.try_clone() {
                             Ok(w) => Some(StreamSink { inner: w }),
                             Err(_) => None,
                         };
+                        let force_demo =
+                            matches!(std::env::var("TWINPAD_SOURCE").as_deref(), Ok("demo"));
+                        let grabber = if force_demo {
+                            None
+                        } else {
+                            match twinpad_capture::DesktopGrabber::new() {
+                                Ok(g) => {
+                                    println!(
+                                        "Fuente de video: escritorio del PC (TWINPAD_SOURCE=demo para el patrón de prueba)."
+                                    );
+                                    Some(g)
+                                }
+                                Err(e) => {
+                                    println!(
+                                        "Captura de escritorio no disponible ({e:?}); usando patrón de demostración."
+                                    );
+                                    None
+                                }
+                            }
+                        };
                         let video_thread = writer.map(|mut sink| {
                             std::thread::spawn(move || {
-                                let result = twinpad_server::video::run_demo_stream(
-                                    &mut sink,
-                                    u64::MAX, // hasta que la sesión se corte
-                                    twinpad_server::video::DEMO_FPS,
-                                    twinpad_server::video::DEMO_WIDTH,
-                                    twinpad_server::video::DEMO_HEIGHT,
-                                );
+                                let result = match &grabber {
+                                    Some(g) => twinpad_server::video::run_desktop_stream(
+                                        &mut sink,
+                                        u64::MAX, // hasta que la sesión se corte
+                                        twinpad_server::video::DEMO_FPS,
+                                        g,
+                                    ),
+                                    None => twinpad_server::video::run_demo_stream(
+                                        &mut sink,
+                                        u64::MAX, // hasta que la sesión se corte
+                                        twinpad_server::video::DEMO_FPS,
+                                        twinpad_server::video::DEMO_WIDTH,
+                                        twinpad_server::video::DEMO_HEIGHT,
+                                    ),
+                                };
                                 match result {
-                                    Ok(()) => println!("Stream de demostración terminado."),
+                                    Ok(()) => println!("Stream terminado."),
                                     Err(_) => {
                                         println!("Emisión detenida (receptor fuera de línea).")
                                     }

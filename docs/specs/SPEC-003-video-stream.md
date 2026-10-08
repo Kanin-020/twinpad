@@ -197,6 +197,7 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 
 - ¿Formato v1 sin compresión o con compresión desde el día 1? — owner: Eng lead — 2026-10-07 — **resuelta: sin compresión en v1; `rgb8` es el único formato requerido en la primera implementación (`gray8` queda definido pero no exigido). Si la medición de NFR-001 fallara, la compresión entra por CR.**
 - ¿Umbral de degradación (§8.3): qué métrica exacta dispara la reducción (cola de envío en frames, % de pérdida)? — owner: Eng lead — 2026-10-07 — abierta (la implementación puede dejarla parametrizada; no bloquea AC-1/AC-3)
+- ¿Qué transmite el stream mientras no existe el Plugin (SPEC-006)? — owner: usuario — 2026-10-08 — **resuelta: duplicado del escritorio del PC capturado con `xcap` (`twinpad-capture::DesktopGrabber`, escalado a 640×360 rgb8); si la captura no está disponible, fallback al patrón de demostración animado. El contenido real del juego entra con SPEC-006.**
 
 ## Definition of Done
 
