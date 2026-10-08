@@ -15,6 +15,7 @@
 pub mod crypto;
 pub mod error;
 pub mod handshake;
+pub mod input;
 pub mod message;
 pub mod qr;
 pub mod stream;

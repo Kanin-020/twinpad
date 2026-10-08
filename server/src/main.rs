@@ -137,7 +137,7 @@ fn main() {
                             std::thread::spawn(move || {
                                 let result = twinpad_server::video::run_demo_stream(
                                     &mut sink,
-                                    900, // 30 s a 30 fps
+                                    u64::MAX, // hasta que la sesión se corte
                                     twinpad_server::video::DEMO_FPS,
                                     twinpad_server::video::DEMO_WIDTH,
                                     twinpad_server::video::DEMO_HEIGHT,
@@ -152,11 +152,15 @@ fn main() {
                         });
 
                         // El hilo retiene `stream` abierto (lectura keepalive;
-                        // EOF = el cliente cerró).
-                        use std::io::Read;
-                        let mut buf = [0u8; 64];
+                        // EOF = el cliente cerró). Aquí llegan los
+                        // `input_report` de la app (SPEC-004, ADR-007).
+                        let mut last_seq: Option<u32> = None;
+                        use std::io::{BufRead, BufReader};
+                        let mut reader = BufReader::new(stream);
+                        let mut line = String::new();
                         loop {
-                            match stream.read(&mut buf) {
+                            line.clear();
+                            match reader.read_line(&mut line) {
                                 Ok(0) | Err(_) => {
                                     // El cliente cerró: liberar la sesión y
                                     // detener la emisión (el drop del SinkSpy
@@ -165,7 +169,21 @@ fn main() {
                                     println!("Sesión finalizada.");
                                     break;
                                 }
-                                Ok(_) => {} // tráfico de sesión posterior (futuro)
+                                Ok(_) => {
+                                    // SPEC-004 §9: reporte con `seq` viejo se
+                                    // descarta; aquí solo validamos y registramos.
+                                    let trimmed = line.trim_end();
+                                    if trimmed.is_empty() {
+                                        continue;
+                                    }
+                                    match twinpad_core::input::InputMsg::decode(trimmed) {
+                                        Ok(report) => {
+                                            last_seq = apply_seq_filter(last_seq, &report);
+                                            println!("input_report aceptado ({last_seq:?}).");
+                                        }
+                                        Err(_) => println!("input_report inválido descartado."),
+                                    }
+                                }
                             }
                         }
                         if let Some(handle) = video_thread {
@@ -179,6 +197,16 @@ fn main() {
             }
         });
     }
+}
+
+/// SPEC-004 R2/§9: solo el reporte con `seq` mayor define el estado; los
+/// reportes viejos o repetidos se descartan. Devuelve el seq a registrar.
+fn apply_seq_filter(last_seq: Option<u32>, msg: &twinpad_core::input::InputMsg) -> Option<u32> {
+    let twinpad_core::input::InputMsg::InputReport { seq, .. } = msg;
+    if last_seq.is_none_or(|last| *seq > last) {
+        return Some(*seq);
+    }
+    last_seq
 }
 
 /// Adaptador del stream retenido a `FrameSink` (la escritura va por el

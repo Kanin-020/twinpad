@@ -6,4 +6,6 @@ data class PairingActions(
     val onCancel: () -> Unit,
     val onRetry: () -> Unit,
     val onQrScanned: (String) -> Unit,
+    /** SPEC-004 §7: cambio de un elemento de la superficie táctil (ADR-007). */
+    val onGamepadInput: (com.twinpad.android.app.wire.InputReport) -> Unit,
 )

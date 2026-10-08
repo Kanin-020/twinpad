@@ -71,6 +71,7 @@ class PairingActivity : ComponentActivity() {
                     onCancel = { viewModel.onEvent(PairingEvent.Cancelled) },
                     onRetry = { viewModel.onEvent(PairingEvent.Retry) },
                     onQrScanned = { raw -> viewModel.onEvent(PairingEvent.QrScanned(raw)) },
+                    onGamepadInput = { report -> viewModel.onGamepadInput(report) },
                 )
             PairingScreen(
                 state = state,

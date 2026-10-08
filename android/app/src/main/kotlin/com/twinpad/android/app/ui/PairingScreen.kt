@@ -72,6 +72,8 @@ fun PairingScreen(
                 streamState?.let { s ->
                     SecondScreenView(s)
                 }
+                // SPEC-004 §7: superficie táctil → input_report (ADR-007).
+                GamepadView(actions.onGamepadInput)
             }
 
             is PairingUiState.Failure -> {
