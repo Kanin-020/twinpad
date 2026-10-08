@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| ADR | ADR-007 |
+| ADR | ADR-008 |
 
 ## Accepted
 
@@ -18,6 +18,7 @@
 | ADR-004 | Pairing por QR con autenticación mutua | 2026-10-07 | ARCH §4, §7 | [ADR-004-qr-pairing.md](ADR-004-qr-pairing.md) |
 | ADR-005 | Segunda pantalla por framebuffers (no HTML/UI) | 2026-10-07 | ARCH §2, §4 | [ADR-005-framebuffer-second-screen.md](ADR-005-framebuffer-second-screen.md) |
 | ADR-006 | Plugins: SDK Twinpad (B) + Config externa (C) | 2026-10-07 | ARCH §2, §6 | [ADR-006-plugin-models-sdk-and-config.md](ADR-006-plugin-models-sdk-and-config.md) |
+| ADR-007 | Transporte inicial de inputs: sesión LAN de SPEC-001 | 2026-10-07 | SPEC-004 §17, DES-004 | [ADR-007-hid-over-lan-initial.md](ADR-007-hid-over-lan-initial.md) |
 
 ## Proposed
 
@@ -35,6 +36,6 @@
 
 | Metric | Value |
 |---|---|
-| Accepted | 6 |
+| Accepted | 7 |
 | Proposed | 0 |
 | Last reviewed | 2026-10-07 |

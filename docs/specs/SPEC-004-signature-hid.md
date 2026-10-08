@@ -4,8 +4,8 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 0.1.0 |
-| Status | `Draft` |
+| Version | 1.0.0 |
+| Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-XXX (`-` hasta asignar; ADR-003 define el medio) |
@@ -161,9 +161,11 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 
 - ¿Cobertura real de HID device role por dispositivo Android 12+? (encuesta de dispositivos) — owner: Eng lead — 2026-10-07 — abierta
 - ¿El rumble viaja solo por output reports de BT HID o también por la sesión LAN como respaldo? — owner: Eng lead — 2026-10-07 — abierta (se decide en DES-004)
+- ¿El transporte de `input_report` en la primera implementación es el canal HID Bluetooth de ADR-003 o la sesión LAN de SPEC-001? — owner: Eng lead — 2026-10-07 — **resuelta por el owner (usuario): la primera implementación usa la sesión LAN persistente de SPEC-001 (mismo canal NDJSON que SPEC-003); la vía Bluetooth HID nativa (ADR-003) es la meta final y entra por iteración/ADR posterior.**
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: Signature HID y flujo de inputs |
+| 1.0.0 | 2026-10-07 | Eng lead (owner) | Approved: transporte inicial por sesión LAN de SPEC-001 (ver §17); BT HID nativo queda como meta (ADR-003) |
