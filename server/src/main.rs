@@ -235,3 +235,35 @@ fn local_addr_for_qr() -> String {
         })
         .unwrap_or_else(|_| "127.0.0.1".to_string())
 }
+
+// ENG §6: unwrap permitido solo en tests.
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use twinpad_core::input::InputMsg;
+
+    // TEST-018 — verifies SPEC-004 (§9/R2: reporte con `seq` viejo se descarta).
+    fn report(seq: u32) -> InputMsg {
+        let line = format!(
+            "{{\"type\":\"input_report\",\"seq\":{seq},\"stick_lx\":0,\"stick_ly\":0,\"stick_rx\":0,\"stick_ry\":0,\"dpad\":8,\"buttons\":0,\"trigger_l2\":0,\"trigger_r2\":0}}"
+        );
+        InputMsg::decode(&line).unwrap()
+    }
+
+    #[test]
+    fn first_report_is_accepted() {
+        assert_eq!(apply_seq_filter(None, &report(0)), Some(0));
+    }
+
+    #[test]
+    fn greater_seq_is_accepted() {
+        assert_eq!(apply_seq_filter(Some(3), &report(4)), Some(4));
+    }
+
+    #[test]
+    fn stale_or_repeated_seq_is_dropped() {
+        assert_eq!(apply_seq_filter(Some(5), &report(5)), Some(5));
+        assert_eq!(apply_seq_filter(Some(5), &report(2)), Some(5));
+    }
+}
