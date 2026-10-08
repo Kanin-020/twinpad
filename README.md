@@ -2,7 +2,7 @@
 
 Segunda pantalla + gamepad HID para PC desde un celular Android, vinculados por QR en la red local. Stack: Kotlin (Android) + Rust (PC/núcleo) — ver [ADR-001](docs/decisions/ADR-001-kotlin-rust-stack.md).
 
-> Proyecto Spec-Driven: el comportamiento vive en `docs/specs/` y nada se implementa sin SPEC `Approved` ([workflow](docs/process/workflow.md)). Estado actual: scaffold compilable + SPEC-001 `In review` (pairing QR + handshake autenticado).
+> Proyecto Spec-Driven: el comportamiento vive en `docs/specs/` y nada se implementa sin SPEC `Approved` ([workflow](docs/process/workflow.md)). Estado actual: **funcionando de punta a punta en banco físico** — pairing por QR, Segunda pantalla con duplicado del escritorio PC y controles táctiles (D-pad + A/B/X/Y) enviando inputs al server. Qué sigue: [`TODO.md`](TODO.md).
 
 ## Requisitos
 

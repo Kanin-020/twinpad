@@ -1,6 +1,6 @@
 # TODO / Done — Twinpad
 
-> Estado vivo del proyecto. Actualizado: 2026-10-07. Para agentes: los ítems siguen el pipeline SDD (REQ → SPEC → DES → implementación → verificación); no implementar sin SPEC `Approved` (workflow §2–3).
+> Estado vivo del proyecto. Actualizado: 2026-10-08. Para agentes: los ítems siguen el pipeline SDD (REQ → SPEC → DES → implementación → verificación); no implementar sin SPEC `Approved` (workflow §2–3). Registrado en el mapa de documentación: [`docs/README.md`](docs/README.md) ("How to use this documentation").
 
 ## ✅ Done
 
@@ -21,24 +21,37 @@
 | 13 | **QR renderizado + decodificador de cámara** | Server: QR Unicode en terminal (`server::qr_render`, qrcodegen MIT/Apache). App: analyzer ML Kit en `PairingCameraController` (SPEC-002 §6 U2, diferido de DES-002 §14 ya resuelto) | `feat(server)` `feat(android)` |
 | 14 | **Cadena de conexión verificada de punta a punta** | Fixes de la primera ronda de pruebas: preview de cámara no cableado a la Activity (salía negro); carrera Connect/SendLine en `TcpPairingClient` descartaba el `pair_request` (E1 siempre); polaridad invertida del QR terminal recortaba el lado izquierdo. Permiso INTERNET explícito; scripts `run-server.sh` / `test-qr.sh` | `fix(android)` `fix(server)` `build(scripts)` |
 | 15 | **Conexión persistente (SPEC-001 §8.2)** | `SessionRegistry` retiene cada stream tras el pair_ack; hilo de conexión queda en bucle de lectura (EOF libera la sesión). Verificado con cliente de prueba: conexión viva 5 s tras pair_ack; ganchos para TEST-007/008 | `feat(server)` |
-| 16 | **SPEC-003 (video) Approved + pipeline implementado** | Transporte de framebuffers rgb8 sin compresión sobre la conexión persistente: codec en `core::stream` (40 tests core), emisor demo en `server::video` (start/frames/stop, 30 fps), receptor en la app (`StreamCodec` + `FrameRenderer` + `StreamStateMachine` V0/V1/V2, vista Compose). Verificado: 100 frames `fn=0..99` 320×180 por TCP real — **la app necesita prueba en tu teléfono** | `feat(video)` |
+| 16 | **SPEC-003 (video) Approved + pipeline implementado** | Transporte de framebuffers rgb8 sin compresión sobre la conexión persistente: codec en `core::stream` (40 tests core), emisor en `server::video` (start/frames/stop, 30 fps), receptor en la app (`StreamCodec` + `FrameRenderer` + `StreamStateMachine` V0/V1/V2, vista Compose). Verificado: 100 frames `fn=0..99` 320×180 por TCP real — **la app necesita prueba en tu teléfono** | `feat(video)` |
+| 17 | **Prueba física de pairing + video: 3 problemas resueltos** | 1) La "pantalla arcoíris" era el patrón demo (no bug de render; confirmado por el owner). 2) El corte a los ~30 s era el stream demo limitado a 900 frames → ahora emite mientras la sesión viva. 3) Sirvió de banco físico real: QR → pairing → stream visibles en el teléfono | `ef4f3ac` (parcial) |
+| 18 | **SPEC-004 (HID) `Approved` v1.0.0 + ADR-007 + inputs implementados** | Owner aprobó el SPEC y la OQ de transporte: `input_report` viaja por la sesión LAN de SPEC-001 (ADR-007); BT HID nativo queda como meta (ADR-003). Codec estricto en `core::input` (E4, gyro opcional), `GamepadStateMachine` (seq creciente, reporte solo al cambio) + `InputCodec` + superficie táctil (D-pad + A/B/X/Y con presionar/soltar) en la app, filtro R2 de `seq` en el server. TEST-018 (parcial) | `e773c55` `ef4f3ac` `7c9ce01` |
+| 19 | **Duplicado del escritorio PC como fuente del stream** | Decisión del owner (SPEC-003 §17): `twinpad-capture::DesktopGrabber` con xcap + conversión pura RGBA→rgb8 escalada a 640×360 (vecino más próximo, 4 tests); `run_frame_stream` genérico con re-anuncio §8.1; captura por defecto con fallback al patrón demo (`TWINPAD_SOURCE=demo`); aviso de limitación Wayland | `65cea4a` `597e91f` |
 
-## ⬜ TODO (pendiente)
+## ⬜ Qué sigue (orden propuesto)
 
 | # | Ítem | Bloqueado por / dependencia | Dueño |
 |---|---|---|---|
-| 1 | **Completar TEST-007 (reanudación §8.2) y TEST-008 (revocación por UI)** — los aspectos de TEST-002/005/006/009 ya están en verde en loopback | Registro de sesiones activas en `server/` | Eng/agent |
-| 2 | **Validación en dispositivo** del escaneo + la Segunda pantalla (cámara → pairing → frames en la app) | Dispositivo/emulador con cámara | Eng/agent + tú |
-| 4 | **~~SPEC-003+ drafts~~ → todos los SPECs redactados**: SPEC-004 (Signature HID), 005 (audio), 006 (SDK), 007 (Config), 008 (táctil) en `Draft` — **pendientes de tu revisión/aprobación** | Revisión del dueño | Eng lead (tú) |
-| 5 | **Aprobar documentos base en `Draft`**: CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy | Revisión del dueño | Eng lead (tú) |
-| 6 | **`gradle.lockfile`** comprometido (ENG §11) cuando el proyecto Android tenga dependencias reales | Ítem 3 | Eng/agent |
-| 6b | **Keystore propio para APK release** — hoy se firma con debug key solo para pruebas locales | Antes de cualquier distribución | Eng lead |
-| 7 | **CI remota en verde** — el workflow nunca corrió en GitHub (sin push); primer push valida el job Android | Push autorizado por ti | Eng lead (tú) |
-| 8 | **Verificación NFR-001..007** (latencias, CPU, batería, seguridad NFR-004 end-to-end) — requieren banco de pruebas físico PC+Android | Release, no merge | QA/Eng lead |
-| 9 | **Edge cases REQ-001 §8**: comportamiento tras suspensión/hibernación y cierre de sesión Windows → SPEC futuro | SPEC de REQ-001 | Eng lead |
+| 1 | **Sticks analógicos + triggers en la superficie táctil** — la Signature ya los define (SPEC-004 §2); falta el UI (pad virtual + sliders) que los alimente | Nada: SPEC-004 Approved | Eng/agent |
+| 2 | **Prueba física de la Segunda pantalla real** — duplicado del escritorio visible en el teléfono + inputs llegando al server (logs `input_report aceptado`) | Server reconstruido (`65cea4a`); en Wayland puede pedir permiso del portal | Tú (banco físico) |
+| 3 | **Aprobar SPEC-005 (audio)** → DES → implementación (`audio_start/chunk/stop`, jitter 500 ms, sincronía A/V) | Draft pendiente de tu revisión | Tú aprueba → Eng/agent |
+| 4 | **Aprobar SPEC-006 (Plugin/SDK)** — detección de juego + anuncio `game_id/capabilities`; es la fuente de contenido real de la Segunda pantalla | Draft pendiente de tu revisión | Tú aprueba → Eng/agent |
+| 5 | **SPEC-008: editor de superficie táctil configurable** (≤24 controles, perfiles por juego) | Draft; base: ítem 1 + SPEC-007 (Config) | Tú aprueba → Eng/agent |
+| 6 | **BT HID nativo (ADR-003)** — que Windows liste el celular como gamepad (REQ-003 AC-1) + rumble PC→app (TEST-019); requiere DES-004 | Depende de soporte HID device role del teléfono (CTX-A2); la app ya manda inputs por LAN mientras tanto | Eng lead + tú |
+| 7 | **TEST-007 (reanudación §8.2) y TEST-008 (revocación por UI)** sobre el registro de sesiones ya implementado | Nada técnico; prioridad baja frente a features | Eng/agent |
+| 8 | **Infra de release**: keystore propio para APK release, `gradle.lockfile`, primer push que valide CI remota | Push autorizado por ti (CI); keystore antes de distribuir | Tú + Eng/agent |
+| 9 | **Verificación NFR-001..007** (latencias p95, CPU, batería, NFR-004 end-to-end) — requieren banco físico + inyección sintética | Release, no merge | QA/Eng lead |
 
-## Camino mínimo actual
+## Camino actual (lo próximo que se construye)
 
-1. Aprobar SPEC-003 (video) → DES → implementación: stream de frames sobre la conexión persistente ya existente.
-2. Probar el pairing real de punta a punta en tu banco PC+teléfono.
-3. TEST-007/008 (reanudación y revocación por UI) sobre el registro de sesiones ya implementado.
+1. **Ítem 1**: sticks analógicos + triggers táctiles en la app (SPEC-004 ya lo cubre; no requiere SPEC nuevo).
+2. **Ítem 2**: tú prueban en el teléfono el duplicado de escritorio y los botones (el server ya loguea los `input_report`).
+3. **Ítem 3**: tú revisas/apruebas SPEC-005 (audio) para seguir el pipeline.
+
+## Pendientes de tu decisión (Drafts por aprobar)
+
+| Documento | Qué desbloquea al aprobarse |
+|---|---|
+| SPEC-005 (audio) | Ítem 3 — sonido del juego en el teléfono |
+| SPEC-006 (Plugin/SDK) | Ítem 4 — contenido real del juego en la Segunda pantalla |
+| SPEC-007 (Config externa) | Ítem 5 — controles para juegos sin integración |
+| SPEC-008 (superficie táctil) | Ítem 5 — editor de botones configurable |
+| CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy (base en `Draft`) | Formalidad del pipeline SDD; no bloquean implementación |

@@ -8,6 +8,7 @@
 | If you are... | Start with | Then |
 |---|---|---|
 | New to the project | [`product/context.md`](product/context.md) | `requirements/`, `architecture/` |
+| Looking for what is done / what is next | [`../TODO.md`](../TODO.md) | `specs/_index.md`, `testing/traceability.md` |
 | Adding a feature | `requirements/_index.md` → `specs/_index.md` → `design/_index.md` | `process/workflow.md` |
 | Implementing a SPEC as an agent | `specs/SPEC-XXX.md` | `engineering/guidelines.md` + `architecture/architecture.md` |
 | Changing an approved SPEC | `process/change-requests/CR-XXX.md` | `process/workflow.md` |
@@ -32,6 +33,7 @@
 | AI agent rules | — | `process/ai-agent-rules.md` | Rules for AI agents consuming this documentation | How to work with it | Eng lead | Rule change |
 | Commit skill (agent skill) | — | `.agents/skills/commit/SKILL.md` | Executable procedure that makes `/skills:commit` produce a real git commit | How to commit | Eng lead | Commit flow change |
 | Change Request | `CR` | `process/change-requests/CR-XXX-slug.md` | Controlled change to an approved document | What changed and why | Anyone proposes; approver decides | Each change |
+| Project tracker (status / next) | — | [`TODO.md`](../TODO.md) (repo root) | Living list of Done items (with commits) and the ordered roadmap of what to build next, mapped to the SDD pipeline | What is the current state, what is next, which drafts await approval | Eng lead + owner | Every completed item, approval or roadmap change |
 | Quality rules | — | `product/quality-rules.md` | Validation checklist per document type for reviewers and agents | Is this doc correctly defined | Eng lead | A template or rule changes |
 | Traceability example | — | `examples/traceability-example.md` | Worked miniature chain REQ→SPEC→DES→TEST as reference | What does a good chain look like | Eng lead | Only as a teaching reference |
 
