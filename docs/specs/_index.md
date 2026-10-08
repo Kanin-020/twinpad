@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| SPEC | SPEC-004 |
+| SPEC | SPEC-009 |
 
 > 💡 Reserve here when creating a Draft. Numbers are never reused.
 
@@ -38,7 +38,12 @@
 |---|---|---|---|---|---|---|
 | SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `Approved` | DES-001 | TEST-001..009 (5 en código `core/`) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
 | SPEC-002 | App Android: escaneo del QR y pantalla de Pairing | REQ-002 | `Approved` | DES-002 | TEST-010..014 (implementados, 12 casos JVM) | [SPEC-002-android-pairing-ui.md](SPEC-002-android-pairing-ui.md) |
-| SPEC-003 | Stream de video de la Segunda pantalla (framebuffers) | REQ-004, REQ-005 (video) | `Approved` | `-` | TEST-015..017 (reservados) | [SPEC-003-video-stream.md](SPEC-003-video-stream.md) |
+| SPEC-003 | Stream de video de la Segunda pantalla (framebuffers) | REQ-004, REQ-005 (video) | `Approved` | `-` | TEST-015..017 | [SPEC-003-video-stream.md](SPEC-003-video-stream.md) |
+| SPEC-004 | Signature HID y flujo de inputs del Gamepad | REQ-003 | `Draft` | `-` | TEST-018, TEST-019 | [SPEC-004-signature-hid.md](SPEC-004-signature-hid.md) |
+| SPEC-005 | Transmisión y reproducción de audio | REQ-005 | `Draft` | `-` | TEST-020 | [SPEC-005-audio-stream.md](SPEC-005-audio-stream.md) |
+| SPEC-006 | Detección de juego con SDK Twinpad | REQ-006 | `Draft` | `-` | TEST-021 | [SPEC-006-plugin-sdk-detection.md](SPEC-006-plugin-sdk-detection.md) |
+| SPEC-007 | Config externa para juegos no integrados | REQ-007 | `Draft` | `-` | TEST-022 | [SPEC-007-external-config.md](SPEC-007-external-config.md) |
+| SPEC-008 | Superficie de controles táctiles configurables | REQ-008 | `Draft` | `-` | TEST-023 | [SPEC-008-touch-controls.md](SPEC-008-touch-controls.md) |
 
 ## Deprecated
 
@@ -50,7 +55,7 @@
 
 | Metric | Value |
 |---|---|
-| Active SPECs | 3 |
+| Active SPECs | 7 |
 | Approved SPECs without TEST | 0 |
 | SPECs whose REQ is Deprecated | 0 |
 | Last reviewed | 2026-10-07 |

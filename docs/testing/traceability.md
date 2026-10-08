@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-018 |
+| TEST | TEST-024 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -31,7 +31,13 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-014 | Approved | Edge cases de UI: cancelar, segundo plano, código desconocido, reintento (§10) — implementado |
 | REQ-004 | SPEC-003 | `-` | TEST-015 | Approved | Flujo principal del stream de video (SPEC-003 §7, REQ-004 AC-1) — implementado: codec en `core::stream` (10 tests) + emisor demo en `server::video` + 100 frames verificados por TCP real |
 | REQ-004 | SPEC-003 | `-` | TEST-016 | Approved | Frame corrupto/tardío y edge cases §10 (REQ-004 AC-3) — codec estricto E4 en `core::stream` + descarte en `StreamStateMachine` (app) |
-| REQ-005 | SPEC-003 | `-` | TEST-017 | Approved | Reanudación tras corte breve < 10 s sin re-pairing (§8.2, REQ-005 AC-2) — pendiente de DES |
+| REQ-005 | SPEC-003 | `-` | TEST-017 | Approved | Reanudación tras corte breve < 10 s sin re-pairing (§8.2, REQ-005 AC-2) — implementada en el server (sesión persistente); caso de red en banco físico |
+| REQ-003 | SPEC-004 | `-` | TEST-018 | Draft | Flujo táctil → juego y orden por `seq` (SPEC-004 §7, REQ-003 AC-2) — pendiente de DES |
+| REQ-003 | SPEC-004 | `-` | TEST-019 | Draft | Rumble (AC-3) y edge cases §10 — pendiente de DES |
+| REQ-005 | SPEC-005 | `-` | TEST-020 | Draft | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — pendiente de DES |
+| REQ-006 | SPEC-006 | `-` | TEST-021 | Draft | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — pendiente de DES |
+| REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — pendiente de DES |
+| REQ-008 | SPEC-008 | `-` | TEST-023 | Draft | Edición, carga automática y conflicto de superficie (REQ-008 AC-1..3) — pendiente de DES |
 
 ## NFR verification
 

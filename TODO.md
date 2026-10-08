@@ -29,7 +29,7 @@
 |---|---|---|---|
 | 1 | **Completar TEST-007 (reanudación §8.2) y TEST-008 (revocación por UI)** — los aspectos de TEST-002/005/006/009 ya están en verde en loopback | Registro de sesiones activas en `server/` | Eng/agent |
 | 2 | **Validación en dispositivo** del escaneo + la Segunda pantalla (cámara → pairing → frames en la app) | Dispositivo/emulador con cámara | Eng/agent + tú |
-| 4 | **SPEC-003+ drafts** — Signature HID (REQ-003), audio (REQ-005), SDK (REQ-006), Config externa (REQ-007), controles táctiles (REQ-008) | Pueden redactarse en Draft en paralelo | Eng lead + agent |
+| 4 | **~~SPEC-003+ drafts~~ → todos los SPECs redactados**: SPEC-004 (Signature HID), 005 (audio), 006 (SDK), 007 (Config), 008 (táctil) en `Draft` — **pendientes de tu revisión/aprobación** | Revisión del dueño | Eng lead (tú) |
 | 5 | **Aprobar documentos base en `Draft`**: CTX, REQ-001..008, NFRs, ARCH, ENG, test-strategy | Revisión del dueño | Eng lead (tú) |
 | 6 | **`gradle.lockfile`** comprometido (ENG §11) cuando el proyecto Android tenga dependencias reales | Ítem 3 | Eng/agent |
 | 6b | **Keystore propio para APK release** — hoy se firma con debug key solo para pruebas locales | Antes de cualquier distribución | Eng lead |
