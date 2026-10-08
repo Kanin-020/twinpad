@@ -6,8 +6,12 @@
 //! v1 (SPEC-006 `Approved` + ADR-008): anuncio de presencia por el canal IPC
 //! TCP localhost. La conexión viva **es** el anuncio vivo: al soltar
 //! [`TwinpadGame`] (o al crashear el proceso) el juego deja de estar
-//! disponible automáticamente. AC-2 (frames) y AC-3 (inputs) entran en
-//! iteraciones posteriores sobre este mismo canal.
+//! disponible automáticamente. AC-3 (inputs) entra en una iteración
+//! posterior sobre este mismo canal.
+//!
+//! AC-2 (REQ-006): el juego publica los Framebuffers de su Segunda pantalla
+//! con [`TwinpadGame::push_frame`]; el server los re-empaqueta como
+//! `video_frame` de SPEC-003 hacia la app.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -93,7 +97,10 @@ impl GameConfig {
 /// Handle del juego anunciado: manténgalo vivo mientras el juego quiera
 /// estar disponible. Soltarlo (o crashear) lo retira del server (R2).
 pub struct TwinpadGame {
-    _stream: TcpStream,
+    stream: TcpStream,
+    game_id: String,
+    /// Número de frame publicado (AC-2): monotónico desde 0 por conexión.
+    gfn: u64,
 }
 
 impl TwinpadGame {
@@ -150,10 +157,60 @@ impl TwinpadGame {
                 stream
                     .set_read_timeout(None)
                     .map_err(SdkError::ServerUnreachable)?;
-                Ok(Self { _stream: stream })
+                Ok(Self {
+                    stream,
+                    game_id: config.game_id,
+                    gfn: 0,
+                })
             }
             Err(e) => Err(SdkError::ServerUnreachable(e)),
         }
+    }
+
+    /// Identificación del juego anunciado (vía `game_id`).
+    #[must_use]
+    pub fn game_id(&self) -> &str {
+        &self.game_id
+    }
+
+    /// Publica un Framebuffer de la Segunda pantalla del juego (REQ-006
+    /// AC-2). `data` son `w×h×bpp` bytes crudos de `fmt`, fila mayor.
+    ///
+    /// El `gfn` lo asigna el SDK (monotónico desde 0 por conexión); el
+    /// server re-empacará el frame con el `fn` de su stream hacia la app.
+    ///
+    /// # Errors
+    /// [`SdkError::InvalidConfig`] si los parámetros no cumplen SPEC-003 §4
+    /// (dimensiones o tamaño de `data`); [`SdkError::AnnouncementRejected`]
+    /// si la conexión cayó (el juego dejó de estar disponible, §9).
+    pub fn push_frame(
+        &mut self,
+        w: u16,
+        h: u16,
+        fmt: twinpad_core::stream::FrameFormat,
+        data: &[u8],
+    ) -> Result<(), SdkError> {
+        let expected = usize::from(w) * usize::from(h) * fmt.bytes_per_pixel();
+        if data.len() != expected {
+            return Err(SdkError::InvalidConfig);
+        }
+        use base64::Engine as _;
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data);
+        self.gfn = self.gfn.wrapping_add(1);
+        let line = GameMsg::GameFrame {
+            gfn: self.gfn,
+            w,
+            h,
+            fmt,
+            data: encoded,
+        }
+        .encode()
+        .map_err(|_| SdkError::InvalidConfig)?;
+        self.stream
+            .write_all(line.as_bytes())
+            .and_then(|_| self.stream.write_all(b"\n"))
+            .and_then(|_| self.stream.flush())
+            .map_err(|_| SdkError::AnnouncementRejected)
     }
 }
 

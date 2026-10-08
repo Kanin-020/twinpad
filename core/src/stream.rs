@@ -172,6 +172,20 @@ fn validate_frame_size(w: u16, h: u16, fmt: FrameFormat, data: &str) -> PairResu
     Ok(())
 }
 
+/// Valida parámetros de Framebuffer según SPEC-003 §4 (dimensiones, tamaño
+/// de `data` en base64url); compartido por los sobres de otros canales (p.
+/// ej. `game_frame` de `core::game`, REQ-006 AC-2). Es `pub(crate)`: el
+/// contrato canónico sigue siendo el de este módulo (ENG: SSOT).
+pub(crate) fn validate_frame_params(
+    w: u16,
+    h: u16,
+    fmt: FrameFormat,
+    data: &str,
+) -> PairResult<()> {
+    validate_dims(w, h)?;
+    validate_frame_size(w, h, fmt, data)
+}
+
 // ENG §6: unwrap/panic permitidos solo en tests (ámbito: este módulo).
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]

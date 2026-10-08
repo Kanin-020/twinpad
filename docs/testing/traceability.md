@@ -36,6 +36,7 @@
 | REQ-003 | SPEC-004 | `-` | TEST-019 | Approved | Rumble (AC-3) y edge cases §10 — postergado a la iteración de rumble (requiere canal PC→app) |
 | REQ-005 | SPEC-005 | `-` | TEST-020 | Draft | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — pendiente de DES |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
+| REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | AC-2: el juego publica frames de Segunda pantalla vía SDK (`TwinpadGame::push_frame` → `game_frame`) y el server los retiene como fuente del Stream de SPEC-003 (se emiten como `video_frame`); liveness del contenido (invariante §14: el frame muere con el juego) — `core::game::GameMsg::GameFrame` + `server::games::GameRegistry::store_frame/preferred_source` + `server::video::run_game_stream` + 4 tests de integración loopback en `server/tests/sdk_frames_integration.rs` |
 | REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — pendiente de DES |
 | REQ-008 | SPEC-008 | `-` | TEST-023 | Draft | Edición, carga automática y conflicto de superficie (REQ-008 AC-1..3) — pendiente de DES |
 

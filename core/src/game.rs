@@ -3,10 +3,18 @@
 //! Dos mensajes con codec estricto (desviación → E4):
 //! - `game_announce`: juego → server por el canal IPC (TCP localhost, la
 //!   conexión viva es el anuncio vivo — ADR-008).
+//! - `game_frame`: juego → server por el canal IPC: un Framebuffer de su
+//!   Segunda pantalla (REQ-006 AC-2) que alimenta el Stream de SPEC-003.
 //! - `games_available`: server → app por la sesión de SPEC-001 (§5), cada
 //!   vez que la lista de juegos vivos cambia.
+//!
+//! Los parámetros del Framebuffer (`w`/`h`/`fmt`, 16–3840×16–2160, rgb8/gray8)
+//! y su validación son los de SPEC-003 §4 (`core::stream`), sin duplicación:
+//! este módulo solo define el sobre IPC y su orden por `gfn` (cfr. `fn` de
+//! SPEC-003 §4: orden exclusivo del frame dentro del stream de la app).
 
 use crate::error::{PairError, PairResult};
+use crate::stream::FrameFormat;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -16,6 +24,12 @@ pub const CAPABILITIES: [&str; 3] = ["second_screen", "audio", "input_consumptio
 /// Límites de los campos del anuncio (SPEC-006 §4).
 pub const GAME_ID_MAX: usize = 64;
 pub const GAME_NAME_MAX: usize = 128;
+
+/// Límites de los Framebuffers del stream (SPEC-003 §4), aplicados también
+/// a `game_frame` (el server los re-empaqueta como `video_frame`).
+pub const GAME_FRAME_MIN_DIM: u16 = crate::stream::MIN_DIM;
+pub const GAME_FRAME_MAX_WIDTH: u16 = crate::stream::MAX_WIDTH;
+pub const GAME_FRAME_MAX_HEIGHT: u16 = crate::stream::MAX_HEIGHT;
 
 /// Un juego compatible vivo (SPEC-006 §4), tal como viaja en la lista.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -47,6 +61,23 @@ pub enum GameMsg {
         /// Juegos vivos ordenados por `game_id`.
         games: Vec<GameInfo>,
     },
+    /// juego → server (canal IPC, ADR-008): Framebuffer del juego para la
+    /// Segunda pantalla (REQ-006 AC-2). El server lo re-empaqueta como
+    /// `video_frame` de SPEC-003 hacia la app con `fn` propio.
+    #[serde(rename = "game_frame")]
+    GameFrame {
+        /// Número de frame: monotónico creciente desde 0 por conexión (§4
+        /// de SPEC-003: "empieza en 0 en cada stream; nunca se repite").
+        gfn: u64,
+        /// Ancho en píxeles (16–3840, SPEC-003 §4).
+        w: u16,
+        /// Alto en píxeles (16–2160, SPEC-003 §4).
+        h: u16,
+        /// Formato del Framebuffer (SPEC-003 §4: `rgb8` v1).
+        fmt: FrameFormat,
+        /// Framebuffer crudo en base64url: exactamente `w×h×bpp` bytes.
+        data: String,
+    },
 }
 
 impl GameMsg {
@@ -72,6 +103,9 @@ impl GameMsg {
                 }
                 Ok(())
             }
+            GameMsg::GameFrame {
+                w, h, fmt, data, ..
+            } => crate::stream::validate_frame_params(*w, *h, *fmt, data),
         }
     }
 }
@@ -211,5 +245,87 @@ mod tests {
             GameMsg::decode("{\"type\":\"game_announce\",\"game_id\":\"x\"}"),
             Err(PairError::MalformedMessage)
         );
+    }
+
+    // AC-2 (REQ-006): `game_frame` valida los parámetros de SPEC-003 §4.
+    fn frame(gfn: u64, w: u16, h: u16) -> GameMsg {
+        GameMsg::GameFrame {
+            gfn,
+            w,
+            h,
+            fmt: FrameFormat::Rgb8,
+            data: rgb_data(w, h),
+        }
+    }
+
+    fn rgb_data(w: u16, h: u16) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![
+            3u8;
+            usize::from(w)
+                * usize::from(h)
+                * 3
+        ])
+    }
+
+    #[test]
+    fn game_frame_roundtrip() {
+        let msg = frame(0, 32, 16);
+        let line = msg.encode().unwrap();
+        assert!(!line.contains('\n'));
+        assert!(line.starts_with("{\"type\":\"game_frame\""));
+        assert_eq!(GameMsg::decode(&line).unwrap(), msg);
+    }
+
+    #[test]
+    fn game_frame_dims_out_of_range_is_e4() {
+        assert_eq!(
+            frame(0, 15, 16).validate(),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            frame(0, 16, 15).validate(),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            frame(0, GAME_FRAME_MAX_WIDTH + 1, 16).validate(),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            frame(0, 16, GAME_FRAME_MAX_HEIGHT + 1).validate(),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    #[test]
+    fn game_frame_with_wrong_data_size_is_e4() {
+        use base64::Engine as _;
+        let short =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![1u8; 32 * 16 * 3 - 1]);
+        let msg = GameMsg::GameFrame {
+            gfn: 0,
+            w: 32,
+            h: 16,
+            fmt: FrameFormat::Rgb8,
+            data: short,
+        };
+        assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
+    }
+
+    #[test]
+    fn game_frame_with_non_base64_data_is_e4() {
+        let msg = GameMsg::GameFrame {
+            gfn: 0,
+            w: 16,
+            h: 16,
+            fmt: FrameFormat::Rgb8,
+            data: "¡no es base64!".into(),
+        };
+        assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
+    }
+
+    #[test]
+    fn game_frame_zero_is_valid() {
+        assert_eq!(frame(0, 16, 16).validate(), Ok(()));
     }
 }

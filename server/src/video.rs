@@ -180,6 +180,79 @@ pub fn run_desktop_stream(
     run_frame_stream(sink, frames, fps, &mut source)
 }
 
+/// Fuente de frames del juego con SDK (REQ-006 AC-2): devuelve el último
+/// `game_frame` del registro y su `game_id`, o `None` mientras el juego
+/// declaró `second_screen` pero aún no publicó su primer frame.
+pub type GameFrameSource<'a> = &'a mut dyn FnMut() -> Option<(String, crate::games::GameFrame)>;
+
+/// Emite el Stream de SPEC-003 alimentado por los `game_frame` que el juego
+/// publica vía SDK (REQ-006 AC-2). A cada tick pide el frame más reciente a
+/// `source`; `fn` lo asigna este emisor (monotónico desde 0, R2) y un
+/// `stream_start` nuevo (§8.1) anuncia los cambios de resolución. Un juego
+/// que deja de publicar frames NO detiene el stream: se queda en el último
+/// emitido (SPEC-006 §9: su crash jamás rompe la sesión); `stop_on_no_game`
+/// controla el fin limpio cuando el juego desaparece.
+///
+/// # Errors
+/// `Disconnected` si el receptor deja de estar disponible.
+pub fn run_game_stream(
+    sink: &mut dyn FrameSink,
+    frames: u64,
+    fps: u8,
+    source: GameFrameSource,
+    stop_on_no_game: bool,
+) -> Result<(), VideoSourceError> {
+    let mut announced: Option<(u16, u16)> = None;
+    let mut next_deadline = Instant::now();
+    for fn_ in 0..frames {
+        let Some((game_id, gf)) = source() else {
+            if stop_on_no_game {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1_000 / u64::from(fps)));
+            next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
+            continue;
+        };
+        let _ = game_id; // v1: una sola fuente preferente (§8.1 de SPEC-006)
+        // §8.1: resolución nueva → `stream_start` nuevo; `fn` continúa.
+        if announced != Some((gf.w, gf.h)) {
+            announced = Some((gf.w, gf.h));
+            send(
+                sink,
+                &StreamMsg::StreamStart {
+                    w: gf.w,
+                    h: gf.h,
+                    fmt: gf.fmt,
+                    fps,
+                },
+            )?;
+        }
+        send(
+            sink,
+            &StreamMsg::VideoFrame {
+                fn_,
+                ts: next_deadline.elapsed().as_millis() as u64,
+                w: gf.w,
+                h: gf.h,
+                fmt: gf.fmt,
+                data: base64_url(&gf.data),
+            },
+        )?;
+        next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
+        let now = Instant::now();
+        if next_deadline > now {
+            std::thread::sleep(next_deadline - now);
+        }
+    }
+
+    send(
+        sink,
+        &StreamMsg::StreamStop {
+            reason: twinpad_core::stream::StreamStopReason::PluginStopped,
+        },
+    )
+}
+
 /// base64url canónico sin relleno (igual criterio que `core::message`).
 fn base64_url(bytes: &[u8]) -> String {
     use base64::Engine as _;
@@ -242,5 +315,96 @@ mod tests {
             run_demo_stream(&mut sink, 3, 60, 16, 16),
             Err(VideoSourceError::Disconnected)
         ));
+    }
+
+    // AC-2 (REQ-006): el stream se alimenta de los `game_frame` del juego.
+    use crate::games::GameFrame;
+    use twinpad_core::stream::FrameFormat;
+
+    fn game_frame(gfn: u64, w: u16, h: u16) -> GameFrame {
+        GameFrame {
+            gfn,
+            w,
+            h,
+            fmt: FrameFormat::Rgb8,
+            data: vec![9u8; usize::from(w) * usize::from(h) * 3],
+        }
+    }
+
+    /// Fuente de prueba: frames crecientes; `None` cuando `exhausted`.
+    fn test_source(
+        frames: u64,
+        exhausted: std::rc::Rc<std::cell::Cell<bool>>,
+    ) -> impl FnMut() -> Option<(String, GameFrame)> {
+        let mut emitted = 0u64;
+        move || {
+            if exhausted.get() {
+                return None;
+            }
+            if emitted >= frames {
+                return None;
+            }
+            let gfn = emitted;
+            emitted += 1;
+            Some(("pacdemo".into(), game_frame(gfn, 32, 16)))
+        }
+    }
+
+    #[test]
+    fn game_stream_announces_sends_frames_and_stops() {
+        let exhausted = std::rc::Rc::new(std::cell::Cell::new(false));
+        let mut source = test_source(2, std::rc::Rc::clone(&exhausted));
+        let mut sink = SinkSpy(RefCell::new(Vec::new()));
+        // FPS alto: sin sleeps medibles en el test.
+        run_game_stream(&mut sink, 3, 60, &mut source, true).unwrap();
+        let lines = sink.0.borrow();
+        // start + fn=0 + fn=1 + stop: el juego dejó de publicar → fin limpio.
+        assert_eq!(lines.len(), 4);
+        assert!(lines[0].starts_with("{\"type\":\"stream_start\""));
+        assert!(lines[1].contains("\"fn_\":0"));
+        assert!(lines[2].contains("\"fn_\":1"));
+        assert!(lines[3].starts_with("{\"type\":\"stream_stop\""));
+        // Paridad con el codec compartido (test-strategy §10).
+        for line in lines.iter() {
+            StreamMsg::decode(line).unwrap();
+        }
+    }
+
+    #[test]
+    fn game_stream_re_announces_on_resolution_change() {
+        let mut emitted = 0u64;
+        let mut source = move || {
+            let gfn = emitted;
+            emitted += 1;
+            // Cambia la resolución en fn=1 (§8.1).
+            Some((
+                "pacdemo".into(),
+                game_frame(gfn, if gfn == 0 { 32 } else { 64 }, 16),
+            ))
+        };
+        let mut sink = SinkSpy(RefCell::new(Vec::new()));
+        run_game_stream(&mut sink, 2, 60, &mut source, true).unwrap();
+        let lines = sink.0.borrow();
+        // start(32×16) + frame0 + start(64×16) + frame1 + stop
+        assert_eq!(lines.len(), 5);
+        assert!(lines[0].contains("\"w\":32"));
+        assert!(lines[2].starts_with("{\"type\":\"stream_start\""));
+        assert!(lines[2].contains("\"w\":64"));
+        // `fn` continúa (§8.1): no se reinicia.
+        assert!(lines[3].contains("\"fn_\":1"));
+    }
+
+    #[test]
+    fn game_stream_without_game_keeps_waiting_if_not_stopping() {
+        let exhausted = std::rc::Rc::new(std::cell::Cell::new(false));
+        let mut source = test_source(0, exhausted);
+        let mut sink = SinkSpy(RefCell::new(Vec::new()));
+        // `stop_on_no_game=false`: el server sigue (escritorio/demo como
+        // respaldo o el juego aún no publicó su primer frame).
+        run_game_stream(&mut sink, 1, 60, &mut source, false).unwrap();
+        let lines = sink.0.borrow();
+        // Solo el `stream_stop` final: nada se anunció sin frames.
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("{\"type\":\"stream_stop\""));
     }
 }

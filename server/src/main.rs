@@ -204,26 +204,46 @@ fn main() {
                             }
                         };
                         let video_thread = writer.map(|mut sink| {
+                            let games = Arc::clone(&games_ref);
                             std::thread::spawn(move || {
-                                let result = match &grabber {
-                                    Some(g) => twinpad_server::video::run_desktop_stream(
+                                // REQ-006 AC-2: si hay un juego vivo con SDK
+                                // publicando `game_frame`, su contenido alimenta
+                                // el stream (fuente preferente, §8.1 de SPEC-006);
+                                // si no, las fuentes de SPEC-003 §17
+                                // (escritorio/demo). El sondeo es por frame.
+                                if games.preferred_source().is_some() {
+                                    println!(
+                                        "Fuente de video: juego con SDK Twinpad (SPEC-006 AC-2)."
+                                    );
+                                    let mut poll = move || games.preferred_source();
+                                    let _ = twinpad_server::video::run_game_stream(
                                         &mut sink,
                                         u64::MAX, // hasta que la sesión se corte
                                         twinpad_server::video::DEMO_FPS,
-                                        g,
-                                    ),
-                                    None => twinpad_server::video::run_demo_stream(
-                                        &mut sink,
-                                        u64::MAX, // hasta que la sesión se corte
-                                        twinpad_server::video::DEMO_FPS,
-                                        twinpad_server::video::DEMO_WIDTH,
-                                        twinpad_server::video::DEMO_HEIGHT,
-                                    ),
-                                };
-                                match result {
-                                    Ok(()) => println!("Stream terminado."),
-                                    Err(_) => {
-                                        println!("Emisión detenida (receptor fuera de línea).")
+                                        &mut poll,
+                                        false,
+                                    );
+                                } else {
+                                    let result = match &grabber {
+                                        Some(g) => twinpad_server::video::run_desktop_stream(
+                                            &mut sink,
+                                            u64::MAX, // hasta que la sesión se corte
+                                            twinpad_server::video::DEMO_FPS,
+                                            g,
+                                        ),
+                                        None => twinpad_server::video::run_demo_stream(
+                                            &mut sink,
+                                            u64::MAX, // hasta que la sesión se corte
+                                            twinpad_server::video::DEMO_FPS,
+                                            twinpad_server::video::DEMO_WIDTH,
+                                            twinpad_server::video::DEMO_HEIGHT,
+                                        ),
+                                    };
+                                    match result {
+                                        Ok(()) => println!("Stream terminado."),
+                                        Err(_) => {
+                                            println!("Emisión detenida (receptor fuera de línea).")
+                                        }
                                     }
                                 }
                             })

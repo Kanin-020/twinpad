@@ -7,6 +7,9 @@ rust-version.workspace = true
 
 [dependencies]
 twinpad-core = { path = "../core" }
+# Codificación base64url de los framebuffers de `push_frame` (AC-2); misma
+# versión que `core` (ENG §11).
+base64 = "0.22"
 
 [lints]
 workspace = true

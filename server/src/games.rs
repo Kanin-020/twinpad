@@ -4,6 +4,11 @@
 //! anuncio vivo** — al caer (cierre o crash del juego), el juego deja de estar
 //! disponible (§6 D1→D0, R2). `GameRegistry` mantiene la lista exacta de los
 //! anuncios vivos (invariante §14) y rechaza `game_id` duplicados (§9).
+//!
+//! Además retiene el **último `game_frame`** publicado por cada juego (REQ-006
+//! AC-2: el juego publica su Segunda pantalla vía SDK): el emisor de
+//! SPEC-003 (`server::video`) lo lee como fuente preferente del stream. El
+//! invariant §14 se mantiene: sin anuncio vivo no hay frames ni stream.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
@@ -17,6 +22,20 @@ use twinpad_core::game::{GameInfo, GameMsg};
 /// arrancar; una conexión muda no queda viva).
 pub const ANNOUNCE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Un Framebuffer publicado por un juego (REQ-006 AC-2), ya decodificado y
+/// listo para el emisor de SPEC-003 (contiene `w×h×bpp` bytes).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct GameFrame {
+    /// `fn` del stream de la app: el server lo asigna al consumir (SPEC-003
+    /// §4: monotónico desde 0 por stream, R2). Aquí viaja el `gfn` del juego.
+    pub gfn: u64,
+    pub w: u16,
+    pub h: u16,
+    pub fmt: twinpad_core::stream::FrameFormat,
+    /// Framebuffer crudo (sin base64), `w×h×bpp` bytes.
+    pub data: Vec<u8>,
+}
+
 /// Error de registro de un anuncio (§9).
 #[derive(Debug)]
 pub enum RegisterError {
@@ -27,6 +46,9 @@ pub enum RegisterError {
 struct GameEntry {
     info: GameInfo,
     _stream: TcpStream,
+    /// Último `game_frame` publicado (AC-2); `None` hasta que el juego
+    /// publique el primero (§10: capacidades sin usar → sin stream).
+    last_frame: Option<GameFrame>,
 }
 
 /// Registro en memoria de juegos compatibles vivos (§6: D0/D1 por juego).
@@ -55,12 +77,14 @@ impl GameRegistry {
             GameEntry {
                 info,
                 _stream: stream,
+                last_frame: None,
             },
         );
         Ok(())
     }
 
     /// Retira un juego (cayó su conexión); `true` si estaba registrado.
+    /// El invariante §14 es lo que garantiza que su último frame muere con él.
     pub fn unregister(&self, game_id: &str) -> bool {
         lock_or_reset(&self.games).remove(game_id).is_some()
     }
@@ -80,6 +104,36 @@ impl GameRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Guarda el último frame publicado por un juego vivo (AC-2). Devuelve
+    /// `false` si el juego no está vivo: el frame se descarta (invariante
+    /// §14: sin anuncio vivo no hay contenido).
+    pub fn store_frame(&self, game_id: &str, frame: GameFrame) -> bool {
+        match lock_or_reset(&self.games).get_mut(game_id) {
+            Some(entry) => {
+                entry.last_frame = Some(frame);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Último frame del juego vivo indicado (AC-2), o `None` si no hay juego
+    /// vivo con ese id o aún no publicó frames (§10).
+    pub fn latest_frame(&self, game_id: &str) -> Option<GameFrame> {
+        lock_or_reset(&self.games)
+            .get(game_id)
+            .and_then(|e| e.last_frame.clone())
+    }
+
+    /// Fuente preferente del stream de SPEC-003: el primer juego vivo (por
+    /// `game_id`, determinista) que haya publicado frames. `None` si ninguno
+    /// (el server usa su fuente de escritorio/demo, SPEC-003 §17).
+    pub fn preferred_source(&self) -> Option<(String, GameFrame)> {
+        lock_or_reset(&self.games)
+            .iter()
+            .find_map(|(id, entry)| entry.last_frame.clone().map(|frame| (id.clone(), frame)))
     }
 }
 
@@ -145,8 +199,12 @@ fn handle_game_connection(stream: TcpStream, registry: &GameRegistry, publish: &
     publish(&registry.list());
 
     // Liveness: la conexión viva es el anuncio vivo (ADR-008). EOF = fin.
+    // REQ-006 AC-2: además de mantener viva la conexión, cada línea puede
+    // ser un `game_frame` con el contenido de la Segunda pantalla del juego;
+    // se decodifica estrictamente (E4 en la frontera) y se retiene el
+    // último para el emisor de SPEC-003.
     loop {
-        if read_line(&mut reader).is_none() {
+        let Some(line) = read_line(&mut reader) else {
             if registry.unregister(&game.game_id) {
                 println!(
                     "Juego compatible fuera de línea: {} ({}).",
@@ -155,9 +213,54 @@ fn handle_game_connection(stream: TcpStream, registry: &GameRegistry, publish: &
                 publish(&registry.list());
             }
             return;
+        };
+        if line.is_empty() {
+            continue;
         }
-        // Tráfico adicional del juego (frames, etc.) llega en iteraciones
-        // posteriores (AC-2/AC-3); v1 solo mantiene viva la conexión.
+        match GameMsg::decode(&line) {
+            Ok(GameMsg::GameFrame {
+                gfn,
+                w,
+                h,
+                fmt,
+                data,
+            }) => match decode_frame_data(&data, w, h, fmt) {
+                Ok(pixels) => {
+                    registry.store_frame(
+                        &game.game_id,
+                        GameFrame {
+                            gfn,
+                            w,
+                            h,
+                            fmt,
+                            data: pixels,
+                        },
+                    );
+                }
+                Err(_) => println!("game_frame inválido de '{}' descartado.", game.game_id),
+            },
+            Ok(_) => {} // otro mensaje sobre la conexión viva: ignorado en v1
+            Err(_) => println!("Línea inválida de '{}' descartada (E4).", game.game_id),
+        }
+    }
+}
+
+/// Decodifica el base64url de un `game_frame` (ya validado en rangos por
+/// [`GameMsg::decode`]); error si la longitud no es `w×h×bpp`.
+fn decode_frame_data(
+    data: &str,
+    w: u16,
+    h: u16,
+    fmt: twinpad_core::stream::FrameFormat,
+) -> Result<Vec<u8>, ()> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(data)
+        .map_err(|_| ())?;
+    if bytes.len() == usize::from(w) * usize::from(h) * fmt.bytes_per_pixel() {
+        Ok(bytes)
+    } else {
+        Err(())
     }
 }
 

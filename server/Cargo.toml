@@ -14,6 +14,12 @@ base64 = "0.22"
 # sin deps transitivas, mantenido por Nayuki)
 qrcodegen = "1.8"
 
+[dev-dependencies]
+# Los tests de integración simulan al juego con SDK (AC-2) contra el
+# listener IPC real en loopback (test-strategy §10: el protocolo no se
+# mockea); solo alcanza al crate de tests, no al binario (ARCH §3).
+twinpad-sdk = { path = "../sdk" }
+
 [[bin]]
 name = "twinpad-server"
 path = "src/main.rs"
