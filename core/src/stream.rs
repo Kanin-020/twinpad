@@ -9,8 +9,9 @@ use crate::error::{PairError, PairResult};
 use serde::Deserialize;
 use serde::Serialize;
 
-/// Formatos de Framebuffer de la v1 (SPEC-003 §4 `fmt`). `rgb8` es el único
-/// requerido por la primera implementación (OQ-1 aprobada: sin compresión).
+/// Formatos de Framebuffer de la v1 (SPEC-003 §4 `fmt`). `rgb8` fue el
+/// formato de la primera implementación (OQ-1); v1.1 (CR-001) añade `jpeg`
+/// para 720p/1080p a 30/60 fps sobre WiFi LAN.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum FrameFormat {
     /// 8 bits por píxel, 1 byte/px.
@@ -19,14 +20,19 @@ pub enum FrameFormat {
     /// RGB888 empaquetado, 3 bytes/px, fila mayor.
     #[serde(rename = "rgb8")]
     Rgb8,
+    /// Archivo JPEG completo (JFIF con cabecera); tamaño libre (CR-001).
+    #[serde(rename = "jpeg")]
+    Jpeg,
 }
 
 impl FrameFormat {
-    /// Bytes por píxel del formato (SPEC-003 §12).
-    pub fn bytes_per_pixel(self) -> usize {
+    /// Bytes por píxel del formato (SPEC-003 §12); `None` para los
+    /// comprimidos (el tamaño de `data` es el del archivo, no `w×h×bpp`).
+    pub fn bytes_per_pixel(self) -> Option<usize> {
         match self {
-            FrameFormat::Gray8 => 1,
-            FrameFormat::Rgb8 => 3,
+            FrameFormat::Gray8 => Some(1),
+            FrameFormat::Rgb8 => Some(3),
+            FrameFormat::Jpeg => None,
         }
     }
 }
@@ -158,18 +164,25 @@ fn validate_dims(w: u16, h: u16) -> PairResult<()> {
     Ok(())
 }
 
-/// El `data` decodifica exactamente `w×h×bpp` bytes (§5: el frame
-/// inconsistente se descarta en el receptor; aquí, en la frontera, es E4).
+/// El `data` decodifica a `w×h×bpp` bytes para los formatos crudos; para
+/// los comprimidos (`jpeg`, CR-001) basta con que decodifique (el tamaño
+/// es el del archivo, §4). §5: el frame inconsistente se descarta en el
+/// receptor; aquí, en la frontera, es E4.
 fn validate_frame_size(w: u16, h: u16, fmt: FrameFormat, data: &str) -> PairResult<()> {
     use base64::Engine as _;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(data)
         .map_err(|_| PairError::MalformedMessage)?;
-    let expected = usize::from(w) * usize::from(h) * fmt.bytes_per_pixel();
-    if bytes.len() != expected {
-        return Err(PairError::MalformedMessage);
+    match fmt.bytes_per_pixel() {
+        Some(bpp) => {
+            let expected = usize::from(w) * usize::from(h) * bpp;
+            if bytes.len() != expected {
+                return Err(PairError::MalformedMessage);
+            }
+            Ok(())
+        }
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Valida parámetros de Framebuffer según SPEC-003 §4 (dimensiones, tamaño

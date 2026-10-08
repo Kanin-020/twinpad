@@ -190,8 +190,13 @@ impl TwinpadGame {
         fmt: twinpad_core::stream::FrameFormat,
         data: &[u8],
     ) -> Result<(), SdkError> {
-        let expected = usize::from(w) * usize::from(h) * fmt.bytes_per_pixel();
-        if data.len() != expected {
+        // `jpeg` (CR-001) tiene tamaño libre; los formatos crudos deben
+        // medir exactamente w×h×bpp.
+        let size_ok = match fmt.bytes_per_pixel() {
+            Some(bpp) => data.len() == usize::from(w) * usize::from(h) * bpp,
+            None => !data.is_empty(),
+        };
+        if !size_ok {
             return Err(SdkError::InvalidConfig);
         }
         use base64::Engine as _;

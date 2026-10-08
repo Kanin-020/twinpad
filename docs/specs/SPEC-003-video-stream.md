@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (framebuffers) |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-XXX (`-` hasta asignar) |
 | Verified by | TEST-015, TEST-016, TEST-017 |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-10-08 |
 
 ## 1. Purpose
 
@@ -39,8 +39,8 @@ Define el comportamiento observable del transporte y la presentación del Stream
 | `ts` | integer (uint64) | milisegundos del reloj del server (monótono respecto de sí mismo) en el envío | yes |
 | `w` | integer (uint16) | ancho del Framebuffer en píxeles, 16–3840 | yes |
 | `h` | integer (uint16) | alto del Framebuffer en píxeles, 16–2160 | yes |
-| `fmt` | string | `gray8` \| `rgb8` (v1; extensible por SPEC futuro) | yes |
-| `data` | string | base64url del Framebuffer crudo (sin cabecera de imagen), `w×h×bytes(fmt)` bytes | yes |
+| `fmt` | string | `gray8` \| `rgb8` \| `jpeg` (v1.1, CR-001) | yes |
+| `data` | string | `rgb8`/`gray8`: base64url del framebuffer crudo, `w×h×bytes(fmt)` bytes; `jpeg`: base64url del archivo JPEG completo (con cabecera), tamaño libre | yes |
 | Control `stream_start` | mensaje | `type:"stream_start"`, `w`,`h`,`fmt`,`fps` (uint8, 1–60) — anuncia el stream y sus parámetros iniciales | yes antes del primer frame |
 | Control `stream_stop` | mensaje | `type:"stream_stop"`, `reason`: `plugin_stopped` \| `server_shutdown` | yes al terminar |
 | Control `stream_gap` | mensaje | `type:"stream_gap"`, `from_fn`,`to_fn` — notifica frames perdidos por transporte | opcional |
@@ -196,6 +196,7 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 ## 17. Open questions
 
 - ¿Formato v1 sin compresión o con compresión desde el día 1? — owner: Eng lead — 2026-10-07 — **resuelta: sin compresión en v1; `rgb8` es el único formato requerido en la primera implementación (`gray8` queda definido pero no exigido). Si la medición de NFR-001 fallara, la compresión entra por CR.**
+- **Ampliada por CR-001 (2026-10-08, owner): la medición de ancho de banda demuestra que rgb8 crudo no alcanza 720p/1080p a 30/60 fps en WiFi LAN (663 Mbps–3 Gbps teóricos), por lo que v1.1 añade `fmt=jpeg` como formato requerido para esos objetivos; `rgb8`/`gray8` siguen definidos. H.264 queda como evolución si el banco físico demuestra que JPEG no alcanza NFR-001.**
 - ¿Umbral de degradación (§8.3): qué métrica exacta dispara la reducción (cola de envío en frames, % de pérdida)? — owner: Eng lead — 2026-10-07 — abierta (la implementación puede dejarla parametrizada; no bloquea AC-1/AC-3)
 - ¿Qué transmite el stream mientras no existe el Plugin (SPEC-006)? — owner: usuario — 2026-10-08 — **resuelta: duplicado del escritorio del PC capturado con `xcap` (`twinpad-capture::DesktopGrabber`, escalado a 640×360 rgb8); si la captura no está disponible, fallback al patrón de demostración animado. El contenido real del juego entra con SPEC-006.**
 
@@ -216,3 +217,4 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
+| 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.twinpad.android.app.audio.AudioPlayback
 import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingStateMachine
@@ -25,6 +26,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val machine = PairingStateMachine()
     private val network = TcpPairingClient()
     private val streamMachine = com.twinpad.android.app.stream.StreamStateMachine()
+    private val audioMachine = com.twinpad.android.app.audio.AudioStateMachine()
     private val gamepad = com.twinpad.android.app.hid.GamepadStateMachine()
 
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
@@ -44,6 +46,14 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         MutableStateFlow<List<com.twinpad.android.app.wire.GameInfo>>(emptyList())
     val availableGames: StateFlow<List<com.twinpad.android.app.wire.GameInfo>> = _availableGames
 
+    /** Estado del stream de audio (SPEC-005 §5) para la vista. */
+    private val _audioState =
+        MutableStateFlow(com.twinpad.android.app.audio.AudioState.INACTIVE)
+    val audioState: StateFlow<com.twinpad.android.app.audio.AudioState> = _audioState
+
+    /** Adaptador de reproducción (AudioTrack); inyectable para tests. */
+    private val playback = com.twinpad.android.app.audio.AudioPlayback()
+
     init {
         viewModelScope.launch {
             network.lines.collect { line ->
@@ -54,13 +64,19 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        // SPEC-003 §6: marcar V2 si el stream se queda sin frames.
+        // SPEC-003 §6: marcar V2 si el stream se queda sin frames; SPEC-005
+        // §6: A2 si el audio supera el jitter buffer (500 ms).
         viewModelScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(com.twinpad.android.app.wire.ProtocolConstants.STREAM_TICK_MS)
-                val s = streamMachine.tick(System.currentTimeMillis())
+                val now = System.currentTimeMillis()
+                val s = streamMachine.tick(now)
                 if (s != _streamState.value.state) {
                     _streamState.value = _streamState.value.copy(state = s)
+                }
+                val a = audioMachine.tick(now)
+                if (a != _audioState.value) {
+                    _audioState.value = a
                 }
             }
         }
@@ -70,10 +86,12 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
      * Actualiza el estado del stream y publica el frame si aplica. */
     private fun onStreamLine(line: String?) {
         if (line == null) {
-            // Corte de conexión con sesión activa: V0 y sesión terminada
-            // (SPEC-002 §9 la reporta; aquí solo limpiamos el stream).
+            // Corte de conexión con sesión activa: V0/A0 y sesión terminada
+            // (SPEC-002 §9 la reporta; aquí solo limpiamos los streams).
             streamMachine.reset()
             _streamState.value = com.twinpad.android.app.stream.StreamUiState()
+            audioMachine.reset()
+            _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
             _availableGames.value = emptyList()
             feed(PairingEvent.WireMessage(null))
             return
@@ -84,6 +102,13 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         if (games != null) {
             _availableGames.value = games
             return
+        }
+        // SPEC-005 §6: los mensajes de audio viajan por la misma sesión;
+        // se consumen aquí y no entran a la máquina del stream de video.
+        if (audioMachine.onLine(line, System.currentTimeMillis())) {
+            _audioState.value = audioMachine.state
+            // Los fragmentos aceptados van al adaptador de reproducción.
+            playback.drain(audioMachine.drainPending())
         }
         val frame = streamMachine.onLine(line)
         val newState = streamMachine
@@ -158,6 +183,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         ) == PackageManager.PERMISSION_GRANTED
 
     override fun onCleared() {
+        playback.release()
         network.shutdown()
     }
 }

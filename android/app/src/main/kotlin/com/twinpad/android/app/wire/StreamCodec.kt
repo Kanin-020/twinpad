@@ -39,16 +39,18 @@ sealed class StreamMessage {
 object StreamCodec {
     private val json = Json
 
-    /** Formatos válidos de la v1 (SPEC-003 §4 `fmt`). */
-    private val FMTS = setOf("gray8", "rgb8")
+    /** Formatos válidos (SPEC-003 §4; `jpeg` entra con CR-001). */
+    private val FMTS = setOf("gray8", "rgb8", "jpeg")
 
     private val STOP_REASONS = setOf("plugin_stopped", "server_shutdown")
 
-    /** Bytes por píxel por formato (SPEC-003 §12). */
-    private fun bpp(fmt: String): Int =
+    /** Bytes por píxel por formato (SPEC-003 §12); `null` para los
+     * comprimidos (`jpeg`, CR-001: tamaño libre). */
+    private fun bpp(fmt: String): Int? =
         when (fmt) {
             "gray8" -> ProtocolConstants.GRAY_BYTES_PER_PIXEL
             "rgb8" -> ProtocolConstants.RGB_BYTES_PER_PIXEL
+            "jpeg" -> null
             else -> throw PairingException(PairingError.InvalidResponse)
         }
 
@@ -109,11 +111,13 @@ object StreamCodec {
             }
         val data = obj.stringField("data")
         // §5: el frame inconsistente se descarta en la frontera (E4).
-        val expected = w * h * bpp(fmt)
+        // CR-001: `jpeg` tiene tamaño libre; los crudos miden w×h×bpp.
         val decoded = HandshakeCrypto.decodeB64(data)
-        if (decoded.size != expected) {
+        val expectedSize = bpp(fmt)?.let { bppValue -> w * h * bppValue }
+        if (expectedSize != null && decoded.size != expectedSize) {
             throw PairingException(PairingError.InvalidResponse)
         }
+        if (decoded.isEmpty()) throw PairingException(PairingError.InvalidResponse)
         return StreamMessage.Frame(frameNumber, w, h, fmt, data)
     }
 

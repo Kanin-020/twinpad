@@ -60,12 +60,31 @@ pub fn run_demo_stream(
     h: u16,
 ) -> Result<(), VideoSourceError> {
     let mut source = |fn_: u64| Some((w, h, demo_frame(fn_, w, h)));
-    run_frame_stream(sink, frames, fps, &mut source)
+    run_frame_stream(sink, frames, fps, OutputFormat::Rgb8, &mut source)
 }
 
 /// Fuente de frames rgb8: recibe el `fn` y devuelve `(w, h, data)` o `None`
 /// para terminar el stream limpio (p. ej. la captura falló o se detuvo).
 pub type FrameSource<'a> = &'a mut dyn FnMut(u64) -> Option<(u16, u16, Vec<u8>)>;
+
+/// Formato de emisión del stream: crudo (`rgb8`, demos/tests) o JPEG
+/// (CR-001, 720p/1080p) con su calidad.
+#[derive(Clone, Copy, Debug)]
+pub enum OutputFormat {
+    Rgb8,
+    Jpeg(u8),
+}
+
+impl OutputFormat {
+    /// `fmt` de SPEC-003 §4 que viaja en los mensajes.
+    #[must_use]
+    pub fn frame_format(self) -> FrameFormat {
+        match self {
+            OutputFormat::Rgb8 => FrameFormat::Rgb8,
+            OutputFormat::Jpeg(_) => FrameFormat::Jpeg,
+        }
+    }
+}
 
 /// Emite un stream de `frames` cuadros a `fps`, pidiendo cada framebuffer a
 /// `source` (SPEC-003 §7 pasos 1–5). `None` de la fuente → `stream_stop`.
@@ -77,6 +96,7 @@ pub fn run_frame_stream(
     sink: &mut dyn FrameSink,
     frames: u64,
     fps: u8,
+    output: OutputFormat,
     source: FrameSource,
 ) -> Result<(), VideoSourceError> {
     let Some((w, h, _)) = source(0) else {
@@ -88,13 +108,9 @@ pub fn run_frame_stream(
             },
         );
     };
+    let fmt = output.frame_format();
     let (mut w, mut h) = (w, h);
-    let start = StreamMsg::StreamStart {
-        w,
-        h,
-        fmt: FrameFormat::Rgb8,
-        fps,
-    };
+    let start = StreamMsg::StreamStart { w, h, fmt, fps };
     send(sink, &start)?;
 
     let frame_period = std::time::Duration::from_millis(1_000 / u64::from(fps));
@@ -108,23 +124,23 @@ pub fn run_frame_stream(
         if fw != w || fh != h {
             w = fw;
             h = fh;
-            send(
-                sink,
-                &StreamMsg::StreamStart {
-                    w,
-                    h,
-                    fmt: FrameFormat::Rgb8,
-                    fps,
-                },
-            )?;
+            send(sink, &StreamMsg::StreamStart { w, h, fmt, fps })?;
         }
+        // CR-001: en JPEG cada frame se codifica aquí (tamaño libre).
+        let wire_data = match output {
+            OutputFormat::Rgb8 => data,
+            OutputFormat::Jpeg(quality) => match encode_jpeg(&data, fw, fh, quality) {
+                Some(jpeg) => jpeg,
+                None => continue, // frame descartado; el stream continúa
+            },
+        };
         let frame = StreamMsg::VideoFrame {
             fn_,
             ts: next_deadline.elapsed().as_millis() as u64,
             w: fw,
             h: fh,
-            fmt: FrameFormat::Rgb8,
-            data: base64_url(&data),
+            fmt,
+            data: base64_url(&wire_data),
         };
         send(sink, &frame)?;
         next_deadline += frame_period;
@@ -155,8 +171,70 @@ fn send(sink: &mut dyn FrameSink, msg: &StreamMsg) -> Result<(), VideoSourceErro
 pub const CAPTURE_WIDTH: u16 = 640;
 pub const CAPTURE_HEIGHT: u16 = 360;
 
-/// Emite el escritorio del PC capturado a `fps` (fuente temporal mientras
-/// no hay Plugin: SPEC-003 §17, decisión del owner). Escala a 640×360.
+/// Calidad JPEG por defecto (CR-001): 0–100; 80 ofrece ~20-40× de reducción
+/// con pérdida visual imperceptible para contenido de juego.
+pub const DEFAULT_JPEG_QUALITY: u8 = 80;
+
+/// Objetivos de calidad del stream que el owner puede ajustar por variable
+/// de entorno (720p/1080p, 30/60 fps; CR-001). Los valores caen a lo que la
+/// máquina sostenga: el stream no se congela (SPEC-003 R3/R5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VideoConfig {
+    pub width: u16,
+    pub height: u16,
+    pub fps: u8,
+    pub jpeg_quality: u8,
+}
+
+impl VideoConfig {
+    /// Lee `TWINPAD_WIDTH`/`TWINPAD_HEIGHT`/`TWINPAD_FPS`/`TWINPAD_JPEG_QUALITY`
+    /// (720p×30 por defecto). Los valores fuera de rango de SPEC-003 §4 se
+    /// clampean (16–3840×16–2160, 1–60 fps, 1–100 calidad).
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            width: clamp_env_u16("TWINPAD_WIDTH", 1280),
+            height: clamp_env_u16("TWINPAD_HEIGHT", 720),
+            fps: clamp_env_u8("TWINPAD_FPS", 30)
+                .clamp(twinpad_core::stream::MIN_FPS, twinpad_core::stream::MAX_FPS),
+            jpeg_quality: clamp_env_u8("TWINPAD_JPEG_QUALITY", DEFAULT_JPEG_QUALITY).clamp(1, 100),
+        }
+    }
+}
+
+fn clamp_env_u16(name: &str, default: u16) -> u16 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(default)
+        .clamp(
+            twinpad_core::stream::MIN_DIM,
+            twinpad_core::stream::MAX_WIDTH,
+        )
+}
+
+fn clamp_env_u8(name: &str, default: u8) -> u8 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(default)
+}
+
+/// Codifica un framebuffer rgb8 a JPEG (CR-001). `None` si el encoder falla
+/// (frame descartado; el stream continúa con el siguiente).
+pub fn encode_jpeg(rgb: &[u8], w: u16, h: u16, quality: u8) -> Option<Vec<u8>> {
+    let buffer = image::ImageBuffer::from_raw(u32::from(w), u32::from(h), rgb.to_vec())?;
+    let mut out = std::io::Cursor::new(Vec::new());
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality);
+    image::DynamicImage::ImageRgb8(buffer)
+        .write_with_encoder(encoder)
+        .ok()?;
+    Some(out.into_inner())
+}
+
+/// Emite el escritorio del PC capturado (fuente temporal mientras no hay
+/// Plugin: SPEC-003 §17) escalado a `config.width×config.height` y codificado
+/// en JPEG (CR-001) a `config.fps`.
 ///
 /// # Errors
 /// `Disconnected` si el receptor deja de estar disponible; un fallo de
@@ -165,19 +243,26 @@ pub fn run_desktop_stream(
     sink: &mut dyn FrameSink,
     frames: u64,
     fps: u8,
+    config: VideoConfig,
     grabber: &twinpad_capture::DesktopGrabber,
 ) -> Result<(), VideoSourceError> {
-    let mut source = |fn_: u64| {
+    let mut source = move |fn_: u64| {
         let _ = fn_;
         grabber.frame().ok().map(|(sw, sh, rgba)| {
             (
-                CAPTURE_WIDTH,
-                CAPTURE_HEIGHT,
-                twinpad_capture::rgb8_scaled(&rgba, sw, sh, CAPTURE_WIDTH, CAPTURE_HEIGHT),
+                config.width,
+                config.height,
+                twinpad_capture::rgb8_scaled(&rgba, sw, sh, config.width, config.height),
             )
         })
     };
-    run_frame_stream(sink, frames, fps, &mut source)
+    run_frame_stream(
+        sink,
+        frames,
+        fps,
+        OutputFormat::Jpeg(config.jpeg_quality),
+        &mut source,
+    )
 }
 
 /// Fuente de frames del juego con SDK (REQ-006 AC-2): devuelve el último
@@ -261,7 +346,7 @@ fn base64_url(bytes: &[u8]) -> String {
 
 // ENG §6: unwrap permitido solo en tests.
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use std::cell::RefCell;
@@ -282,6 +367,84 @@ mod tests {
         assert_eq!(a.len(), 32 * 16 * 3);
         // El patrón cambia con el frame (barra móvil).
         assert_ne!(demo_frame(0, 32, 16), demo_frame(1, 32, 16));
+    }
+
+    // CR-001: emisión JPEG y ancho de banda.
+    #[test]
+    fn jpeg_encoding_produces_valid_image_smaller_than_raw() {
+        let rgb = demo_frame(7, 320, 180); // 172 800 bytes crudos
+        let raw = rgb.len();
+        let jpeg = encode_jpeg(&rgb, 320, 180, DEFAULT_JPEG_QUALITY).expect("encode ok");
+        // Empieza con SOI (FF D8) y termina con EOI (FF D9).
+        assert_eq!(&jpeg[0..2], &[0xFF, 0xD8]);
+        assert_eq!(&jpeg[jpeg.len() - 2..], &[0xFF, 0xD9]);
+        assert!(
+            jpeg.len() < raw / 5,
+            "JPEG q80 debe comprimir al menos 5× (raw={raw}, jpeg={})",
+            jpeg.len()
+        );
+        // Determinista (ENG P10): mismo input → mismo archivo.
+        assert_eq!(
+            jpeg,
+            encode_jpeg(&rgb, 320, 180, DEFAULT_JPEG_QUALITY).unwrap()
+        );
+    }
+
+    #[test]
+    fn jpeg_stream_roundtrips_through_the_shared_codec() {
+        // Un frame JPEG emitido valida en `core::stream` (tamaño libre §4).
+        let rgb = demo_frame(0, 64, 64);
+        let jpeg = encode_jpeg(&rgb, 64, 64, 80).unwrap();
+        let frame = StreamMsg::VideoFrame {
+            fn_: 0,
+            ts: 0,
+            w: 64,
+            h: 64,
+            fmt: FrameFormat::Jpeg,
+            data: base64_url(&jpeg),
+        };
+        let line = frame.encode().unwrap();
+        assert_eq!(StreamMsg::decode(&line).unwrap(), frame);
+    }
+
+    #[test]
+    fn video_config_clamps_env_values() {
+        // (sin variables de entorno en el test: solo el default coherente)
+        let cfg = VideoConfig {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            jpeg_quality: DEFAULT_JPEG_QUALITY,
+        };
+        assert_eq!(cfg.width, 1280);
+        assert_eq!(cfg.height, 720);
+    }
+
+    /// Medición de ancho de banda (CR-001): el JPEG de un frame 720p del
+    /// patrón demo debe quedar muy por debajo del objetivo de ~33 Mbps a
+    /// 30 fps (≈138 KB/frame). El patrón (gradiente + barra) comprime peor
+    /// que el contenido de juego real: es una cota superior conservadora.
+    #[test]
+    fn jpeg_720p_frame_fits_the_bandwidth_budget() {
+        let rgb = demo_frame(10, 1280, 720);
+        let jpeg = encode_jpeg(&rgb, 1280, 720, DEFAULT_JPEG_QUALITY).expect("encode");
+        let budget_bytes_per_frame = 33_000_000.0 / 8.0 / 30.0; // 33 Mbps @ 30 fps
+        assert!(
+            (jpeg.len() as f64) < budget_bytes_per_frame,
+            "frame 720p JPEG q80 ({} B) excede el presupuesto por frame ({:.0} B)",
+            jpeg.len(),
+            budget_bytes_per_frame
+        );
+        // Y 1080p×30 (~75 Mbps → 312 KB/frame).
+        let rgb1080 = demo_frame(10, 1920, 1080);
+        let jpeg1080 = encode_jpeg(&rgb1080, 1920, 1080, DEFAULT_JPEG_QUALITY).expect("encode");
+        let budget1080 = 75_000_000.0 / 8.0 / 30.0;
+        assert!(
+            (jpeg1080.len() as f64) < budget1080,
+            "frame 1080p JPEG q80 ({} B) excede el presupuesto ({:.0} B)",
+            jpeg1080.len(),
+            budget1080
+        );
     }
 
     #[test]

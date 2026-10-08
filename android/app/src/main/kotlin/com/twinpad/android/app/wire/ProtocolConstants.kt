@@ -55,4 +55,11 @@ object ProtocolConstants {
     // Detección de juegos (SPEC-006 §4; transporte ADR-008).
     const val GAME_ID_MAX: Int = 64
     const val GAME_NAME_MAX: Int = 128
+
+    // Stream de audio (SPEC-005 §4): límite de un audio_chunk decodificado.
+    const val AUDIO_CHUNK_MAX_BYTES: Int = 16 * 1024
+
+    /** Parámetros v1 del audio demo del server (OQ §17: PCM s16le). */
+    const val AUDIO_DEMO_RATE: Int = 44_100
+    const val AUDIO_DEMO_CHANNELS: Int = 2
 }

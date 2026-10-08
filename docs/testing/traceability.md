@@ -29,12 +29,12 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-012 | Approved | E5 QR inválido + permiso de cámara denegado (§8.1/§9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-013 | Approved | E2/E3 mensajes exactos desde `pair_error` (REQ-002 AC-3, §9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-014 | Approved | Edge cases de UI: cancelar, segundo plano, código desconocido, reintento (§10) — implementado |
-| REQ-004 | SPEC-003 | `-` | TEST-015 | Approved | Flujo principal del stream de video (SPEC-003 §7, REQ-004 AC-1) — implementado: codec en `core::stream` (10 tests) + fuentes en `server::video` (escritorio con `twinpad-capture::DesktopGrabber` y patrón demo) + 100 frames verificados por TCP real |
+| REQ-004 | SPEC-003 | `-` | TEST-015 | Approved | Flujo principal del stream de video (SPEC-003 §7, REQ-004 AC-1) — implementado: codec en `core::stream` (10 tests, incluye `fmt=jpeg` de CR-001) + fuentes en `server::video` (escritorio con `twinpad-capture::DesktopGrabber` y patrón demo) + encode JPEG q80 medido: 40 KB/frame 720p (9.6 Mbps @30, 19.2 @60) y 76 KB 1080p (18.1 Mbps @30), muy bajo el presupuesto de WiFi LAN |
 | REQ-004 | SPEC-003 | `-` | TEST-016 | Approved | Frame corrupto/tardío y edge cases §10 (REQ-004 AC-3) — codec estricto E4 en `core::stream` + descarte en `StreamStateMachine` (app) |
 | REQ-005 | SPEC-003 | `-` | TEST-017 | Approved | Reanudación tras corte breve < 10 s sin re-pairing (§8.2, REQ-005 AC-2) — implementada en el server (sesión persistente); caso de red en banco físico |
-| REQ-003 | SPEC-004 | `-` | TEST-018 | Approved | Flujo táctil → juego y orden por `seq` (SPEC-004 §7, REQ-003 AC-2) — transporte inicial: sesión LAN de SPEC-001 (OQ §17); implementación en curso |
+| REQ-003 | SPEC-004 | `-` | TEST-018 | Approved | Flujo táctil → juego y orden por `seq` (SPEC-004 §7, REQ-003 AC-2) — transporte inicial: sesión LAN de SPEC-001 (OQ §17); superficie táctil completa con sticks analógicos (−127…127, centro al soltar §10) y triggers analógicos (0…255) en `GamepadView` + máquina pura `GamepadSurfaceState` (6 tests JVM) |
 | REQ-003 | SPEC-004 | `-` | TEST-019 | Approved | Rumble (AC-3) y edge cases §10 — postergado a la iteración de rumble (requiere canal PC→app) |
-| REQ-005 | SPEC-005 | `-` | TEST-020 | Draft | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — pendiente de DES |
+| REQ-005 | SPEC-005 | `-` | TEST-020 | Approved | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — codec estricto `audio_start/chunk/stop` en `core::audio` (9 tests, límites §4: 16 KiB, s16le, rate 8k–192k); emisor `server::audio` con fragmentación y ritmo real (4 tests) + verificación punta a punta por TCP real (86 chunks en 2 s a 44.1 kHz); receptor en la app: `AudioStateMachine` A0/A1/A2 con jitter 500 ms fijo (§6, OQ §17), descarte por `seq`/corrupción (§9) y reproducción vía `AudioPlayback` (AudioTrack) — 9 tests JVM |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | AC-2: el juego publica frames de Segunda pantalla vía SDK (`TwinpadGame::push_frame` → `game_frame`) y el server los retiene como fuente del Stream de SPEC-003 (se emiten como `video_frame`); liveness del contenido (invariante §14: el frame muere con el juego) — `core::game::GameMsg::GameFrame` + `server::games::GameRegistry::store_frame/preferred_source` + `server::video::run_game_stream` + 4 tests de integración loopback en `server/tests/sdk_frames_integration.rs` |
 | REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — pendiente de DES |
@@ -78,7 +78,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
-| — | — | — | — |
+| CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |
 
 ## Invariants of this matrix
 

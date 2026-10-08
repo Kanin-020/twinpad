@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-005 |
 | Title | Transmisión y reproducción de audio (REQ-005) |
-| Version | 0.1.0 |
-| Status | `Draft` |
+| Version | 1.0.0 |
+| Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-005 (AC-1, AC-2 parcial: reanudación compartida con SPEC-003) |
 | Realized by | DES-XXX (`-` hasta asignar) |
 | Verified by | TEST-020 |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-10-08 |
 
 ## 1. Purpose
 
@@ -164,11 +164,12 @@ Una implementación cumple este SPEC si y solo si: honra §3, produce §5 en cad
 
 ## 17. Open questions
 
-- ¿Códec de compresión para el audio (o PCM crudo es suficiente para v1 en 802.11ac)? — owner: Eng lead — 2026-10-07 — abierta
-- ¿Tolerancia de jitter buffer (500 ms inicial) ajustable por el usuario? — owner: Eng lead — 2026-10-07 — abierta
+- ¿Códec de compresión para el audio (o PCM crudo es suficiente para v1 en 802.11ac)? — owner: Eng lead — 2026-10-07 — **resuelta por el owner (usuario, 2026-10-08): v1 sin compresión — PCM `s16le` crudo, igual criterio que SPEC-003 (OQ-1); si la medición de ancho de banda fallara, el códec entra por CR.**
+- ¿Tolerancia de jitter buffer (500 ms inicial) ajustable por el usuario? — owner: Eng lead — 2026-10-07 — **resuelta por el owner (usuario, 2026-10-08): fija en 500 ms en v1; no se expone ajuste al usuario (superficie de configuración mínima); ajustable solo vía CR si el banco físico lo exige.**
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: stream de audio sobre la sesión |
+| 1.0.0 | 2026-10-08 | Owner (usuario) | Approved: OQ §17 resueltas (PCM s16le sin compresión; jitter 500 ms fijo) |

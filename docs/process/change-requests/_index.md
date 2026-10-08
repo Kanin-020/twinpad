@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-001 |
+| CR | CR-002 |
 
 ## Open / In review
 
@@ -16,7 +16,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| CR-001 | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
 
 ## Rejected / Withdrawn
 
@@ -30,4 +30,4 @@
 |---|---|
 | Open | 0 |
 | Median time open → applied | — |
-| Last reviewed | 2026-10-07 |
+| Last reviewed | 2026-10-08 |

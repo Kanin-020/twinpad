@@ -257,10 +257,12 @@ fn decode_frame_data(
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(data)
         .map_err(|_| ())?;
-    if bytes.len() == usize::from(w) * usize::from(h) * fmt.bytes_per_pixel() {
-        Ok(bytes)
-    } else {
-        Err(())
+    // `jpeg` (CR-001) tiene tamaño libre: solo los formatos crudos
+    // deben medir exactamente w×h×bpp.
+    match fmt.bytes_per_pixel() {
+        Some(bpp) if bytes.len() == usize::from(w) * usize::from(h) * bpp => Ok(bytes),
+        Some(_) => Err(()),
+        None => Ok(bytes),
     }
 }
 

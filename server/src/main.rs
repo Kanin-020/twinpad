@@ -179,19 +179,33 @@ fn main() {
                         // capturado con xcap; TWINPAD_SOURCE=demo fuerza el
                         // patrón animado. Si la captura no está disponible
                         // (permisos, Wayland), cae al patrón con aviso.
+                        // Video y audio comparten el lock de escritura: cada
+                        // línea NDJSON viaja atómica (sin intercalado).
+                        let write_lock = SessionWriteLock::default();
                         let writer = match stream.try_clone() {
-                            Ok(w) => Some(StreamSink { inner: w }),
+                            Ok(w) => Some(StreamSink {
+                                inner: w,
+                                lock: write_lock.clone(),
+                            }),
                             Err(_) => None,
                         };
                         let force_demo =
                             matches!(std::env::var("TWINPAD_SOURCE").as_deref(), Ok("demo"));
+                        // CR-001: resolución/fps/calidad por entorno (720p×30
+                        // por defecto; 1080p×60: TWINPAD_WIDTH=1920
+                        // TWINPAD_HEIGHT=1080 TWINPAD_FPS=60).
+                        let video_config = twinpad_server::video::VideoConfig::from_env();
                         let grabber = if force_demo {
                             None
                         } else {
                             match twinpad_capture::DesktopGrabber::new() {
                                 Ok(g) => {
                                     println!(
-                                        "Fuente de video: escritorio del PC (TWINPAD_SOURCE=demo para el patrón de prueba)."
+                                        "Fuente de video: escritorio del PC — {}×{} @ {} fps JPEG q{} (CR-001).",
+                                        video_config.width,
+                                        video_config.height,
+                                        video_config.fps,
+                                        video_config.jpeg_quality
                                     );
                                     Some(g)
                                 }
@@ -228,7 +242,8 @@ fn main() {
                                         Some(g) => twinpad_server::video::run_desktop_stream(
                                             &mut sink,
                                             u64::MAX, // hasta que la sesión se corte
-                                            twinpad_server::video::DEMO_FPS,
+                                            video_config.fps,
+                                            video_config,
                                             g,
                                         ),
                                         None => twinpad_server::video::run_demo_stream(
@@ -246,6 +261,37 @@ fn main() {
                                         }
                                     }
                                 }
+                            })
+                        });
+
+                        // SPEC-005 §7: stream de audio demo (tono suave) mientras
+                        // no exista el juego con audio (§3: el origen real es el
+                        // Plugin). Misma conexión persistente; hilo propio
+                        // (ARCH §8: prioridad inputs > video > audio).
+                        let audio_writer = match stream.try_clone() {
+                            Ok(w) => Some(StreamSink {
+                                inner: w,
+                                lock: write_lock.clone(),
+                            }),
+                            Err(_) => None,
+                        };
+                        let audio_thread = audio_writer.map(|mut sink| {
+                            std::thread::spawn(move || {
+                                let mut chunk_counter = 0u64;
+                                let mut source = move |_seq: u64| {
+                                    chunk_counter += 1;
+                                    Some(twinpad_server::audio::demo_chunk(
+                                        chunk_counter,
+                                        twinpad_server::audio::CHUNK_SAMPLES,
+                                        twinpad_server::audio::DEMO_RATE,
+                                    ))
+                                };
+                                let _ = twinpad_server::audio::run_audio_stream(
+                                    &mut sink,
+                                    twinpad_server::audio::DEMO_RATE,
+                                    twinpad_server::audio::DEMO_CHANNELS,
+                                    &mut source,
+                                );
                             })
                         });
 
@@ -287,6 +333,9 @@ fn main() {
                         if let Some(handle) = video_thread {
                             let _ = handle.join();
                         }
+                        if let Some(handle) = audio_thread {
+                            let _ = handle.join();
+                        }
                     }
                 }
                 SessionOutcome::Rejected(e) => {
@@ -307,20 +356,41 @@ fn apply_seq_filter(last_seq: Option<u32>, msg: &twinpad_core::input::InputMsg) 
     last_seq
 }
 
+/// Escritura serializada de la sesión: los hilos de video y audio comparten
+/// el mismo socket TCP por clones separados; sin esta exclusión, una línea
+/// de ~1 MB (video) puede intercalarse a mitad de escritura con un chunk de
+/// audio y corromper ambas líneas NDJSON (la app las descarta → sin sonido
+/// y con cortes de video). `Arc<Mutex<()>>` serializa cada línea completa
+/// (write_all + '\n' + flush) como una sola unidad atómica.
+#[derive(Clone, Default)]
+struct SessionWriteLock(Arc<std::sync::Mutex<()>>);
+
 /// Adaptador del stream retenido a `FrameSink` (la escritura va por el
 /// duplicado del stream; la lectura sigue en el hilo de la sesión).
 struct StreamSink {
     inner: std::net::TcpStream,
+    lock: SessionWriteLock,
 }
 
-impl twinpad_server::video::FrameSink for StreamSink {
-    fn send_line(&mut self, line: &str) -> bool {
+impl StreamSink {
+    /// Escribe la línea completa (con '\n' y flush) bajo el lock compartido;
+    /// `false` si la conexión cayó.
+    fn send_locked(&mut self, line: &str) -> bool {
         use std::io::Write;
+        let Ok(_guard) = self.lock.0.lock() else {
+            return false; // lock envenenado: el hilo dueño murió con la sesión
+        };
         self.inner
             .write_all(line.as_bytes())
             .and_then(|_| self.inner.write_all(b"\n"))
             .and_then(|_| self.inner.flush())
             .is_ok()
+    }
+}
+
+impl twinpad_server::video::FrameSink for StreamSink {
+    fn send_line(&mut self, line: &str) -> bool {
+        self.send_locked(line)
     }
 }
 
