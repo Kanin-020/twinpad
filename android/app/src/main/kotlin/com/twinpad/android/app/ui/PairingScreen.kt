@@ -34,6 +34,7 @@ fun PairingScreen(
     actions: PairingActions,
     cameraController: PairingCameraController? = null,
     streamState: com.twinpad.android.app.stream.StreamUiState? = null,
+    availableGames: List<com.twinpad.android.app.wire.GameInfo> = emptyList(),
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -68,6 +69,10 @@ fun PairingScreen(
 
             is PairingUiState.Linked -> {
                 Text(stringResource(R.string.pairing_linked))
+                // SPEC-006 §5/REQ-006 AC-1: juegos compatibles detectados.
+                if (availableGames.isNotEmpty()) {
+                    AvailableGamesView(availableGames)
+                }
                 // SPEC-003 §5: vista de Segunda pantalla del stream activo.
                 streamState?.let { s ->
                     SecondScreenView(s)
@@ -82,6 +87,22 @@ fun PairingScreen(
             }
         }
     }
+}
+
+/**
+ * Juegos compatibles detectados (SPEC-006 §5, REQ-006 AC-1): la app muestra
+ * el/los juegos con SDK anunciados y vivos en el server.
+ */
+@Composable
+private fun AvailableGamesView(games: List<com.twinpad.android.app.wire.GameInfo>) {
+    val names = games.joinToString(", ") { it.gameName }
+    val message =
+        if (games.size == 1) {
+            stringResource(R.string.game_compatible_one, names)
+        } else {
+            stringResource(R.string.game_compatible_many, names)
+        }
+    Text(message, style = MaterialTheme.typography.bodyMedium)
 }
 
 /**

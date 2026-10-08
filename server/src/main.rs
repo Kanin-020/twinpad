@@ -19,6 +19,9 @@ use twinpad_server::tokens::{Clock, RandomBytes, TokenStore};
 /// Puerto TCP del servidor (REQ-001; dentro del rango 1024–65535 de §4.1).
 const DEFAULT_PORT: u16 = 8420;
 
+/// Puerto IPC del SDK (SPEC-006/ADR-008): los juegos con SDK anuncian aquí.
+const DEFAULT_IPC_PORT: u16 = 8421;
+
 /// Fuentes reales de entropía y reloj (ENG §5 P11: los efectos viven aquí).
 struct OsRandomBytes;
 impl RandomBytes for OsRandomBytes {
@@ -62,6 +65,38 @@ fn main() {
     ));
     let registry = Arc::new(twinpad_server::registry::SessionRegistry::new());
 
+    // SPEC-006/ADR-008: listener IPC para juegos con SDK. Si el puerto está
+    // en uso, el server sigue (pairing/video/inputs) pero sin detección.
+    let ipc_port: u16 = std::env::args()
+        .nth(2)
+        .and_then(|a| a.parse().ok())
+        .unwrap_or(DEFAULT_IPC_PORT);
+    let game_registry = Arc::new(twinpad_server::games::GameRegistry::new());
+    match TcpListener::bind(("127.0.0.1", ipc_port)) {
+        Ok(ipc_listener) => {
+            let sessions = Arc::clone(&registry);
+            let games = Arc::clone(&game_registry);
+            let publish = Arc::new(move |list: &[twinpad_core::game::GameInfo]| {
+                if let Ok(line) = (twinpad_core::game::GameMsg::GamesAvailable {
+                    games: list.to_vec(),
+                })
+                .encode()
+                {
+                    sessions.broadcast_line(&line);
+                }
+            });
+            std::thread::spawn(move || {
+                println!("Detección de juegos SDK activa en 127.0.0.1:{ipc_port} (SPEC-006).");
+                twinpad_server::games::run_ipc_listener(ipc_listener, games, publish);
+            });
+        }
+        Err(_) => {
+            eprintln!(
+                "Twinpad: puerto IPC {ipc_port} en uso; detección de juegos SDK desactivada."
+            );
+        }
+    }
+
     println!("Twinpad Servidor PC — escuchando en {addr}:{port}");
     println!("Escanea este QR con la app Twinpad:");
     println!();
@@ -82,6 +117,7 @@ fn main() {
         let token_for_thread = record.token;
         let store_ref = Arc::clone(&store);
         let registry_ref = Arc::clone(&registry);
+        let games_ref = Arc::clone(&game_registry);
         std::thread::spawn(move || {
             let mut deps = SessionDeps {
                 now_ms: &mut || SystemClock.now_ms(),
@@ -123,6 +159,19 @@ fn main() {
                         session_alive = true;
                     }
                     let _ = session_key; // se usará por el canal cifrado (futuro)
+
+                    if session_alive {
+                        // SPEC-006 §5/§7 paso 3: la sesión nueva recibe la
+                        // lista vigente de juegos compatibles.
+                        let games_line = (twinpad_core::game::GameMsg::GamesAvailable {
+                            games: games_ref.list(),
+                        })
+                        .encode()
+                        .ok();
+                        if let Some(line) = games_line {
+                            registry_ref.send_line(&session_id, &line);
+                        }
+                    }
 
                     if session_alive {
                         // SPEC-003 §7: fuente temporal sin Plugin (§17 del

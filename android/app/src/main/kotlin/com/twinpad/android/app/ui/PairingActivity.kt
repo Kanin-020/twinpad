@@ -50,6 +50,7 @@ class PairingActivity : ComponentActivity() {
     private fun PairingScreenRoot(viewModel: PairingViewModel = viewModel()) {
         val state by viewModel.uiState.collectAsState()
         val streamState by viewModel.streamState.collectAsState()
+        val availableGames by viewModel.availableGames.collectAsState()
 
         LaunchedEffect(Unit) {
             viewModel.cameraEffects.collect { effect ->
@@ -78,6 +79,7 @@ class PairingActivity : ComponentActivity() {
                 actions = actions,
                 cameraController = cameraController,
                 streamState = streamState,
+                availableGames = availableGames,
             )
         }
     }

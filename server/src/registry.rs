@@ -54,6 +54,19 @@ impl SessionRegistry {
         lock_or_reset(&self.streams).contains_key(session_id)
     }
 
+    /// Envía una línea NDJSON a **todas** las sesiones activas (p. ej. la
+    /// lista de juegos disponibles de SPEC-006 §5). Ignora sesiones cuyo
+    /// envío falla; no reporta errores parciales.
+    pub fn broadcast_line(&self, line: &str) {
+        use std::io::Write;
+        for stream in lock_or_reset(&self.streams).values_mut() {
+            let _ = stream
+                .write_all(line.as_bytes())
+                .and_then(|_| stream.write_all(b"\n"))
+                .and_then(|_| stream.flush());
+        }
+    }
+
     /// Envía una línea NDJSON a la sesión indicada (canal del server → app).
     /// Devuelve `false` si la sesión no existe o el envío falla.
     pub fn send_line(&self, session_id: &SessionId, line: &str) -> bool {
@@ -161,5 +174,25 @@ mod tests {
         let registry = SessionRegistry::new();
         let (sid, _) = session(5);
         assert!(!registry.send_line(&sid, "x"));
+    }
+
+    #[test]
+    fn broadcast_reaches_every_session() {
+        let registry = SessionRegistry::new();
+        let (sid_a, sa) = session(6);
+        let (sid_b, sb) = session(7);
+        let (server_a, mut client_a) = loopback_pair();
+        let (server_b, mut client_b) = loopback_pair();
+        registry.insert(sa, server_a);
+        registry.insert(sb, server_b);
+        registry.broadcast_line("{\"ping\":1}");
+        use std::io::Read;
+        let mut buf_a = [0u8; 11];
+        let mut buf_b = [0u8; 11];
+        client_a.read_exact(&mut buf_a).unwrap();
+        client_b.read_exact(&mut buf_b).unwrap();
+        assert_eq!(&buf_a, b"{\"ping\":1}\n");
+        assert_eq!(&buf_b, b"{\"ping\":1}\n");
+        let _ = (sid_a, sid_b);
     }
 }

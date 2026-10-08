@@ -14,6 +14,7 @@
 
 pub mod crypto;
 pub mod error;
+pub mod game;
 pub mod handshake;
 pub mod input;
 pub mod message;

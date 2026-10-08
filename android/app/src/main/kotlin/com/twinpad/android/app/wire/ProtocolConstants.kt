@@ -51,4 +51,8 @@ object ProtocolConstants {
 
     /** Ejes del giroscopio opcional (SPEC-004 §4). */
     const val GYRO_AXES: Int = 3
+
+    // Detección de juegos (SPEC-006 §4; transporte ADR-008).
+    const val GAME_ID_MAX: Int = 64
+    const val GAME_NAME_MAX: Int = 128
 }

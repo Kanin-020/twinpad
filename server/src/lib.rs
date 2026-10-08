@@ -8,6 +8,7 @@
 //! `ServerHandshake`). El binario ejecutable (`main.rs`) es el adaptador
 //! con listener real, entropía del SO y QR en stdout (REQ-001 AC-1/2).
 
+pub mod games;
 pub mod qr;
 pub mod qr_render;
 pub mod registry;

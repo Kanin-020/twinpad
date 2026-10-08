@@ -39,6 +39,11 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         MutableStateFlow(com.twinpad.android.app.stream.StreamUiState())
     val streamState: StateFlow<com.twinpad.android.app.stream.StreamUiState> = _streamState
 
+    /** Juegos compatibles vivos (SPEC-006 §5): lista publicada por el server. */
+    private val _availableGames =
+        MutableStateFlow<List<com.twinpad.android.app.wire.GameInfo>>(emptyList())
+    val availableGames: StateFlow<List<com.twinpad.android.app.wire.GameInfo>> = _availableGames
+
     init {
         viewModelScope.launch {
             network.lines.collect { line ->
@@ -69,7 +74,15 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             // (SPEC-002 §9 la reporta; aquí solo limpiamos el stream).
             streamMachine.reset()
             _streamState.value = com.twinpad.android.app.stream.StreamUiState()
+            _availableGames.value = emptyList()
             feed(PairingEvent.WireMessage(null))
+            return
+        }
+        // SPEC-006 §5: la lista de juegos compatibles viaja por la misma
+        // sesión; se consume aquí y no entra a la máquina del stream.
+        val games = com.twinpad.android.app.wire.GameListCodec.decode(line)
+        if (games != null) {
+            _availableGames.value = games
             return
         }
         val frame = streamMachine.onLine(line)
