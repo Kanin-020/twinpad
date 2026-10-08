@@ -4,8 +4,8 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 0.1.0 |
-| Status | `Draft` |
+| Version | 1.0.0 |
+| Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1; contratos de AC-2/AC-3 quedan en el SDK) |
 | Realized by | DES-XXX (`-` hasta asignar) |
@@ -134,11 +134,12 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 
 ## 17. Open questions
 
-- ¿Lenguajes/runtimes soportados por el SDK en v1 (C/C++ nativo, otros)? — owner: Eng lead — 2026-10-07 — abierta
-- ¿Mecanismo IPC concreto (named pipe, localhost socket)? — owner: Eng lead — 2026-10-07 — abierta (DES-006)
+- ¿Lenguajes/runtimes soportados por el SDK en v1 (C/C++ nativo, otros)? — owner: Eng lead — 2026-10-07 — **resuelta por el owner (usuario): SDK v1 como crate Rust (`twinpad-sdk`) con API de anuncio; el wrapper C/C++ (motores/AAA) entra como capa FFI posterior.**
+- ¿Mecanismo IPC concreto (named pipe, localhost socket)? — owner: Eng lead — 2026-10-07 — **resuelta por el owner (usuario): TCP localhost (127.0.0.1:8421 por defecto) con NDJSON, mismo estilo de framing que la sesión de SPEC-001; ver ADR-008. La conexión viva ES el anuncio vivo (liveness R2/§9); named pipes de Windows quedan como alternativa futura.**
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: detección de juego con SDK |
+| 1.0.0 | 2026-10-08 | Owner (usuario) | Approved: IPC por TCP localhost NDJSON (ADR-008); SDK v1 en Rust; publicación a la app incluida (AC-1 completo) |

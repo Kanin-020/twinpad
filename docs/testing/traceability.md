@@ -35,7 +35,7 @@
 | REQ-003 | SPEC-004 | `-` | TEST-018 | Approved | Flujo táctil → juego y orden por `seq` (SPEC-004 §7, REQ-003 AC-2) — transporte inicial: sesión LAN de SPEC-001 (OQ §17); implementación en curso |
 | REQ-003 | SPEC-004 | `-` | TEST-019 | Approved | Rumble (AC-3) y edge cases §10 — postergado a la iteración de rumble (requiere canal PC→app) |
 | REQ-005 | SPEC-005 | `-` | TEST-020 | Draft | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — pendiente de DES |
-| REQ-006 | SPEC-006 | `-` | TEST-021 | Draft | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — pendiente de DES |
+| REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
 | REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — pendiente de DES |
 | REQ-008 | SPEC-008 | `-` | TEST-023 | Draft | Edición, carga automática y conflicto de superficie (REQ-008 AC-1..3) — pendiente de DES |
 
@@ -71,6 +71,7 @@
 | ADR-005 | ARCH §2, §4 (framebuffers) |
 | ADR-006 | ARCH §2, §6 (modelos de plugin) |
 | ADR-007 | SPEC-004 §17 (transporte inicial de inputs por sesión LAN) |
+| ADR-008 | SPEC-006 §4/§17 (IPC del SDK por TCP localhost NDJSON) |
 
 ## Change history
 

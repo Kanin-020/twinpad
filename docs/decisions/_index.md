@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| ADR | ADR-008 |
+| ADR | ADR-009 |
 
 ## Accepted
 
@@ -19,6 +19,7 @@
 | ADR-005 | Segunda pantalla por framebuffers (no HTML/UI) | 2026-10-07 | ARCH §2, §4 | [ADR-005-framebuffer-second-screen.md](ADR-005-framebuffer-second-screen.md) |
 | ADR-006 | Plugins: SDK Twinpad (B) + Config externa (C) | 2026-10-07 | ARCH §2, §6 | [ADR-006-plugin-models-sdk-and-config.md](ADR-006-plugin-models-sdk-and-config.md) |
 | ADR-007 | Transporte inicial de inputs: sesión LAN de SPEC-001 | 2026-10-07 | SPEC-004 §17, DES-004 | [ADR-007-hid-over-lan-initial.md](ADR-007-hid-over-lan-initial.md) |
+| ADR-008 | Canal IPC SDK ↔ Servidor: TCP localhost NDJSON | 2026-10-08 | SPEC-006 §4/§17, DES-006 | [ADR-008-sdk-ipc-tcp-localhost.md](ADR-008-sdk-ipc-tcp-localhost.md) |
 
 ## Proposed
 
@@ -36,6 +37,6 @@
 
 | Metric | Value |
 |---|---|
-| Accepted | 7 |
+| Accepted | 8 |
 | Proposed | 0 |
 | Last reviewed | 2026-10-07 |
