@@ -175,6 +175,9 @@ pub const CAPTURE_HEIGHT: u16 = 360;
 /// con pérdida visual imperceptible para contenido de juego.
 pub const DEFAULT_JPEG_QUALITY: u8 = 80;
 
+/// fps de respaldo si el lock envenenó (no debe ocurrir).
+const DEFAULT_FPS_FALLBACK: u8 = 30;
+
 /// Objetivos de calidad del stream que el owner puede ajustar por variable
 /// de entorno (720p/1080p, 30/60 fps; CR-001). Los valores caen a lo que la
 /// máquina sostenga: el stream no se congela (SPEC-003 R3/R5).
@@ -261,6 +264,45 @@ pub fn run_desktop_stream(
         frames,
         fps,
         OutputFormat::Jpeg(config.jpeg_quality),
+        &mut source,
+    )
+}
+
+/// Igual que [`run_desktop_stream`] pero la config se lee de `cfg` en cada
+/// frame: la app puede cambiar resolución/fps en caliente (menú de ajustes,
+/// CR-001) y el emisor lo aplica con un `stream_start` nuevo (§8.1).
+///
+/// # Errors
+/// `Disconnected` si el receptor deja de estar disponible.
+pub fn run_desktop_stream_dynamic(
+    sink: &mut dyn FrameSink,
+    frames: u64,
+    cfg: std::sync::Arc<std::sync::Mutex<VideoConfig>>,
+    grabber: &twinpad_capture::DesktopGrabber,
+) -> Result<(), VideoSourceError> {
+    let (start_fps, quality) = match cfg.lock() {
+        Ok(c) => (c.fps, c.jpeg_quality),
+        Err(_) => (DEFAULT_FPS_FALLBACK, DEFAULT_JPEG_QUALITY),
+    };
+    let cfg_for_source = std::sync::Arc::clone(&cfg);
+    let mut source = move |fn_: u64| {
+        let _ = fn_;
+        let Ok(cfg) = cfg_for_source.lock() else {
+            return None;
+        };
+        grabber.frame().ok().map(|(sw, sh, rgba)| {
+            (
+                cfg.width,
+                cfg.height,
+                twinpad_capture::rgb8_scaled(&rgba, sw, sh, cfg.width, cfg.height),
+            )
+        })
+    };
+    run_frame_stream(
+        sink,
+        frames,
+        start_fps,
+        OutputFormat::Jpeg(quality),
         &mut source,
     )
 }

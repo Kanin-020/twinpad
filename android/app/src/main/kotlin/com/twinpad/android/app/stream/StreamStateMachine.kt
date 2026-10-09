@@ -106,6 +106,24 @@ class StreamStateMachine {
             null
         }
 
+    /** Registra un frame aceptado que ya fue decodificado fuera de la
+     * máquina (pipeline, R2: `fn` monotónico). Devuelve `false` si era
+     * tardío (el llamante lo descarta). */
+    fun acceptFrame(
+        frameNumber: Long,
+        frameWidth: Int,
+        frameHeight: Int,
+    ): Boolean {
+        val last = lastFrameNumber
+        if (last != null && frameNumber <= last) return false // §10
+        lastFrameNumber = frameNumber
+        width = frameWidth
+        height = frameHeight
+        state = StreamState.STREAMING
+        lastFrameAtMs = System.currentTimeMillis()
+        return true
+    }
+
     /** Marca el stream interrumpido si no hay frames frescos (§6 V1→V2). */
     fun tick(
         nowMs: Long,

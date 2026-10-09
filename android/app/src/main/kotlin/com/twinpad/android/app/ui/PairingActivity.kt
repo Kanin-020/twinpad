@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.twinpad.android.app.core.Effect
@@ -51,6 +52,10 @@ class PairingActivity : ComponentActivity() {
         val state by viewModel.uiState.collectAsState()
         val streamState by viewModel.streamState.collectAsState()
         val availableGames by viewModel.availableGames.collectAsState()
+        val lastFrame by viewModel.lastFrame.collectAsState()
+        var settings by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf(StreamSettings())
+        }
 
         LaunchedEffect(Unit) {
             viewModel.cameraEffects.collect { effect ->
@@ -78,8 +83,22 @@ class PairingActivity : ComponentActivity() {
                 state = state,
                 actions = actions,
                 cameraController = cameraController,
-                streamState = streamState,
-                availableGames = availableGames,
+                session =
+                    SessionUiBundle(
+                        streamState = streamState,
+                        availableGames = availableGames,
+                        lastFrame = lastFrame,
+                        stats = viewModel.streamStats,
+                        settings = settings,
+                        actions = actions,
+                    ),
+                callbacks =
+                    SessionSettingsCallbacks(
+                        onSettingsChange = { settings = it },
+                        onVideoQualityChange = { w, h, fps ->
+                            viewModel.onVideoQualityChanged(w, h, fps)
+                        },
+                    ),
             )
         }
     }

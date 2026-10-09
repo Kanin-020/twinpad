@@ -11,6 +11,9 @@ import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.network.TcpPairingClient
+import com.twinpad.android.app.wire.GameListCodec
+import com.twinpad.android.app.wire.StreamCodec
+import com.twinpad.android.app.wire.StreamMessage
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -28,6 +31,22 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val streamMachine = com.twinpad.android.app.stream.StreamStateMachine()
     private val audioMachine = com.twinpad.android.app.audio.AudioStateMachine()
     private val gamepad = com.twinpad.android.app.hid.GamepadStateMachine()
+
+    /** HUD del stream (fps/kbps) y pipeline de decodificación en hilo IO
+     * con descarte de frames viejos (SPEC-003 R3: el render avanza al
+     * más reciente; el lag no se acumula). */
+    val streamStats = com.twinpad.android.app.stream.StreamStats()
+    private val pipeline =
+        com.twinpad.android.app.stream.StreamPipeline(streamStats) { decoded ->
+            streamMachine.acceptFrame(decoded.frameNumber, decoded.width, decoded.height)
+            _lastFrame.value = decoded
+            _streamState.value =
+                _streamState.value.copy(
+                    state = com.twinpad.android.app.stream.StreamState.STREAMING,
+                    width = decoded.width,
+                    height = decoded.height,
+                )
+        }
 
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
@@ -50,6 +69,11 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val _audioState =
         MutableStateFlow(com.twinpad.android.app.audio.AudioState.INACTIVE)
     val audioState: StateFlow<com.twinpad.android.app.audio.AudioState> = _audioState
+
+    /** Bitmap listo para la vista (publicado por el pipeline de video). */
+    private val _lastFrame =
+        MutableStateFlow<com.twinpad.android.app.stream.DecodedFrame?>(null)
+    val lastFrame: StateFlow<com.twinpad.android.app.stream.DecodedFrame?> = _lastFrame
 
     /** Adaptador de reproducción (AudioTrack); inyectable para tests. */
     private val playback = com.twinpad.android.app.audio.AudioPlayback()
@@ -92,37 +116,81 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             _streamState.value = com.twinpad.android.app.stream.StreamUiState()
             audioMachine.reset()
             _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
+            _lastFrame.value = null
+            streamStats.reset()
             _availableGames.value = emptyList()
             feed(PairingEvent.WireMessage(null))
             return
         }
-        // SPEC-006 §5: la lista de juegos compatibles viaja por la misma
-        // sesión; se consume aquí y no entra a la máquina del stream.
-        val games = com.twinpad.android.app.wire.GameListCodec.decode(line)
-        if (games != null) {
-            _availableGames.value = games
-            return
+        // Ruta rápida: separar por `type` SIN parsear todo el JSON (una
+        // línea de video puede medir 500 KB; parsearla dos veces —audio y
+        // video— con kotlinx.serialization costaba el doble de CPU).
+        when (lineType(line)) {
+            "games_available" -> {
+                com.twinpad.android.app.wire.GameListCodec.decode(line)?.let {
+                    _availableGames.value = it
+                }
+            }
+            "audio_start", "audio_chunk", "audio_stop" -> {
+                // R3 de ARCH §8: el audio no espera al video — se procesa
+                // directo en el lector (decode barato: ≤ 16 KiB).
+                if (audioMachine.onLine(line, System.currentTimeMillis())) {
+                    _audioState.value = audioMachine.state
+                    playback.drain(audioMachine.drainPending())
+                }
+                streamStats.onAudio(line.length)
+            }
+            "video_frame", "stream_start", "stream_stop" -> {
+                // SPEC-003: el frame viaja al pipeline (decode en hilo IO,
+                // descarte de viejos); los de control afectan al estado.
+                if (line.startsWith("{\"type\":\"video_frame\"")) {
+                    streamPipelineSubmit(line)
+                } else {
+                    streamMachine.onLine(line)
+                    _streamState.value = _streamState.value.copy(state = streamMachine.state)
+                }
+            }
+            else -> Unit // mensaje desconocido: ignorado (§9)
         }
-        // SPEC-005 §6: los mensajes de audio viajan por la misma sesión;
-        // se consumen aquí y no entran a la máquina del stream de video.
-        if (audioMachine.onLine(line, System.currentTimeMillis())) {
-            _audioState.value = audioMachine.state
-            // Los fragmentos aceptados van al adaptador de reproducción.
-            playback.drain(audioMachine.drainPending())
+    }
+
+    /** Encola el frame crudo al pipeline con su thunk de decodificación. */
+    private fun streamPipelineSubmit(line: String) {
+        val frame =
+            try {
+                StreamCodec.decode(line) as? StreamMessage.Frame
+            } catch (e: com.twinpad.android.app.core.PairingException) {
+                null
+            } ?: return
+        pipeline.submit(line.length) {
+            val bitmap =
+                com.twinpad.android.app.stream.FrameRenderer.decodeBase64AndRender(
+                    frame.data,
+                    frame.width,
+                    frame.height,
+                    frame.fmt,
+                )
+            bitmap?.let {
+                com.twinpad.android.app.stream.DecodedFrame(it, frame.width, frame.height, frame.frameNumber)
+            }
         }
-        val frame = streamMachine.onLine(line)
-        val newState = streamMachine
-        _streamState.value =
-            com.twinpad.android.app.stream.StreamUiState(
-                state = newState.state,
-                lastFrame = frame ?: _streamState.value.lastFrame,
-                width = newState.width,
-                height = newState.height,
-            )
     }
 
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
     fun onEvent(event: PairingEvent) = feed(event)
+
+    /** Ajuste de calidad del video en caliente (menú de la app): pide al
+     * server nueva resolución/fps para las próximas sesiones (v1: el server
+     * lo aplica al re-anunciar; la sesión vigente continúa). */
+    fun onVideoQualityChanged(
+        width: Int,
+        height: Int,
+        fps: Int,
+    ) {
+        val line =
+            "{{\"type\":\"video_config\",\"w\":$width,\"h\":$height,\"fps\":$fps}}"
+        network.send(line)
+    }
 
     /** SPEC-004 §7: un cambio de la superficie táctil genera un
      * `input_report` (canal: sesión LAN, ADR-007). Solo en Linked (H1);
@@ -186,4 +254,15 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         playback.release()
         network.shutdown()
     }
+}
+
+/** Ruta rápida: extrae el valor de `"type"` sin parsear todo el JSON
+ * (una línea de video puede medir 500 KB; parsearla dos veces —audio y
+ * video— con kotlinx.serialization costaba el doble de CPU). */
+private fun lineType(line: String): String? {
+    val marker = "\"type\":\""
+    val start = line.indexOf(marker)
+    if (start < 0) return null
+    val rest = line.substring(start + marker.length)
+    return rest.substringBefore('"')
 }

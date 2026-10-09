@@ -192,20 +192,27 @@ fn main() {
                         let force_demo =
                             matches!(std::env::var("TWINPAD_SOURCE").as_deref(), Ok("demo"));
                         // CR-001: resolución/fps/calidad por entorno (720p×30
-                        // por defecto; 1080p×60: TWINPAD_WIDTH=1920
-                        // TWINPAD_HEIGHT=1080 TWINPAD_FPS=60).
-                        let video_config = twinpad_server::video::VideoConfig::from_env();
+                        // por defecto); la app puede cambiarla en caliente
+                        // (menú de ajustes) vía `video_config` de sesión.
+                        let video_config_shared = std::sync::Arc::new(std::sync::Mutex::new(
+                            twinpad_server::video::VideoConfig::from_env(),
+                        ));
                         let grabber = if force_demo {
                             None
                         } else {
                             match twinpad_capture::DesktopGrabber::new() {
                                 Ok(g) => {
+                                    let initial = video_config_shared
+                                        .lock()
+                                        .map(|c| {
+                                            format!(
+                                                "{}×{} @ {} fps JPEG q{}",
+                                                c.width, c.height, c.fps, c.jpeg_quality
+                                            )
+                                        })
+                                        .unwrap_or_else(|_| "config no legible".into());
                                     println!(
-                                        "Fuente de video: escritorio del PC — {}×{} @ {} fps JPEG q{} (CR-001).",
-                                        video_config.width,
-                                        video_config.height,
-                                        video_config.fps,
-                                        video_config.jpeg_quality
+                                        "Fuente de video: escritorio del PC — {initial} (CR-001)."
                                     );
                                     Some(g)
                                 }
@@ -219,6 +226,7 @@ fn main() {
                         };
                         let video_thread = writer.map(|mut sink| {
                             let games = Arc::clone(&games_ref);
+                            let video_config_shared = std::sync::Arc::clone(&video_config_shared);
                             std::thread::spawn(move || {
                                 // REQ-006 AC-2: si hay un juego vivo con SDK
                                 // publicando `game_frame`, su contenido alimenta
@@ -239,13 +247,16 @@ fn main() {
                                     );
                                 } else {
                                     let result = match &grabber {
-                                        Some(g) => twinpad_server::video::run_desktop_stream(
-                                            &mut sink,
-                                            u64::MAX, // hasta que la sesión se corte
-                                            video_config.fps,
-                                            video_config,
-                                            g,
-                                        ),
+                                        Some(g) => {
+                                            let cfg_shared =
+                                                std::sync::Arc::clone(&video_config_shared);
+                                            twinpad_server::video::run_desktop_stream_dynamic(
+                                                &mut sink,
+                                                u64::MAX, // hasta que la sesión se corte
+                                                cfg_shared,
+                                                g,
+                                            )
+                                        }
                                         None => twinpad_server::video::run_demo_stream(
                                             &mut sink,
                                             u64::MAX, // hasta que la sesión se corte
@@ -297,8 +308,10 @@ fn main() {
 
                         // El hilo retiene `stream` abierto (lectura keepalive;
                         // EOF = el cliente cerró). Aquí llegan los
-                        // `input_report` de la app (SPEC-004, ADR-007).
+                        // `input_report` de la app (SPEC-004, ADR-007) y el
+                        // `video_config` del menú de la app.
                         let mut last_seq: Option<u32> = None;
+                        let reader_cfg = std::sync::Arc::clone(&video_config_shared);
                         use std::io::{BufRead, BufReader};
                         let mut reader = BufReader::new(stream);
                         let mut line = String::new();
@@ -318,6 +331,20 @@ fn main() {
                                     // descarta; aquí solo validamos y registramos.
                                     let trimmed = line.trim_end();
                                     if trimmed.is_empty() {
+                                        continue;
+                                    }
+                                    // Menú de la app (CR-001): cambio de calidad
+                                    // del video en caliente.
+                                    if trimmed.starts_with("{\"type\":\"video_config\"") {
+                                        if let Some(cfg) = parse_video_config(trimmed) {
+                                            if let Ok(mut slot) = reader_cfg.lock() {
+                                                *slot = cfg;
+                                            }
+                                            println!(
+                                                "Video config actualizada por la app: {}×{} @ {} fps.",
+                                                cfg.width, cfg.height, cfg.fps
+                                            );
+                                        }
                                         continue;
                                     }
                                     match twinpad_core::input::InputMsg::decode(trimmed) {
@@ -344,6 +371,25 @@ fn main() {
             }
         });
     }
+}
+
+/// Extrae `w`/`h`/`fps` del mensaje `video_config` del menú de la app
+/// (parseo mínimo sin serde; los valores se validan al construir VideoConfig).
+fn parse_video_config(line: &str) -> Option<twinpad_server::video::VideoConfig> {
+    let extract = |key: &str| -> Option<u32> {
+        let marker = format!("\"{key}\":");
+        let start = line.find(&marker)? + marker.len();
+        let rest = &line[start..];
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse().ok()
+    };
+    let current = twinpad_server::video::VideoConfig::from_env();
+    Some(twinpad_server::video::VideoConfig {
+        width: extract("w").map(|v| v as u16).unwrap_or(current.width),
+        height: extract("h").map(|v| v as u16).unwrap_or(current.height),
+        fps: extract("fps").map(|v| v as u8).unwrap_or(current.fps),
+        jpeg_quality: current.jpeg_quality,
+    })
 }
 
 /// SPEC-004 R2/§9: solo el reporte con `seq` mayor define el estado; los
