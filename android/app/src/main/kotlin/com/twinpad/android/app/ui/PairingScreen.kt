@@ -6,13 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -127,14 +125,12 @@ private fun SessionView(
     }
 
     if (menuOpen) {
-        SettingsDialog(
+        // Overlay del sidebar: scrim + panel lateral (se abre con ⚙).
+        SettingsOverlay(
             settings = session.settings,
             onDismiss = { menuOpen = false },
             onSettingsChange = callbacks.onSettingsChange,
-            onVideoQualityChange = { w, h, fps ->
-                callbacks.onVideoQualityChange(w, h, fps)
-                menuOpen = false
-            },
+            onVideoQualityChange = { w, h, fps -> callbacks.onVideoQualityChange(w, h, fps) },
         )
     }
 }
@@ -175,9 +171,6 @@ private fun SessionVideoArea(session: SessionUiBundle) {
 /** Conversión kbps → Mbps. */
 private const val KBPS_PER_MBPS: Double = 1_000.0
 
-/** fps por omisión al cambiar de resolución (el server mantiene el suyo). */
-private const val DEFAULT_FPS: Int = 30
-
 /** Padding en esquinas de la vista de sesión (dp). */
 private const val WINDOW_PADDING: Int = 8
 
@@ -197,70 +190,6 @@ private fun HudOverlay(
             modifier
                 .background(Color.Black.copy(alpha = 0.5f))
                 .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
-}
-
-/** Opciones de resolución del menú (16:9; CR-001). */
-private val RESOLUTION_OPTIONS =
-    listOf(
-        "960×540" to (960 to 540),
-        "1280×720" to (1280 to 720),
-        "1920×1080" to (1920 to 1080),
-    )
-
-/** Opciones de fps del menú. */
-private val FPS_OPTIONS = listOf(30, 60)
-
-/** Diálogo de ajustes: resolución, fps, HUD y controles. */
-@Composable
-private fun SettingsDialog(
-    settings: StreamSettings,
-    onDismiss: () -> Unit,
-    onSettingsChange: (StreamSettings) -> Unit,
-    onVideoQualityChange: (Int, Int, Int) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Ajustes de transmisión") },
-        text = {
-            Column {
-                Text("Resolución", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RESOLUTION_OPTIONS.forEach { (label, dims) ->
-                        val selected = label.startsWith("${dims.first}×") && label.contains(dims.second.toString())
-                        TextButton(onClick = { onVideoQualityChange(dims.first, dims.second, DEFAULT_FPS) }) {
-                            Text(if (selected) "[$label]" else label)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("FPS", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FPS_OPTIONS.forEach { fps ->
-                        TextButton(onClick = { onVideoQualityChange(0, 0, fps) }) {
-                            Text(fps.toString())
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("HUD", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { onSettingsChange(settings.copy(showFps = !settings.showFps)) }) {
-                        Text(if (settings.showFps) "Ocultar fps" else "Mostrar fps")
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("Controles", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { onSettingsChange(settings.copy(showControls = !settings.showControls)) }) {
-                        Text(if (settings.showControls) "Ocultar botones" else "Mostrar botones")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cerrar") }
-        },
     )
 }
 

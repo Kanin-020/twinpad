@@ -1,11 +1,15 @@
 package com.twinpad.android.app.ui
 
 /**
- * Ajustes del usuario para la vista de sesión (menú ⚙).
+ * Ajustes del usuario para la vista de sesión (sidebar ⚙).
  */
 data class StreamSettings(
     val showFps: Boolean = true,
     val showControls: Boolean = true,
+    /** Última calidad pedida al server (para marcar la selección). */
+    val width: Int = 1280,
+    val height: Int = 720,
+    val fps: Int = 30,
 )
 
 /**

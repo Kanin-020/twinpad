@@ -246,7 +246,7 @@ fn main() {
                                         false,
                                     );
                                 } else {
-                                    let result = match &grabber {
+                                    let result = match grabber {
                                         Some(g) => {
                                             let cfg_shared =
                                                 std::sync::Arc::clone(&video_config_shared);
