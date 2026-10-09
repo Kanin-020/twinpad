@@ -14,6 +14,7 @@ import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.wire.GameListCodec
 import com.twinpad.android.app.wire.StreamCodec
 import com.twinpad.android.app.wire.StreamMessage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -79,7 +80,13 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val playback = com.twinpad.android.app.audio.AudioPlayback()
 
     init {
-        viewModelScope.launch {
+        // Las líneas de sesión (video: 30 líneas/s de ~350 KB) se procesan
+        // FUERA del hilo de UI: el parseo del JSON + el decode base64 en
+        // Main congelaban toda la app (⚙ sin respuesta, video a ~1 fps
+        // visible) mientras el HUD contaba los frames que sí llegaban.
+        // Los StateFlow son thread-safe y la compose recomposición vive en
+        // Main (ENG P10: el efecto pesado vive en el hilo correcto).
+        viewModelScope.launch(Dispatchers.Default) {
             network.lines.collect { line ->
                 if (_uiState.value is PairingUiState.Linked) {
                     onStreamLine(line) // SPEC-003: tráfico de sesión

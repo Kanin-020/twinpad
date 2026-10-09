@@ -72,7 +72,7 @@ internal fun SettingsOverlay(
 
 /** Panel lateral con las secciones Resolución / FPS / HUD / Controles. */
 @Composable
-private fun SettingsPanel(
+internal fun SettingsPanel(
     settings: StreamSettings,
     onDismiss: () -> Unit,
     onSettingsChange: (StreamSettings) -> Unit,

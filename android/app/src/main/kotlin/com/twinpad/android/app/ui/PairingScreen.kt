@@ -14,12 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,7 +77,25 @@ fun PairingScreen(
             is PairingUiState.Linked -> {
                 // Vista de sesión: Segunda pantalla a pantalla completa con
                 // HUD y menú encima; superficie táctil configurable.
-                session?.let { SessionView(it, callbacks) }
+                // El sidebar vive en un ModalNavigationDrawer Material3:
+                // se abre con el botón Y arrastrando desde el borde izq.
+                session?.let {
+                    androidx.compose.material3.ModalNavigationDrawer(
+                        drawerContent = {
+                            ModalDrawerSheet {
+                                SettingsPanel(
+                                    settings = it.settings,
+                                    onDismiss = { callbacks.drawerOpen(false) },
+                                    onSettingsChange = callbacks.onSettingsChange,
+                                    onVideoQualityChange = callbacks.onVideoQualityChange,
+                                )
+                            }
+                        },
+                        drawerState = callbacks.drawerState,
+                    ) {
+                        SessionView(it, callbacks)
+                    }
+                }
             }
 
             is PairingUiState.Failure -> {
@@ -99,8 +116,6 @@ private fun SessionView(
     session: SessionUiBundle,
     callbacks: SessionSettingsCallbacks,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
-
     Box(modifier = Modifier.fillMaxSize()) {
         SessionVideoArea(session)
         val settings = session.settings
@@ -111,8 +126,9 @@ private fun SessionView(
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
             )
         }
+        // Abre el drawer por botón (también se abre arrastrando el borde).
         TextButton(
-            onClick = { menuOpen = true },
+            onClick = { callbacks.drawerOpen(true) },
             modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
         ) {
             Text("⚙", color = Color.White)
@@ -121,17 +137,6 @@ private fun SessionView(
             Column(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = WINDOW_PADDING.dp)) {
                 GamepadView(session.actions.onGamepadInput)
             }
-        }
-        if (menuOpen) {
-            // Overlay del sidebar (DENTRO del Box: si queda como hermano en
-            // la Column raíz, la columna lo apila debajo del Box de video y
-            // mide altura 0 — invisible).
-            SettingsOverlay(
-                settings = session.settings,
-                onDismiss = { menuOpen = false },
-                onSettingsChange = callbacks.onSettingsChange,
-                onVideoQualityChange = { w, h, fps -> callbacks.onVideoQualityChange(w, h, fps) },
-            )
         }
     }
 }

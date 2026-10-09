@@ -33,4 +33,10 @@ data class SessionUiBundle(
 data class SessionSettingsCallbacks(
     val onSettingsChange: (StreamSettings) -> Unit = {},
     val onVideoQualityChange: (width: Int, height: Int, fps: Int) -> Unit = { _, _, _ -> },
+    /** Estado y acciones del drawer del sidebar (arrastrable). */
+    val drawerState: androidx.compose.material3.DrawerState =
+        androidx.compose.material3.DrawerState(
+            androidx.compose.material3.DrawerValue.Closed,
+        ),
+    val drawerOpen: (Boolean) -> Unit = {},
 )
