@@ -303,16 +303,19 @@ pub fn run_desktop_stream_dynamic(
     result
 }
 
-/// Frame rgb8 escalado compartido entre el hilo de captura y el emisor.
+/// Frame JPEG listo compartido entre el hilo de captura/encode y el emisor:
+/// `(w, h, jpeg)`. Codificar en el HILO DE CAPTURA (por qué: el encode de
+/// 720p son ~2-8 ms y, junto al write TCP en el mismo hilo, competía contra
+/// el pacing; separado, la captura+encode va a su propio ritmo y el emisor
+/// solo pacea y escribe — el cuello ya no compromete el ciclo).
 type ArcFrameShare = std::sync::Arc<std::sync::Mutex<Option<(u16, u16, Vec<u8>)>>>;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Bucle de captura dedicado: a `cfg.fps` toma el escritorio, lo escala a
-/// `cfg.width×cfg.height` y publica el más reciente (sobreescritura sin
-/// esperar al emisor: el emisor siempre codifica el último logrado). Cada
-/// iteración relee la config: los cambios en caliente affectan al frame
-/// siguiente. Corre hasta que `stop` se marca (fin de emisión).
+/// Bucle de captura dedicado: toma el escritorio, escala a `cfg.width×height`
+/// y codifica JPEG con `cfg.jpeg_quality`; publica el más reciente
+/// (sobreescritura sin esperar al emisor). Cada iteración relee la config:
+/// los cambios en caliente afectan al frame siguiente. Corre hasta `stop`.
 fn capture_loop(
     cfg: &std::sync::Arc<std::sync::Mutex<VideoConfig>>,
     grabber: &mut twinpad_capture::DesktopGrabber,
@@ -320,48 +323,49 @@ fn capture_loop(
     stop: &AtomicBool,
 ) {
     while !stop.load(Ordering::Relaxed) {
-        let (dw, dh, period_ms) = match cfg.lock() {
-            Ok(c) => (c.width, c.height, 1_000 / u64::from(c.fps).max(1)),
+        let (dw, dh, quality) = match cfg.lock() {
+            Ok(c) => (c.width, c.height, c.jpeg_quality),
             Err(_) => break, // lock envenenado: el emisor terminó
         };
         if let Ok((sw, sh, rgba)) = grabber.frame() {
             let rgb = twinpad_capture::rgb8_scaled(&rgba, sw, sh, dw, dh);
-            if let Ok(mut slot) = share.lock() {
-                *slot = Some((dw, dh, rgb));
+            if let Some(jpeg) = encode_jpeg(&rgb, dw, dh, quality) {
+                if let Ok(mut slot) = share.lock() {
+                    *slot = Some((dw, dh, jpeg));
+                }
             }
         }
-        // La captura tarda lo que tarda; el descanso es el piso del ciclo.
-        std::thread::sleep(std::time::Duration::from_millis(period_ms));
+        // Sleep corto: deja CPU libre pero mantiene el slot fresco; el
+        // pacing real lo marca el emisor a cfg.fps.
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }
 
-/// Última; espera hasta 2 s el primer frame (evita anunciar un stream que
+/// Espera hasta 2 s el primer JPEG listo (evita anunciar un stream que
 /// nunca tendrá contenido, SPEC-003 §7: sin primer frame → `stream_stop`).
-fn wait_first_frame(share: &ArcFrameShare) -> Option<(u16, u16, Vec<u8>)> {
+fn wait_first_frame(share: &ArcFrameShare) -> bool {
     let deadline = Instant::now() + std::time::Duration::from_secs(2);
     loop {
-        if let Ok(frame) = share.lock() {
-            if frame.is_some() {
-                return frame.clone();
-            }
+        if latest_frame(share).is_some() {
+            return true;
         }
         if Instant::now() >= deadline {
-            return None;
+            return false;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
-/// Emisor del stream de escritorio con config dinámica: consulta `cfg` (fps,
-/// calidad) y `share` (frame más reciente escalado) en cada frame; un cambio
-/// de resolución/fps genera un `stream_start` nuevo (§8.1) y ajusta el pacing.
+/// Emisor del stream de escritorio con config dinámica: consulta `cfg` (fps)
+/// y `share` (JPEG más reciente) en cada frame; un cambio de resolución/fps
+/// genera un `stream_start` nuevo (§8.1) y ajusta el pacing.
 fn run_dynamic_emitter(
     sink: &mut dyn FrameSink,
     frames: u64,
     cfg: &std::sync::Arc<std::sync::Mutex<VideoConfig>>,
     share: &ArcFrameShare,
 ) -> Result<(), VideoSourceError> {
-    let Some(_) = wait_first_frame(share) else {
+    if !wait_first_frame(share) {
         // Sin primer frame no hay stream que anunciar: fin limpio.
         return send(
             sink,
@@ -369,18 +373,17 @@ fn run_dynamic_emitter(
                 reason: twinpad_core::stream::StreamStopReason::PluginStopped,
             },
         );
-    };
+    }
     let mut announced: Option<(u16, u16)> = None;
     let mut announced_fps = 0u8;
     let mut next_deadline = Instant::now();
     for fn_ in 0..frames {
-        let Some((w, h, rgb)) = latest_frame(share) else {
+        let Some((w, h, jpeg)) = latest_frame(share) else {
             break; // la captura desapareció: §7 paso 5
         };
-        let (quality, fps, period_ms) = match cfg.lock() {
-            Ok(c) => (c.jpeg_quality, c.fps, 1_000 / u64::from(c.fps).max(1)),
+        let (fps, period_ms) = match cfg.lock() {
+            Ok(c) => (c.fps, 1_000 / u64::from(c.fps).max(1)),
             Err(_) => (
-                DEFAULT_JPEG_QUALITY,
                 DEFAULT_FPS_FALLBACK,
                 1_000 / u64::from(DEFAULT_FPS_FALLBACK),
             ),
@@ -392,10 +395,6 @@ fn run_dynamic_emitter(
             announced_fps = fps;
             send(sink, &StreamMsg::StreamStart { w, h, fmt, fps })?;
         }
-        let Some(jpeg) = encode_jpeg(&rgb, w, h, quality) else {
-            next_deadline += std::time::Duration::from_millis(period_ms);
-            continue; // frame descartado; el stream continúa
-        };
         let frame = StreamMsg::VideoFrame {
             fn_,
             ts: next_deadline.elapsed().as_millis() as u64,
@@ -410,7 +409,7 @@ fn run_dynamic_emitter(
         if next_deadline > now {
             std::thread::sleep(next_deadline - now);
         } else {
-            // Vamos atrasados (encode > periodo): no acumular deuda.
+            // Atrasados (el write TCP manda): no acumular deuda.
             next_deadline = now;
         }
     }
@@ -422,7 +421,7 @@ fn run_dynamic_emitter(
     )
 }
 
-/// Copia del frame más reciente (clon del Vec: el emisor nunca bloquea al
+/// Copia del JPEG más reciente (clon del Vec: el emisor nunca bloquea al
 /// hilo de captura por más que un lock momentáneo).
 fn latest_frame(share: &ArcFrameShare) -> Option<(u16, u16, Vec<u8>)> {
     share.lock().ok()?.clone()

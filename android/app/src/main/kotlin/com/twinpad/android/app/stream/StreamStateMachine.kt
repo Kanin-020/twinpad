@@ -1,7 +1,5 @@
 package com.twinpad.android.app.stream
 
-import android.util.Base64
-
 /**
  * Estado del stream en el Android — V0/V1/V2 de SPEC-003 §6.
  */
@@ -86,8 +84,9 @@ class StreamStateMachine {
     private fun onFrame(msg: com.twinpad.android.app.wire.StreamMessage.Frame): Any? {
         val last = lastFrameNumber
         val stale = last != null && msg.frameNumber <= last // §10: idempotencia
-        val bytes = if (stale) null else decodeBase64(msg.data)
-        val bitmap = bytes?.let { FrameRenderer.decode(it, msg.width, msg.height, msg.fmt) }
+        // Los bytes ya vienen decodificados por el codec (UN base64).
+        val bitmap =
+            if (!stale) FrameRenderer.decode(msg.dataBytes, msg.width, msg.height, msg.fmt) else null
         if (bitmap == null) {
             return null // frame inconsistente descartado; se mantiene el activo
         }
@@ -98,13 +97,6 @@ class StreamStateMachine {
         lastFrameAtMs = System.currentTimeMillis()
         return bitmap
     }
-
-    private fun decodeBase64(data: String): ByteArray? =
-        try {
-            Base64.decode(data, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
 
     /** Registra un frame aceptado que ya fue decodificado fuera de la
      * máquina (pipeline, R2: `fn` monotónico). Devuelve `false` si era

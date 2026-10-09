@@ -122,16 +122,17 @@ private fun SessionView(
                 GamepadView(session.actions.onGamepadInput)
             }
         }
-    }
-
-    if (menuOpen) {
-        // Overlay del sidebar: scrim + panel lateral (se abre con ⚙).
-        SettingsOverlay(
-            settings = session.settings,
-            onDismiss = { menuOpen = false },
-            onSettingsChange = callbacks.onSettingsChange,
-            onVideoQualityChange = { w, h, fps -> callbacks.onVideoQualityChange(w, h, fps) },
-        )
+        if (menuOpen) {
+            // Overlay del sidebar (DENTRO del Box: si queda como hermano en
+            // la Column raíz, la columna lo apila debajo del Box de video y
+            // mide altura 0 — invisible).
+            SettingsOverlay(
+                settings = session.settings,
+                onDismiss = { menuOpen = false },
+                onSettingsChange = callbacks.onSettingsChange,
+                onVideoQualityChange = { w, h, fps -> callbacks.onVideoQualityChange(w, h, fps) },
+            )
+        }
     }
 }
 

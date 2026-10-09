@@ -163,9 +163,10 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
                 null
             } ?: return
         pipeline.submit(line.length) {
+            // Los bytes ya vienen decodificados por el codec (UN base64).
             val bitmap =
-                com.twinpad.android.app.stream.FrameRenderer.decodeBase64AndRender(
-                    frame.data,
+                com.twinpad.android.app.stream.FrameRenderer.decode(
+                    frame.dataBytes,
                     frame.width,
                     frame.height,
                     frame.fmt,

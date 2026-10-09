@@ -19,14 +19,32 @@ sealed class StreamMessage {
         val fps: Int,
     ) : StreamMessage()
 
-    /** server → app: un Framebuffer completo (base64url, sin compresión v1). */
+    /**
+     * server → app: un Framebuffer completo. `data` ya está decodificado a
+     * bytes (UN solo base64 por frame; el lector ya no lo decodifica dos
+     * veces — eso estrangulaba el pipeline y el server retrocede por
+     * backpressure). `dataBytes` vacío = base64 inválido (descartar).
+     */
     data class Frame(
         val frameNumber: Long,
         val width: Int,
         val height: Int,
         val fmt: String,
-        val data: String,
-    ) : StreamMessage()
+        val dataBytes: ByteArray,
+    ) : StreamMessage() {
+        // ByteArray en data class: identidad por contenido (ENG P10).
+        override fun equals(other: Any?): Boolean =
+            other is Frame &&
+                other.frameNumber == frameNumber &&
+                other.width == width &&
+                other.height == height &&
+                other.fmt == fmt &&
+                other.dataBytes.contentEquals(dataBytes)
+
+        override fun hashCode(): Int =
+            31 * (31 * (31 * (31 * frameNumber.hashCode() + width) + height) + fmt.hashCode()) +
+                dataBytes.contentHashCode()
+    }
 
     /** server → app: fin del stream. */
     data class Stop(val reason: String) : StreamMessage()
@@ -118,7 +136,7 @@ object StreamCodec {
             throw PairingException(PairingError.InvalidResponse)
         }
         if (decoded.isEmpty()) throw PairingException(PairingError.InvalidResponse)
-        return StreamMessage.Frame(frameNumber, w, h, fmt, data)
+        return StreamMessage.Frame(frameNumber, w, h, fmt, decoded)
     }
 
     private fun kotlinx.serialization.json.JsonObject.stringField(name: String): String =
