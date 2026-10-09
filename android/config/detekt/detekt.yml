@@ -10,7 +10,8 @@ complexity:
     functionThreshold: 6
   TooManyFunctions:
     active: true
-    thresholdInObjects: 11
+    thresholdInClasses: 22 # migración UI → Views: properties delegates, listeners y overrides de Android suman funciones legítimas (P4 sigue como meta de diseño).
+    thresholdInObjects: 18 # id.: objetos de validación con reglas atómicas separadas (ENG P4 lo favorece).
 
 exceptions:
   SwallowedException:

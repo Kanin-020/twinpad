@@ -21,4 +21,23 @@
     <string name="second_screen_reconnecting">Reconectando segunda pantalla…</string>
     <string name="game_compatible_one">Juego compatible: %1$s</string>
     <string name="game_compatible_many">Juegos compatibles: %1$s</string>
+    <string name="settings_title">Ajustes de transmisión</string>
+    <string name="settings_resolution">Resolución</string>
+    <string name="settings_fps">FPS</string>
+    <string name="settings_hud">HUD</string>
+    <string name="settings_show_fps">Mostrar fps</string>
+    <string name="settings_controls">Controles</string>
+    <string name="settings_show_controls">Mostrar botones</string>
+    <string name="settings_close">Cerrar</string>
+    <string name="settings_quality">Calidad JPEG</string>
+    <string name="editor_title">Editor de controles</string>
+    <string name="editor_add_button">+ Botón</string>
+    <string name="editor_add_stick">+ Stick</string>
+    <string name="editor_add_dpad">+ D-pad</string>
+    <string name="editor_assign">Asignar</string>
+    <string name="editor_delete">Eliminar</string>
+    <string name="editor_save">Guardar</string>
+    <string name="editor_edit">Editar controles</string>
+    <string name="editor_done">Listo</string>
+    <string name="hud_chip_text">%1$s fps · %2$s Mbps</string>
 </resources>

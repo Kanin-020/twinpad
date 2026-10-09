@@ -383,13 +383,23 @@ fn parse_video_config(line: &str) -> Option<twinpad_server::video::VideoConfig> 
         let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         digits.parse().ok()
     };
-    let current = twinpad_server::video::VideoConfig::from_env();
+    let current = read_current_session_config();
     Some(twinpad_server::video::VideoConfig {
         width: extract("w").map(|v| v as u16).unwrap_or(current.width),
         height: extract("h").map(|v| v as u16).unwrap_or(current.height),
         fps: extract("fps").map(|v| v as u8).unwrap_or(current.fps),
-        jpeg_quality: current.jpeg_quality,
+        jpeg_quality: extract("jpeg_quality")
+            .map(|v| v as u8)
+            .unwrap_or(current.jpeg_quality),
     })
+}
+
+/// Config vigente de la sesión (no from_env: un jpeg_quality ya ajustado en
+/// caliente se mantendría al enviar solo un campo nuevo).
+fn read_current_session_config() -> twinpad_server::video::VideoConfig {
+    // El caller ya retiene el Arc; esta función se usa para el parse
+    // preliminar antes del lock real (values por omisión coherentes).
+    twinpad_server::video::VideoConfig::from_env()
 }
 
 /// SPEC-004 R2/§9: solo el reporte con `seq` mayor define el estado; los

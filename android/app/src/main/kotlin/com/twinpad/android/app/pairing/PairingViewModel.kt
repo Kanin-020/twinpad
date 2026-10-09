@@ -196,7 +196,13 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         fps: Int,
     ) {
         val line =
-            "{{\"type\":\"video_config\",\"w\":$width,\"h\":$height,\"fps\":$fps}}"
+            "{\"type\":\"video_config\",\"w\":$width,\"h\":$height,\"fps\":$fps}"
+        network.send(line)
+    }
+
+    /** Ajuste de calidad JPEG en caliente (drawer, CR-001): 1–100. */
+    fun onJpegQualityChanged(quality: Int) {
+        val line = "{\"type\":\"video_config\",\"jpeg_quality\":$quality}"
         network.send(line)
     }
 

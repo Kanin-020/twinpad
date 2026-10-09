@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawer de ajustes del stream (CR-001): resolución, fps, calidad JPEG,
+     HUD y controles táctiles; editable en Android Studio. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/drawer_content"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_title"
+        android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/settings_resolution"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <RadioGroup
+        android:id="@+id/resolution_group"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/resolution_960x540"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="960×540" />
+
+        <RadioButton
+            android:id="@+id/resolution_1280x720"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1280×720" />
+
+        <RadioButton
+            android:id="@+id/resolution_1920x1080"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1920×1080" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/settings_fps"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <RadioGroup
+        android:id="@+id/fps_group"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/fps_30"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="30" />
+
+        <RadioButton
+            android:id="@+id/fps_60"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="60" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/settings_quality"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <SeekBar
+        android:id="@+id/jpeg_quality_seek"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/settings_hud"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switch_show_fps"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_show_fps" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/settings_controls"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switch_show_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_show_controls" />
+
+    <Button
+        android:id="@+id/btn_close_drawer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/settings_close" />
+</LinearLayout>

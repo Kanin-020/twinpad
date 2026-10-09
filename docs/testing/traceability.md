@@ -37,8 +37,8 @@
 | REQ-005 | SPEC-005 | `-` | TEST-020 | Approved | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — codec estricto `audio_start/chunk/stop` en `core::audio` (9 tests, límites §4: 16 KiB, s16le, rate 8k–192k); emisor `server::audio` con fragmentación y ritmo real (4 tests) + verificación punta a punta por TCP real (86 chunks en 2 s a 44.1 kHz); receptor en la app: `AudioStateMachine` A0/A1/A2 con jitter 500 ms fijo (§6, OQ §17), descarte por `seq`/corrupción (§9) y reproducción vía `AudioPlayback` (AudioTrack) — 9 tests JVM |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | AC-2: el juego publica frames de Segunda pantalla vía SDK (`TwinpadGame::push_frame` → `game_frame`) y el server los retiene como fuente del Stream de SPEC-003 (se emiten como `video_frame`); liveness del contenido (invariante §14: el frame muere con el juego) — `core::game::GameMsg::GameFrame` + `server::games::GameRegistry::store_frame/preferred_source` + `server::video::run_game_stream` + 4 tests de integración loopback en `server/tests/sdk_frames_integration.rs` |
-| REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — pendiente de DES |
-| REQ-008 | SPEC-008 | `-` | TEST-023 | Draft | Edición, carga automática y conflicto de superficie (REQ-008 AC-1..3) — pendiente de DES |
+| REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — modelo y normalización implementados en `android surface/ControlProfileCodec.decodeExternalConfig` (validación §4/§9); activación desde la app pendiente de DES |
+| REQ-008 | SPEC-008 | `-` | TEST-023 | Draft | Edición, carga automática y conflicto de superficie (REQ-008 AC-1..3) — modelo puro + validación + persistencia por juego (`surface/ControlProfile*`, 9 tests JVM) y superficie editable `ui/ProfileSurface` (drag/mover/perfiles XML-editables); UI migrada a Views XML (layouts/drawables editables en Android Studio, pedido del owner) |
 
 ## NFR verification
 
@@ -79,6 +79,7 @@
 | CR | Changes | Date | Status |
 |---|---|---|---|
 | CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |
+| — | `video_config` por sesión: resolución/fps/calidad JPEG en caliente desde el drawer de la app (parser del server + VM) | 2026-10-09 | Applied (owner-requested) |
 
 ## Invariants of this matrix
 
