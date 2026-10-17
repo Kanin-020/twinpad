@@ -16,6 +16,9 @@ base64 = "0.22"
 # Encode JPEG del stream (CR-001): revisión ENG §11 — rust-image org,
 # MIT/Apache, mantenido, sin unsafe directo; solo la feature jpeg.
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
+# Encoder JPEG baseline con ruta SIMD AVX2 detectada en runtime para sostener
+# la codificación por frame sin cambiar el wire JPEG (CR-001 / SPEC-003).
+jpeg-encoder = { version = "0.6.1", features = ["simd"] }
 # Render del QR de vinculación en terminal (ENG §11: MIT/Apache, sin unsafe,
 # sin deps transitivas, mantenido por Nayuki)
 qrcodegen = "1.8"

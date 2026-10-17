@@ -51,13 +51,13 @@ fn published_frame_becomes_the_preferred_video_source() {
     assert_eq!(frame.w, 32);
     assert_eq!(frame.h, 16);
     assert_eq!(frame.fmt, FrameFormat::Rgb8);
-    assert_eq!(frame.data, pixels);
+    assert_eq!(frame.data.as_ref(), pixels.as_slice());
     // El SDK asigna `gfn` monotónico desde 1 (0 = "sin frames publicados").
     assert_eq!(frame.gfn, 1);
 
     // Y también por id (misma vista desde el emisor).
     let latest = registry.latest_frame("pacdemo").expect("frame por id");
-    assert_eq!(latest.data, pixels);
+    assert_eq!(latest.data.as_ref(), pixels.as_slice());
 }
 
 // TEST-021 (AC-2/§14) — verifies REQ-006/SPEC-006: el frame muere con el

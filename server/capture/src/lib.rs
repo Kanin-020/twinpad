@@ -148,21 +148,25 @@ pub fn rgb8_scaled(
     layout: ChannelLayout,
 ) -> Vec<u8> {
     let [ir, ig, ib] = layout.rgb_indices();
-    let mut out = Vec::with_capacity(usize::from(dw) * usize::from(dh) * 3);
-    if sw == 0 || sh == 0 {
-        out.resize(out.capacity(), 0);
+    let output_len = usize::from(dw) * usize::from(dh) * 3;
+    let mut out = vec![0; output_len];
+    if sw == 0 || sh == 0 || dw == 0 || dh == 0 {
         return out;
     }
+    let source_width = usize::try_from(sw).unwrap_or(0);
+    let mut output_index = 0;
     for y in 0..u32::from(dh) {
         let sy = (y * sh / u32::from(dh)) as usize;
+        let source_row = sy * source_width * 4;
         for x in 0..u32::from(dw) {
             let sx = (x * sw / u32::from(dw)) as usize;
-            let i = (sy * usize::try_from(sw).unwrap_or(0) + sx) * 4;
+            let i = source_row + sx * 4;
             if i + ib < frame.len() {
-                out.extend_from_slice(&[frame[i + ir], frame[i + ig], frame[i + ib]]);
-            } else {
-                out.extend_from_slice(&[0, 0, 0]);
+                out[output_index] = frame[i + ir];
+                out[output_index + 1] = frame[i + ig];
+                out[output_index + 2] = frame[i + ib];
             }
+            output_index += 3;
         }
     }
     out
@@ -184,6 +188,7 @@ mod tests {
         ]
     }
 
+    // TEST-032 — verifies SPEC-003: pre-sized RGB scaling preserves channel/layout contract.
     #[test]
     fn same_size_conversion_drops_alpha() {
         let out = rgb8_scaled(&sample(), 2, 2, 2, 2, ChannelLayout::Rgba);

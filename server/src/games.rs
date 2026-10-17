@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use twinpad_core::game::{GameInfo, GameMsg};
@@ -33,7 +33,7 @@ pub struct GameFrame {
     pub h: u16,
     pub fmt: twinpad_core::stream::FrameFormat,
     /// Framebuffer crudo (sin base64), `w×h×bpp` bytes.
-    pub data: Vec<u8>,
+    pub data: Arc<[u8]>,
 }
 
 /// Error de registro de un anuncio (§9).
@@ -233,7 +233,7 @@ fn handle_game_connection(stream: TcpStream, registry: &GameRegistry, publish: &
                             w,
                             h,
                             fmt,
-                            data: pixels,
+                            data: pixels.into(),
                         },
                     );
                 }
@@ -300,6 +300,29 @@ mod tests {
             game_name: format!("Juego {id}"),
             capabilities: vec!["second_screen".into()],
         }
+    }
+
+    // TEST-033 — verifies SPEC-006: preferred-source snapshots share frame bytes without copying.
+    #[test]
+    fn preferred_source_shares_rgb_frame_storage() {
+        let registry = GameRegistry::new();
+        let (stream, _peer) = loopback_pair();
+        registry.register(info("pacdemo"), stream).unwrap();
+        let pixels: Arc<[u8]> = vec![9; 16 * 16 * 3].into();
+        let original_ptr = pixels.as_ptr();
+        assert!(registry.store_frame(
+            "pacdemo",
+            GameFrame {
+                gfn: 0,
+                w: 16,
+                h: 16,
+                fmt: twinpad_core::stream::FrameFormat::Rgb8,
+                data: Arc::clone(&pixels),
+            },
+        ));
+
+        let (_, shared) = registry.preferred_source().unwrap();
+        assert_eq!(shared.data.as_ptr(), original_ptr);
     }
 
     #[test]

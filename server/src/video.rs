@@ -135,17 +135,14 @@ pub fn run_frame_stream(
             OutputFormat::Rgb8 => DEFAULT_JPEG_QUALITY,
             OutputFormat::Jpeg(value) => value,
         };
-        let Some(jpeg) = encode_jpeg(&data, fw, fh, quality) else {
-            continue;
-        };
-        image_sender.emit(
+        image_sender.emit_rgb(
             sink,
             crate::tile_video::RgbFrame {
                 width: fw,
                 height: fh,
-                pixels: data,
+                pixels: data.into(),
             },
-            jpeg,
+            quality,
             stream_started.elapsed().as_millis() as u64,
         )?;
         next_deadline += frame_period;
@@ -231,13 +228,15 @@ fn clamp_env_u8(name: &str, default: u8) -> u8 {
 /// Codifica un framebuffer rgb8 a JPEG (CR-001). `None` si el encoder falla
 /// (frame descartado; el stream continúa con el siguiente).
 pub fn encode_jpeg(rgb: &[u8], w: u16, h: u16, quality: u8) -> Option<Vec<u8>> {
-    let buffer = image::ImageBuffer::from_raw(u32::from(w), u32::from(h), rgb.to_vec())?;
-    let mut out = std::io::Cursor::new(Vec::new());
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality);
-    image::DynamicImage::ImageRgb8(buffer)
-        .write_with_encoder(encoder)
+    let expected_len = usize::from(w).checked_mul(usize::from(h))?.checked_mul(3)?;
+    if w == 0 || h == 0 || rgb.len() != expected_len {
+        return None;
+    }
+    let mut out = Vec::new();
+    jpeg_encoder::Encoder::new(&mut out, quality)
+        .encode(rgb, w, h, jpeg_encoder::ColorType::Rgb)
         .ok()?;
-    Some(out.into_inner())
+    Some(out)
 }
 
 /// Emite el escritorio del PC capturado (fuente temporal mientras no hay
@@ -320,12 +319,13 @@ type ArcFrameShare = std::sync::Arc<std::sync::Mutex<Option<SharedFrame>>>;
 /// el siguiente JPEG y (sin seq) reenviaría el frame anterior — duplicado
 /// que el ojo percibe como judder (dos veces el mismo instante, una vez
 /// nuevo). Con la seq, el emisor solo emite cuado hay frame NUEVO.
+#[derive(Clone)]
 struct SharedFrame {
     pub_seq: u64,
     w: u16,
     h: u16,
-    rgb: Vec<u8>,
-    jpeg: Vec<u8>,
+    rgb: Arc<[u8]>,
+    jpeg: Arc<[u8]>,
 }
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -352,7 +352,7 @@ fn capture_loop(
             Err(_) => break, // lock envenenado: el emisor terminó
         };
         if let Ok((sw, sh, layout, rgba)) = grabber.frame() {
-            let rgb = twinpad_capture::rgb8_scaled(&rgba, sw, sh, dw, dh, layout);
+            let rgb: Arc<[u8]> = twinpad_capture::rgb8_scaled(&rgba, sw, sh, dw, dh, layout).into();
             if let Some(jpeg) = encode_jpeg(&rgb, dw, dh, quality) {
                 if let Ok(mut slot) = share.lock() {
                     let seq = slot.as_ref().map_or(0, |f| f.pub_seq + 1);
@@ -361,7 +361,7 @@ fn capture_loop(
                         w: dw,
                         h: dh,
                         rgb,
-                        jpeg,
+                        jpeg: jpeg.into(),
                     });
                 }
             }
@@ -424,9 +424,11 @@ fn run_dynamic_emitter(
     let mut skip_until_new_frame = false;
     let mut last_sent_seq: Option<u64> = None;
     for _ in 0..frames {
-        let Some((pub_seq, (w, h, rgb, jpeg))) = latest_frame(share) else {
+        let Some(frame) = latest_frame(share) else {
             break; // la captura desapareció: §7 paso 5
         };
+        let pub_seq = frame.pub_seq;
+        let (w, h) = (frame.w, frame.h);
         // Anti-judder: si la captura NO publicó un frame nuevo desde el
         // último envío, reenviar sería duplicar un instante ya mostrado
         // (dos veces el mismo contenido = fluidez visual < fps del wire).
@@ -479,9 +481,9 @@ fn run_dynamic_emitter(
             crate::tile_video::RgbFrame {
                 width: w,
                 height: h,
-                pixels: rgb,
+                pixels: Arc::clone(&frame.rgb),
             },
-            jpeg,
+            &frame.jpeg,
             stream_started.elapsed().as_millis() as u64,
         )?;
         // El write devolvió: cuanto más del período haya consumido,
@@ -507,16 +509,10 @@ fn run_dynamic_emitter(
     )
 }
 
-/// Copia del JPEG más reciente (clon del Vec: el emisor nunca bloquea al
-/// hilo de captura por más que un lock momentáneo).
-/// Warp del slot compartido: `(pub_seq, (w, h, jpeg))`. El emisor usa la
-/// seq para detectar si la captura publicó algo NUEVO desde su último envío
-/// (duplicado → mejor esperar que reenviar: judder). `None` = sin frame.
-type LatestFrame = Option<(u64, (u16, u16, Vec<u8>, Vec<u8>))>;
-fn latest_frame(share: &ArcFrameShare) -> LatestFrame {
-    let slot = share.lock().ok()?;
-    let f = (*slot).as_ref()?;
-    Some((f.pub_seq, (f.w, f.h, f.rgb.clone(), f.jpeg.clone())))
+/// Snapshot de referencias del frame más reciente; los buffers son `Arc`,
+/// por lo que el emisor no copia RGB/JPEG ni mantiene el lock al escribir.
+fn latest_frame(share: &ArcFrameShare) -> Option<SharedFrame> {
+    share.lock().ok()?.as_ref().cloned()
 }
 
 /// Fuente de frames del juego con SDK (REQ-006 AC-2): devuelve el último
@@ -559,9 +555,6 @@ pub fn run_game_stream(
         let Some(rgb) = game_frame_rgb(&gf) else {
             continue;
         };
-        let Some(jpeg) = encode_jpeg(&rgb, gf.w, gf.h, DEFAULT_JPEG_QUALITY) else {
-            continue;
-        };
         // §8.1: resolución nueva → `stream_start` nuevo; `fn` continúa.
         if announced != Some((gf.w, gf.h, FrameFormat::JpegTiles)) {
             announced = Some((gf.w, gf.h, FrameFormat::JpegTiles));
@@ -576,14 +569,14 @@ pub fn run_game_stream(
                 },
             )?;
         }
-        image_sender.emit(
+        image_sender.emit_rgb(
             sink,
             crate::tile_video::RgbFrame {
                 width: gf.w,
                 height: gf.h,
                 pixels: rgb,
             },
-            jpeg,
+            DEFAULT_JPEG_QUALITY,
             stream_started.elapsed().as_millis() as u64,
         )?;
         next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
@@ -602,24 +595,24 @@ pub fn run_game_stream(
 }
 
 /// Convierte el formato de un frame SDK a RGB8 para diff y composición de tiles.
-fn game_frame_rgb(frame: &crate::games::GameFrame) -> Option<Vec<u8>> {
+fn game_frame_rgb(frame: &crate::games::GameFrame) -> Option<Arc<[u8]>> {
     match frame.fmt {
         FrameFormat::Rgb8
             if frame.data.len() == usize::from(frame.w) * usize::from(frame.h) * 3 =>
         {
-            Some(frame.data.clone())
+            Some(Arc::clone(&frame.data))
         }
         FrameFormat::Gray8 if frame.data.len() == usize::from(frame.w) * usize::from(frame.h) => {
             let mut rgb = Vec::with_capacity(usize::from(frame.w) * usize::from(frame.h) * 3);
-            for value in &frame.data {
+            for value in frame.data.iter() {
                 rgb.extend_from_slice(&[*value, *value, *value]);
             }
-            Some(rgb)
+            Some(rgb.into())
         }
         FrameFormat::Jpeg => {
             let image = image::load_from_memory(&frame.data).ok()?.to_rgb8();
             (image.width() == u32::from(frame.w) && image.height() == u32::from(frame.h))
-                .then(|| image.into_raw())
+                .then(|| Arc::from(image.into_raw()))
         }
         _ => None,
     }
@@ -651,6 +644,7 @@ mod tests {
     }
 
     // CR-001: emisión JPEG y ancho de banda.
+    // TEST-031 — verifies SPEC-003: SIMD JPEG is decodable at the declared dimensions.
     #[test]
     fn jpeg_encoding_produces_valid_image_smaller_than_raw() {
         let rgb = demo_frame(7, 320, 180); // 172 800 bytes crudos
@@ -659,6 +653,19 @@ mod tests {
         // Empieza con SOI (FF D8) y termina con EOI (FF D9).
         assert_eq!(&jpeg[0..2], &[0xFF, 0xD8]);
         assert_eq!(&jpeg[jpeg.len() - 2..], &[0xFF, 0xD9]);
+        let decoded = image::load_from_memory(&jpeg).expect("JPEG must decode");
+        assert_eq!((decoded.width(), decoded.height()), (320, 180));
+        let decoded_pixel = decoded.to_rgb8().get_pixel(10, 10).0;
+        let source_offset = (10 * 320 + 10) * 3;
+        for (actual, expected) in decoded_pixel
+            .iter()
+            .zip(&rgb[source_offset..source_offset + 3])
+        {
+            assert!(
+                actual.abs_diff(*expected) <= 32,
+                "decoded RGB should remain visually close"
+            );
+        }
         assert!(
             jpeg.len() < raw / 5,
             "JPEG q80 debe comprimir al menos 5× (raw={raw}, jpeg={})",
@@ -781,7 +788,7 @@ mod tests {
             w,
             h,
             fmt: FrameFormat::Rgb8,
-            data: vec![gfn as u8; usize::from(w) * usize::from(h) * 3],
+            data: vec![gfn as u8; usize::from(w) * usize::from(h) * 3].into(),
         }
     }
 
@@ -853,7 +860,7 @@ mod tests {
                     w: 64,
                     h: 64,
                     fmt: FrameFormat::Jpeg,
-                    data: first.clone(),
+                    data: first.clone().into(),
                 },
             ))
         };
@@ -911,7 +918,7 @@ mod tests {
                     w: 128,
                     h: 128,
                     fmt: FrameFormat::Rgb8,
-                    data,
+                    data: data.into(),
                 },
             ))
         };
