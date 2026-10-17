@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-002 |
+| CR | CR-003 |
 
 ## Open / In review
 
@@ -17,6 +17,7 @@
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
 | CR-001 | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
+| CR-002 | Actualizaciones parciales del Stream de video por tiles | SPEC-003 | 2026-10-16 | [CR-002-delta-video-tiles.md](CR-002-delta-video-tiles.md) |
 
 ## Rejected / Withdrawn
 
@@ -30,4 +31,4 @@
 |---|---|
 | Open | 0 |
 | Median time open → applied | — |
-| Last reviewed | 2026-10-08 |
+| Last reviewed | 2026-10-16 |
