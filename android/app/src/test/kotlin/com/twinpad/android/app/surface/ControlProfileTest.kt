@@ -29,27 +29,30 @@ class ControlProfileTest {
     @Test
     fun more_than_24_controls_is_rejected() {
         val controls = (0 until 25).map { i -> button("b$i", "button_a", x = (i % 10) / 10f) }
-        val e = assertThrows(ProfileException::class.java) {
-            ControlProfileCodec.validate(ControlProfile("game", controls))
-        }
+        val e =
+            assertThrows(ProfileException::class.java) {
+                ControlProfileCodec.validate(ControlProfile("game", controls))
+            }
         assertEquals(ProfileError.TOO_MANY_CONTROLS, e.reason)
     }
 
     @Test
     fun duplicate_id_is_rejected() {
         val controls = listOf(button("a", "button_a"), button("a", "button_b", x = 0.5f))
-        val e = assertThrows(ProfileException::class.java) {
-            ControlProfileCodec.validate(ControlProfile("game", controls))
-        }
+        val e =
+            assertThrows(ProfileException::class.java) {
+                ControlProfileCodec.validate(ControlProfile("game", controls))
+            }
         assertEquals(ProfileError.DUPLICATE_ID, e.reason)
     }
 
     @Test
     fun invalid_hid_from_spec004_is_rejected_with_detail() {
         val controls = listOf(button("a", "boton_x"))
-        val e = assertThrows(ProfileException::class.java) {
-            ControlProfileCodec.validate(ControlProfile("game", controls))
-        }
+        val e =
+            assertThrows(ProfileException::class.java) {
+                ControlProfileCodec.validate(ControlProfile("game", controls))
+            }
         assertEquals(ProfileError.INVALID_HID, e.reason)
         assertTrue(e.message!!.contains("boton_x"))
     }
@@ -58,17 +61,19 @@ class ControlProfileTest {
     fun kind_hid_mismatch_is_rejected() {
         // Stick asignado a un botón: inválido (R1 reforzada).
         val stick = TouchControl("s", "stick", "L", "button_a", 0.1f, 0.1f, 0.2f, 0.3f)
-        val e = assertThrows(ProfileException::class.java) {
-            ControlProfileCodec.validate(ControlProfile("game", listOf(stick)))
-        }
+        val e =
+            assertThrows(ProfileException::class.java) {
+                ControlProfileCodec.validate(ControlProfile("game", listOf(stick)))
+            }
         assertEquals(ProfileError.INVALID_HID, e.reason)
     }
 
     @Test
     fun out_of_bounds_coords_are_rejected() {
-        val e = assertThrows(ProfileException::class.java) {
-            ControlProfileCodec.validate(ControlProfile("game", listOf(button("a", "button_a", x = 0.95f))))
-        }
+        val e =
+            assertThrows(ProfileException::class.java) {
+                ControlProfileCodec.validate(ControlProfile("game", listOf(button("a", "button_a", x = 0.95f))))
+            }
         assertEquals(ProfileError.OUT_OF_RANGE, e.reason)
     }
 
@@ -95,12 +100,13 @@ class ControlProfileTest {
 
     @Test
     fun external_config_with_bad_format_is_rejected() {
-        val e = assertThrows(ProfileException::class.java) {
-            ControlProfileCodec.decodeExternalConfig(
-                """{"format":"other","game":"x","controls":[]}""",
-                "",
-            )
-        }
+        val e =
+            assertThrows(ProfileException::class.java) {
+                ControlProfileCodec.decodeExternalConfig(
+                    """{"format":"other","game":"x","controls":[]}""",
+                    "",
+                )
+            }
         assertEquals(ProfileError.FIELD, e.reason)
     }
 }
