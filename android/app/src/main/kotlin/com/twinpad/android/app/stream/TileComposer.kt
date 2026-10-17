@@ -1,6 +1,7 @@
 package com.twinpad.android.app.stream
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import com.twinpad.android.app.wire.StreamMessage
 
 /** Composición transaccional de patches JPEG sobre el último Framebuffer válido (CR-002). */
@@ -12,7 +13,8 @@ internal class TileComposer {
     private var streamHeight = 0
 
     fun reset() {
-        base?.recycle()
+        // El bitmap previo puede seguir referenciado por StateFlow/ImageView;
+        // soltar nuestra referencia y dejar que el GC lo recoja tras el draw.
         base = null
         lastFrameNumber = null
         awaitingKeyframe = true
@@ -25,7 +27,8 @@ internal class TileComposer {
         height: Int,
     ) {
         val previousFrameNumber = lastFrameNumber.takeIf { streamWidth > 0 && streamHeight > 0 }
-        base?.recycle()
+        // No reciclar: el Framebuffer anterior puede seguir mostrándose hasta
+        // que llegue el keyframe correspondiente a estas dimensiones.
         base = null
         lastFrameNumber = previousFrameNumber
         streamWidth = width
@@ -35,7 +38,10 @@ internal class TileComposer {
 
     fun applyKeyframe(frame: StreamMessage.Frame): Bitmap? {
         if (!matchesStream(frame) || !isNewFrame(frame.frameNumber)) return null
-        val decoded = FrameRenderer.decode(frame.dataBytes, frame.width, frame.height, frame.fmt)
+        val decoded =
+            VideoTrace.section("video.jpeg_decode") {
+                FrameRenderer.decode(frame.dataBytes, frame.width, frame.height, frame.fmt)
+            }
         if (decoded == null) {
             awaitingKeyframe = true
             return null
@@ -57,9 +63,10 @@ internal class TileComposer {
     }
 
     private fun replaceBase(bitmap: Bitmap) {
-        val old = base
+        // La UI puede seguir dibujando la base anterior después de publicar
+        // el frame nuevo. Bitmap.recycle() invalida también esas referencias;
+        // soltarla permite que se libere cuando StateFlow/ImageView terminen.
         base = bitmap
-        old?.recycle()
     }
 
     fun applyPatch(patch: StreamMessage.Patch): Bitmap? {
@@ -76,28 +83,26 @@ internal class TileComposer {
         current: Bitmap,
         patch: StreamMessage.Patch,
     ): Bitmap? {
-        val pixelTiles = if (matchesBase(current, patch)) decodeTiles(patch) else null
-        val basePixels = IntArray(current.width * current.height)
-        current.getPixels(basePixels, 0, current.width, 0, 0, current.width, current.height)
-        val composedPixels = pixelTiles?.let { composePixels(basePixels, current, patch, it) }
-        return composedPixels?.let { createBitmap(current.width, current.height, it) }
-    }
-
-    private fun composePixels(
-        basePixels: IntArray,
-        current: Bitmap,
-        patch: StreamMessage.Patch,
-        pixelTiles: List<PixelTile>,
-    ): IntArray? = TileCompositor.compose(basePixels, current.width, current.height, patch.tileSize, pixelTiles)
-
-    private fun createBitmap(
-        width: Int,
-        height: Int,
-        pixels: IntArray,
-    ): Bitmap =
-        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-            it.setPixels(pixels, 0, width, 0, 0, width, height)
+        if (!matchesBase(current, patch)) return null
+        val decodedTiles = decodeTiles(patch) ?: return null
+        return try {
+            val composed =
+                VideoTrace.section("video.framebuffer_copy") {
+                    current.copy(Bitmap.Config.ARGB_8888, true)
+                }
+            if (composed != null) {
+                VideoTrace.section("video.tile_draw") {
+                    val canvas = Canvas(composed)
+                    decodedTiles.forEach { tile ->
+                        canvas.drawBitmap(tile.bitmap, tile.x.toFloat(), tile.y.toFloat(), null)
+                    }
+                }
+            }
+            composed
+        } finally {
+            decodedTiles.forEach { it.bitmap.recycle() }
         }
+    }
 
     private fun matchesBase(
         current: Bitmap,
@@ -107,27 +112,31 @@ internal class TileComposer {
             patch.frameNumber > (lastFrameNumber ?: -1) &&
             patch.width == current.width && patch.height == current.height && patch.tiles.isNotEmpty()
 
-    private fun decodeTiles(patch: StreamMessage.Patch): List<PixelTile>? {
-        val tiles = ArrayList<PixelTile>(patch.tiles.size)
+    private data class DecodedTile(
+        val x: Int,
+        val y: Int,
+        val bitmap: Bitmap,
+    )
+
+    private fun decodeTiles(patch: StreamMessage.Patch): List<DecodedTile>? {
+        val tiles = ArrayList<DecodedTile>(patch.tiles.size)
         val occupied = HashSet<Pair<Int, Int>>()
         for (tile in patch.tiles) {
-            val pixelTile = decodeTile(tile, patch, occupied) ?: return null
-            tiles += pixelTile
+            if (!validTile(tile, patch, occupied)) {
+                tiles.forEach { it.bitmap.recycle() }
+                return null
+            }
+            val bitmap =
+                VideoTrace.section("video.jpeg_tile_decode") {
+                    FrameRenderer.decode(tile.dataBytes, tile.width, tile.height, tile.fmt)
+                }
+            if (bitmap == null) {
+                tiles.forEach { it.bitmap.recycle() }
+                return null
+            }
+            tiles += DecodedTile(tile.x, tile.y, bitmap)
         }
         return tiles
-    }
-
-    private fun decodeTile(
-        tile: StreamMessage.Tile,
-        patch: StreamMessage.Patch,
-        occupied: MutableSet<Pair<Int, Int>>,
-    ): PixelTile? {
-        if (!validTile(tile, patch, occupied)) return null
-        val bitmap = FrameRenderer.decode(tile.dataBytes, tile.width, tile.height, tile.fmt) ?: return null
-        val pixels = IntArray(tile.width * tile.height)
-        bitmap.getPixels(pixels, 0, tile.width, 0, 0, tile.width, tile.height)
-        bitmap.recycle()
-        return PixelTile(tile.x, tile.y, tile.width, tile.height, pixels)
     }
 
     private fun validTile(

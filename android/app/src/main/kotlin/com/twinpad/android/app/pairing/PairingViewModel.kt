@@ -22,24 +22,31 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+private const val NANOS_PER_MICROSECOND = 1_000L
+
 /**
  * Único dueño del estado de la Pantalla de Pairing (DES-002 §4).
  * Alimenta la máquina con eventos y ejecuta sus [Effect]s: permisos,
  * conexión TCP y señales de cámara para la Activity.
  */
 class PairingViewModel(app: Application) : AndroidViewModel(app) {
+    private data class PendingVideoLine(
+        val line: String,
+        val enqueuedAtNanos: Long,
+        val frameNumber: Long?,
+    )
+
     private val machine = PairingStateMachine()
     private val network = TcpPairingClient()
     private val streamMachine = com.twinpad.android.app.stream.StreamStateMachine()
     private val tileComposer = com.twinpad.android.app.stream.TileComposer()
-    private val pendingVideoLines = Channel<String>(Channel.UNLIMITED)
+    private val pendingVideoLines = Channel<PendingVideoLine>(Channel.UNLIMITED)
     private val audioMachine = com.twinpad.android.app.audio.AudioStateMachine()
     private val gamepad = com.twinpad.android.app.hid.GamepadStateMachine()
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para
      * preservar la cadena base_fn de los patches (SPEC-003/CR-002). */
     val streamStats = com.twinpad.android.app.stream.StreamStats()
-
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
 
@@ -67,7 +74,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         MutableStateFlow<com.twinpad.android.app.stream.DecodedFrame?>(null)
     val lastFrame: StateFlow<com.twinpad.android.app.stream.DecodedFrame?> = _lastFrame
 
-    /** Adaptador de reproducción (AudioTrack); inyectable para tests. */
+    /** Adaptador de reproducción (AudioTrack). */
     private val playback = com.twinpad.android.app.audio.AudioPlayback()
 
     init {
@@ -86,10 +93,11 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        // El consumidor FIFO preserva la cadena base_fn sin bloquear el lector de sesión.
+        // El compositor es un consumidor FIFO independiente: el decode JPEG
+        // no detiene al lector de socket ni retrasa audio/controles (CR-002).
         viewModelScope.launch(Dispatchers.Default) {
-            for (line in pendingVideoLines) {
-                streamPipelineSubmit(line)
+            for (pending in pendingVideoLines) {
+                streamPipelineSubmit(pending)
             }
         }
         // SPEC-003 §6: marcar V2 si el stream se queda sin frames; SPEC-005
@@ -120,6 +128,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             tileComposer.reset()
             _streamState.value = com.twinpad.android.app.stream.StreamUiState()
             audioMachine.reset()
+            playback.stop()
             _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
             _lastFrame.value = null
             streamStats.reset()
@@ -141,49 +150,137 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
                 // directo en el lector (decode barato: ≤ 16 KiB).
                 if (audioMachine.onLine(line, System.currentTimeMillis())) {
                     _audioState.value = audioMachine.state
-                    playback.drain(audioMachine.drainPending())
+                    when (lineType(line)) {
+                        "audio_start", "audio_stop" -> playback.stop()
+                        "audio_chunk" -> playback.drain(audioMachine.drainPending())
+                    }
                 }
                 streamStats.onAudio(line.length)
             }
-            "video_frame", "video_patch", "stream_start", "stream_stop" -> pendingVideoLines.trySend(line)
+            "video_frame", "video_patch" -> {
+                val frameNumber = StreamCodec.frameNumber(line)
+                if (frameNumber == null) {
+                    streamStats.onFrameRejected()
+                } else {
+                    streamStats.onImageReceived(frameNumber, line.length)
+                    pendingVideoLines.trySend(PendingVideoLine(line, System.nanoTime(), frameNumber))
+                }
+            }
+            "stream_start", "stream_stop" ->
+                pendingVideoLines.trySend(PendingVideoLine(line, System.nanoTime(), null))
             else -> Unit // mensaje desconocido: ignorado (§9)
         }
     }
 
     /** Encola el frame crudo al pipeline con su thunk de decodificación. */
-    private fun streamPipelineSubmit(line: String) {
+    private fun streamPipelineSubmit(pending: PendingVideoLine) {
+        val enteredAtNanos = System.nanoTime()
+        val queueDelayNanos = enteredAtNanos - pending.enqueuedAtNanos
+        if (pending.frameNumber != null) {
+            streamStats.recordStage(
+                com.twinpad.android.app.stream.StreamStats.VideoStage.LINE_TO_DECODE,
+                queueDelayNanos,
+            )
+            com.twinpad.android.app.stream.VideoTrace.counter(
+                "video.queue_delay_us",
+                queueDelayNanos / NANOS_PER_MICROSECOND,
+            )
+        }
         val message =
             try {
-                StreamCodec.decode(line)
+                com.twinpad.android.app.stream.VideoTrace.section("video.codec") {
+                    if (pending.frameNumber != null) {
+                        com.twinpad.android.app.stream.VideoTrace.section("video.base64_and_json") {
+                            StreamCodec.decode(pending.line)
+                        }
+                    } else {
+                        StreamCodec.decode(pending.line)
+                    }
+                }
             } catch (e: com.twinpad.android.app.core.PairingException) {
+                streamStats.onFrameRejected()
                 return
-            }
-        when (message) {
-            is StreamMessage.Start -> {
-                tileComposer.beginStream(message.width, message.height)
-                streamMachine.onLine(line)
-                _streamState.value =
-                    _streamState.value.copy(
-                        state = streamMachine.state,
-                        width = message.width,
-                        height = message.height,
+            } finally {
+                if (pending.frameNumber != null) {
+                    val codecNanos = System.nanoTime() - enteredAtNanos
+                    streamStats.recordStage(
+                        com.twinpad.android.app.stream.StreamStats.VideoStage.CODEC,
+                        codecNanos,
                     )
+                    com.twinpad.android.app.stream.VideoTrace.counter(
+                        "video.codec_us",
+                        codecNanos / NANOS_PER_MICROSECOND,
+                    )
+                }
             }
-            is StreamMessage.Stop -> {
-                tileComposer.reset()
-                streamMachine.onLine(line)
-                _lastFrame.value = null
-                _streamState.value = _streamState.value.copy(state = streamMachine.state)
-            }
-            is StreamMessage.Frame -> {
-                val bitmap = tileComposer.applyKeyframe(message) ?: return
-                acceptComposedFrame(message.frameNumber, message.width, message.height, bitmap, line.length)
-            }
-            is StreamMessage.Patch -> {
-                val bitmap = tileComposer.applyPatch(message) ?: return
-                acceptComposedFrame(message.frameNumber, message.width, message.height, bitmap, line.length)
-            }
+        handleStreamMessage(message, pending.line)
+    }
+
+    private fun handleStreamMessage(
+        message: StreamMessage,
+        line: String,
+    ) {
+        when (message) {
+            is StreamMessage.Start -> onStreamStart(message, line)
+            is StreamMessage.Stop -> onStreamStop(line)
+            is StreamMessage.Frame -> onKeyframe(message)
+            is StreamMessage.Patch -> onPatch(message)
         }
+    }
+
+    private fun onStreamStart(
+        message: StreamMessage.Start,
+        line: String,
+    ) {
+        tileComposer.beginStream(message.width, message.height)
+        streamMachine.onLine(line)
+        _streamState.value =
+            _streamState.value.copy(
+                state = streamMachine.state,
+                width = message.width,
+                height = message.height,
+            )
+    }
+
+    private fun onStreamStop(line: String) {
+        tileComposer.reset()
+        streamMachine.onLine(line)
+        _lastFrame.value = null
+        _streamState.value = _streamState.value.copy(state = streamMachine.state)
+    }
+
+    private fun onKeyframe(message: StreamMessage.Frame) {
+        val startedAtNanos = System.nanoTime()
+        val bitmap =
+            com.twinpad.android.app.stream.VideoTrace.section("video.frame_decode") {
+                tileComposer.applyKeyframe(message)
+            }
+        streamStats.recordStage(
+            com.twinpad.android.app.stream.StreamStats.VideoStage.JPEG_DECODE,
+            System.nanoTime() - startedAtNanos,
+        )
+        if (bitmap == null) {
+            streamStats.onFrameRejected()
+            return
+        }
+        acceptComposedFrame(message.frameNumber, message.width, message.height, bitmap)
+    }
+
+    private fun onPatch(message: StreamMessage.Patch) {
+        val startedAtNanos = System.nanoTime()
+        val bitmap =
+            com.twinpad.android.app.stream.VideoTrace.section("video.tile_compose") {
+                tileComposer.applyPatch(message)
+            }
+        streamStats.recordStage(
+            com.twinpad.android.app.stream.StreamStats.VideoStage.TILE_COMPOSE,
+            System.nanoTime() - startedAtNanos,
+        )
+        if (bitmap == null) {
+            streamStats.onFrameRejected()
+            return
+        }
+        acceptComposedFrame(message.frameNumber, message.width, message.height, bitmap)
     }
 
     private fun acceptComposedFrame(
@@ -191,11 +288,10 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         width: Int,
         height: Int,
         bitmap: android.graphics.Bitmap,
-        wireBytes: Int,
     ) {
         streamMachine.acceptFrame(frameNumber, width, height)
-        streamStats.onFrame(wireBytes)
         _lastFrame.value = com.twinpad.android.app.stream.DecodedFrame(bitmap, width, height, frameNumber)
+
         _streamState.value =
             _streamState.value.copy(
                 state = com.twinpad.android.app.stream.StreamState.STREAMING,

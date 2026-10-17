@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -25,9 +26,12 @@ import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.PairingViewModel
+import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+
+private const val MICROSECONDS_PER_MILLISECOND = 1_000.0
 
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
@@ -59,6 +63,8 @@ class PairingActivity : AppCompatActivity() {
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
+    private var pendingFrameNumber: Long? = null
+    private var pendingFramePublishedAtNanos = 0L
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -76,6 +82,7 @@ class PairingActivity : AppCompatActivity() {
         wireViews()
         observeCameraEffects()
         observeStates()
+        observeVideoPresentation()
     }
 
     /** Cablea cada View a su evento del ViewModel. */
@@ -104,7 +111,11 @@ class PairingActivity : AppCompatActivity() {
     private fun observeStates() {
         lifecycleScope.launch {
             viewModel.lastFrame.collectLatest { decoded ->
-                findViewById<ImageView>(R.id.video_view).setImageBitmap(decoded?.bitmap)
+                val videoView = findViewById<ImageView>(R.id.video_view)
+                videoView.setImageBitmap(decoded?.bitmap)
+                pendingFrameNumber = decoded?.frameNumber
+                pendingFramePublishedAtNanos = if (decoded != null) System.nanoTime() else 0L
+                if (decoded != null) videoView.invalidate()
             }
         }
         lifecycleScope.launch {
@@ -112,12 +123,19 @@ class PairingActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             viewModel.streamState.collectLatest { s ->
+                // SPEC-003 §5: STREAMING = segunda pantalla activa (TX visible);
+                // INTERRUPTED = reconectando; el resto (INACTIVE/STOP) = sin
+                // pantalla. Antes STREAMING caía en el else y la app mostraba
+                // "Sin segunda pantalla activa" CON imagen viva.
                 findViewById<TextView>(R.id.txt_session_message).text =
                     when (s.state) {
+                        StreamState.STREAMING ->
+                            getString(R.string.second_screen_active)
                         StreamState.INTERRUPTED ->
                             getString(R.string.second_screen_reconnecting)
                         else -> getString(R.string.second_screen_inactive)
                     }
+                updateKeepScreenOn(s.state)
             }
         }
         lifecycleScope.launch {
@@ -135,6 +153,44 @@ class PairingActivity : AppCompatActivity() {
         wireDrawerControls()
     }
 
+    private fun observeVideoPresentation() {
+        findViewById<ImageView>(R.id.video_view).viewTreeObserver.addOnPreDrawListener {
+            val frameNumber = pendingFrameNumber
+            if (frameNumber != null) {
+                val presentationDelay = System.nanoTime() - pendingFramePublishedAtNanos
+                viewModel.streamStats.recordStage(
+                    com.twinpad.android.app.stream.StreamStats.VideoStage.UI_PUBLISH_TO_DRAW,
+                    presentationDelay,
+                )
+                com.twinpad.android.app.stream.VideoTrace.section("video.present") {}
+                pendingFrameNumber = null
+                pendingFramePublishedAtNanos = 0L
+                val snapshot = viewModel.streamStats.snapshot()
+                snapshot.stageAverageMs.forEach { (stage, averageMs) ->
+                    com.twinpad.android.app.stream.VideoTrace.counter(
+                        "video.stage_${stage.name.lowercase()}_us",
+                        (averageMs * MICROSECONDS_PER_MILLISECOND).toLong(),
+                    )
+                }
+                viewModel.streamStats.onFramePresented()
+            }
+            true
+        }
+    }
+
+    /** Segunda pantalla activa = pantalla del teléfono encendida (pedido
+     * del owner: el video no debe apagar el display mientras corre).
+     * `FLAG_KEEP_SCREEN_ON` es la vía recomendada: sin permisos, se libera
+     * al salir del estado STREAMING (o al destruir la Activity). */
+    private fun updateKeepScreenOn(state: StreamState) {
+        val window = window
+        if (state == StreamState.STREAMING || state == StreamState.INTERRUPTED) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     private fun gamesText(games: List<com.twinpad.android.app.wire.GameInfo>): String =
         when {
             games.isEmpty() -> ""
@@ -149,10 +205,12 @@ class PairingActivity : AppCompatActivity() {
             return
         }
         val stats = viewModel.streamStats
+        stats.refresh()
         chip.text =
             getString(
                 R.string.hud_chip_text,
-                "%.0f".format(stats.fps),
+                "%.0f fps".format(stats.fps),
+                "%.0f fps".format(stats.receiveFps),
                 "%.1f".format(stats.kbps / KBPS_PER_MBPS),
             )
         chip.isVisible = true
@@ -255,6 +313,7 @@ class PairingActivity : AppCompatActivity() {
                 preview.isVisible = false
                 txtStatus.text = ""
                 btnCancel.isVisible = false
+                SessionForegroundService.stop(this@PairingActivity)
             }
             PairingUiState.Scanning -> {
                 session.isVisible = false
@@ -275,11 +334,15 @@ class PairingActivity : AppCompatActivity() {
                 session.isVisible = true
                 preview.isVisible = false
                 btnCancel.isVisible = false
+                // El servicio en primer plano impide que el sistema mate
+                // el proceso al cambiar de app (el video sigue vivo).
+                SessionForegroundService.start(this@PairingActivity)
             }
             is PairingUiState.Failure -> {
                 session.isVisible = false
                 txtStatus.text = ""
                 btnCancel.isVisible = false
+                SessionForegroundService.stop(this@PairingActivity)
             }
         }
     }
@@ -306,6 +369,7 @@ class PairingActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         cameraController.release()
+        SessionForegroundService.stop(this)
         super.onDestroy()
     }
 }

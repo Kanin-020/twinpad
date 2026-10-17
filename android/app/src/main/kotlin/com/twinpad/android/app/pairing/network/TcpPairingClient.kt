@@ -14,6 +14,7 @@ import java.io.OutputStreamWriter
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Timeout de conexión y de respuesta: 5 s (SPEC-002 §9, E1). */
 private const val FIVE_SECONDS_MS: Int = 5_000
@@ -35,6 +36,13 @@ class TcpPairingClient {
     private var readerJob: Job? = null
     private var socket: Socket? = null
 
+    /** Desactiva el timeout PRÓXIMO al ver `pair_ack` en líneas: corrido por
+     * el MISMO hilo lector que aplica `soTimeout`, así no hay carrera contra
+     * la UI. El corte a ~5 s de la U4 venía de dejarlo a cargo de la UI:
+     * llegaba DESPUÉS de que el lector ya estaba bloqueado en `readLine`
+     * con el timeout armado, y el `SocketTimeoutException` mataba la sesión. */
+    private val sessionMode = AtomicBoolean(false)
+
     /** Líneas del servidor; `null` = conexión terminada. */
     val lines: Flow<String?> = lineChannel.receiveAsFlow()
 
@@ -51,16 +59,7 @@ class TcpPairingClient {
                     socket = s
                     startWriter(s)
                     val reader = s.getInputStream().bufferedReader()
-                    while (true) {
-                        val line =
-                            try {
-                                reader.readLine()
-                            } catch (e: SocketTimeoutException) {
-                                break // E1 (SPEC-002 §9)
-                            }
-                        if (line == null) break // EOF: el servidor cerró
-                        lineChannel.trySend(line)
-                    }
+                    readSessionLines(s, reader)
                 } catch (e: java.io.IOException) {
                     // Conexión rechazada o cortada: el `finally` entrega `null`
                     // y la máquina lo interpreta como E1 (SPEC-002 §9).
@@ -70,6 +69,50 @@ class TcpPairingClient {
                 }
             }
     }
+
+    private fun readSessionLines(
+        s: Socket,
+        reader: java.io.BufferedReader,
+    ) {
+        var finished = false
+        while (!finished) {
+            val line = readLineOrNull(s, reader)
+            if (line == null) {
+                finished = true
+            } else {
+                processSessionLine(s, line)
+            }
+        }
+    }
+
+    private fun processSessionLine(
+        s: Socket,
+        line: String,
+    ) {
+        if (!sessionMode.get() && line.contains("\"pair_ack\"")) {
+            // Handshake OK (§7 paso 11): el MISMO hilo lector desactiva timeout.
+            runCatching { s.soTimeout = 0 }
+            sessionMode.set(true)
+        }
+        lineChannel.trySend(line)
+    }
+
+    private fun readLineOrNull(
+        s: Socket,
+        reader: java.io.BufferedReader,
+    ): String? =
+        try {
+            reader.readLine()
+        } catch (e: SocketTimeoutException) {
+            if (!sessionMode.get()) {
+                null // E1 (SPEC-002 §9)
+            } else {
+                // En sesión el EOF es la única señal de fin (paridad server §8).
+                runCatching { s.soTimeout = 0 }
+                sessionMode.set(true)
+                reader.readLine()
+            }
+        }
 
     /** Inicia el único escritor: drena [pendingWrites] hacia `s` en FIFO. */
     private fun startWriter(s: Socket) {
@@ -96,8 +139,12 @@ class TcpPairingClient {
     }
 
     /** Desactiva el timeout de lectura al entrar en U4 (la sesión no envía
-     * tráfico periódico hasta SPECs posteriores). */
+     * tráfico periódico hasta SPECs posteriores). NOTA: es best-effort — el
+     * mecanismo en carrera es el del lector (`sessionMode`): si la UI ya
+     * entró a Linked, este método no es necesario (el lector ya lo hizo).
+     * Se mantiene para paridad con la máquina de estados (SPEC-002 §8.3). */
     fun disableReadTimeout() {
+        sessionMode.set(true)
         runCatching { socket?.soTimeout = 0 }
     }
 
@@ -116,6 +163,7 @@ class TcpPairingClient {
     private fun closeQuietly() {
         runCatching { socket?.close() }
         socket = null
+        sessionMode.set(false)
         while (true) {
             if (pendingWrites.tryReceive().getOrNull() == null) break
         }

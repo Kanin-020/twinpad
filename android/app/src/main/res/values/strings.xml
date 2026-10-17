@@ -39,5 +39,11 @@
     <string name="editor_save">Guardar</string>
     <string name="editor_edit">Editar controles</string>
     <string name="editor_done">Listo</string>
-    <string name="hud_chip_text">%1$s fps · %2$s Mbps</string>
+    <string name="hud_chip_text">%1$s render · %2$s recibidos · %3$s Mbps</string>
+
+    <!-- Servicio en primer plano de la sesión: cara visible al cambiar de
+         app; el owner lo pidió para no cortar la transmisión. -->
+    <string name="session_notification_channel">Sesión Twinpad</string>
+    <string name="session_notification_title">Twinpad activo</string>
+    <string name="session_notification_text">Segunda pantalla y controles conectados al PC</string>
 </resources>
