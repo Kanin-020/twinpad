@@ -65,6 +65,9 @@ class StreamStateMachine {
         when (msg) {
             is com.twinpad.android.app.wire.StreamMessage.Start -> onStart(msg)
             is com.twinpad.android.app.wire.StreamMessage.Frame -> onFrame(msg)
+            is com.twinpad.android.app.wire.StreamMessage.Patch -> {
+                null // aplicado por TileComposer, que posee la base bitmap
+            }
             is com.twinpad.android.app.wire.StreamMessage.Stop -> {
                 reset()
                 null

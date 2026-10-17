@@ -32,6 +32,7 @@ data class DecodedFrame(
 class StreamPipeline(
     private val stats: StreamStats,
     private val onFrame: (DecodedFrame) -> Unit,
+    private val isFrameCurrent: (Long) -> Boolean = { true },
 ) {
     /** Capacidad 1: solo interesa el frame más reciente (R3). */
     private val pending =
@@ -43,6 +44,7 @@ class StreamPipeline(
 
     /** Línea `video_frame` en crudo (sin decodificar aún). */
     private data class PendingFrame(
+        val frameNumber: Long,
         val wireBytes: Int,
         val decode: () -> DecodedFrame?,
     )
@@ -50,9 +52,10 @@ class StreamPipeline(
     init {
         scope.launch {
             for (frame in pending) {
+                if (!isFrameCurrent(frame.frameNumber)) continue
                 val decoded = frame.decode()
                 stats.onFrame(frame.wireBytes)
-                if (decoded != null) {
+                if (decoded != null && isFrameCurrent(decoded.frameNumber)) {
                     onFrame(decoded)
                 }
             }
@@ -65,10 +68,11 @@ class StreamPipeline(
      * (base64 + BitmapFactory) que corre en el hilo del pipeline.
      */
     fun submit(
+        frameNumber: Long,
         wireBytes: Int,
         decode: () -> DecodedFrame?,
     ) {
-        pending.trySend(PendingFrame(wireBytes, decode))
+        pending.trySend(PendingFrame(frameNumber, wireBytes, decode))
     }
 
     /** Detiene el pipeline (fin de sesión). */
