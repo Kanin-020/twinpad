@@ -1,9 +1,8 @@
 //! Emisor del Stream de audio en el Servidor PC — SPEC-005 §7 (lado origen).
 //!
-//! v1 sin Plugin: fuente sintética de demostración (tono suave) mientras no
-//! exista el juego con audio (SPEC-005 §3: el origen real es el Plugin). El
-//! códec es PCM `s16le` sin compresión (OQ §17 resuelta por el owner); los
-//! fragmentos ≤ 16 KiB viajan con `seq` incremental (R2: sin retransmisión).
+//! El códec es PCM `s16le` sin compresión (OQ §17 resuelta por el owner);
+//! los fragmentos ≤ 16 KiB viajan con `seq` incremental (R2: sin retransmisión).
+//! Si no hay fuente PCM real, no se anuncia ni envía audio (SPEC-005 §3/§5).
 
 use std::time::Instant;
 
@@ -22,13 +21,40 @@ pub enum AudioSourceError {
 /// por debajo del límite de 16 KiB (SPEC-005 §4).
 pub const CHUNK_SAMPLES: usize = 1_024; // muestras por canal por chunk
 
-/// Parámetros del stream de demostración (v1 sin compresión: OQ §17).
-pub const DEMO_RATE: u32 = 44_100;
-pub const DEMO_CHANNELS: u8 = 2;
+/// Fuente PCM real anunciada por el juego (SPEC-005 §3): recibe el `seq`
+/// y devuelve bytes s16le intercalados, o `None` al terminar el stream (§7).
+pub struct AudioStreamSource {
+    /// Muestras por segundo (SPEC-005 §4).
+    pub rate: u32,
+    /// Canales mono o estéreo (SPEC-005 §4).
+    pub channels: u8,
+    /// Generador incremental de fragmentos PCM.
+    pub next_chunk: Box<dyn FnMut(u64) -> Option<Vec<u8>> + Send + 'static>,
+}
 
-/// Fuente de audio PCM s16le: recibe el `seq` y devuelve los bytes del
-/// fragmento, o `None` para terminar el stream limpio (§7 paso 4).
+/// Fuente PCM s16le: devuelve los bytes de un fragmento o `None` al terminar.
 pub type AudioChunkSource<'a> = &'a mut dyn FnMut(u64) -> Option<Vec<u8>>;
+
+/// Inicia el emisor solo cuando existe una fuente PCM de juego.
+/// Sin origen real, devuelve `None` sin clonar el socket ni emitir audio.
+pub fn spawn_audio_stream_if_available<S>(
+    source: Option<AudioStreamSource>,
+    make_sink: impl FnOnce() -> Option<S>,
+) -> Option<std::thread::JoinHandle<()>>
+where
+    S: FrameSink + Send + 'static,
+{
+    let mut source = source?;
+    let mut sink = make_sink()?;
+    Some(std::thread::spawn(move || {
+        let _ = run_audio_stream(
+            &mut sink,
+            source.rate,
+            source.channels,
+            source.next_chunk.as_mut(),
+        );
+    }))
+}
 
 /// Emite un stream de audio completo sobre `sink` (SPEC-005 §7 pasos 1–4):
 /// `audio_start`, chunks con `seq` incremental y `audio_stop` al terminar.
@@ -83,23 +109,6 @@ pub fn run_audio_stream(
             reason: AudioStopReason::PluginStopped,
         },
     )
-}
-
-/// Tono de demostración: seno suave determinista por `seq` (ENG P10).
-/// Genera `samples` muestras por canal intercaladas (s16le estéreo).
-pub fn demo_chunk(seq: u64, samples_per_channel: usize, rate: u32) -> Vec<u8> {
-    let phase0 = (seq * CHUNK_SAMPLES as u64) as f64;
-    let mut out = Vec::with_capacity(samples_per_channel * usize::from(DEMO_CHANNELS) * 2);
-    for i in 0..samples_per_channel {
-        // La2 (440 Hz) amortiguado, bajo volumen (±10 % de rango).
-        let t = (phase0 + f64::from(i as u32)) / f64::from(rate);
-        let amplitude = 3_276.0; // ~10 % de i16::MAX
-        let sample = (amplitude * (2.0 * std::f64::consts::PI * 440.0 * t).sin()) as i16;
-        for _ in 0..usize::from(DEMO_CHANNELS) {
-            out.extend_from_slice(&sample.to_le_bytes());
-        }
-    }
-    out
 }
 
 fn send(sink: &mut dyn FrameSink, msg: &AudioMsg) -> Result<(), AudioSourceError> {
@@ -160,29 +169,21 @@ mod tests {
         }
     }
 
+    // TEST-035 — verifies SPEC-005 §3/§5: no audio is emitted without a game PCM source.
     #[test]
-    fn demo_chunk_is_deterministic_and_sized() {
-        let a = demo_chunk(0, 1_024, 44_100);
-        let b = demo_chunk(0, 1_024, 44_100);
-        assert_eq!(a, b);
-        // 1 024 muestras × 2 canales × 2 bytes = 4 096 B (≤ 16 KiB, §4).
-        assert_eq!(a.len(), 1_024 * 2 * 2);
-        // El patrón cambia con el fragmento.
-        assert_ne!(demo_chunk(0, 1_024, 44_100), demo_chunk(1, 1_024, 44_100));
-    }
+    fn unavailable_audio_source_does_not_start_a_stream() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
-    #[test]
-    fn demo_chunks_fit_the_16kib_limit() {
-        // Cada fragmento del stream demo debe validar en el codec compartido.
-        for seq in 0..3u64 {
-            let chunk = AudioMsg::AudioChunk {
-                seq,
-                ts: 0,
-                data: base64_url(&demo_chunk(seq, CHUNK_SAMPLES, DEMO_RATE)),
-            };
-            let line = chunk.encode().unwrap();
-            assert_eq!(AudioMsg::decode(&line), Ok(chunk));
-        }
+        let sink_factory_called = Arc::new(AtomicBool::new(false));
+        let factory_called = Arc::clone(&sink_factory_called);
+        let handle = spawn_audio_stream_if_available::<SinkSpy>(None, move || {
+            factory_called.store(true, Ordering::SeqCst);
+            Some(SinkSpy(RefCell::new(Vec::new())))
+        });
+
+        assert!(handle.is_none());
+        assert!(!sink_factory_called.load(Ordering::SeqCst));
     }
 
     #[test]

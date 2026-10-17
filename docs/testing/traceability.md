@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-035 |
+| TEST | TEST-036 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -37,6 +37,7 @@
 | REQ-005 | SPEC-005 | `-` | TEST-020 | Approved | Flujo principal del audio (SPEC-005 §7, REQ-005 AC-1) — codec estricto `audio_start/chunk/stop` en `core::audio` (9 tests, límites §4: 16 KiB, s16le, rate 8k–192k); emisor `server::audio` con fragmentación y ritmo real (4 tests) + verificación punta a punta por TCP real (86 chunks en 2 s a 44.1 kHz); receptor en la app: `AudioStateMachine` A0/A1/A2 con jitter 500 ms fijo (§6, OQ §17), descarte por `seq`/corrupción (§9) y reproducción vía `AudioPlayback` (AudioTrack) — 9 tests JVM |
 | REQ-004 | SPEC-003 | `-` | TEST-025 | Approved | Pipeline Android: frames obsoletos descartados antes de parsear JSON/base64/decodificar imagen |
 | REQ-005 | SPEC-005 | `-` | TEST-024 | Approved | Adaptador de audio: continuidad de chunks tras reconfigurar formato y detener un stream; pista de salida reemplazada sin cerrar el consumidor de comandos |
+| REQ-005 | SPEC-005 | `-` | TEST-035 | Draft | Fuente PCM ausente: el servidor no crea emisor ni anuncia audio, por lo que Android permanece en silencio (§3/§5) |
 | REQ-006 | SPEC-006 | `-` | TEST-026 | Approved | Frames `rgb8` del SDK se codifican como JPEG q80 por el servidor antes de emitirse con `fmt=jpeg`; caso JPEG preexistente permanece JPEG, wire contract SPEC-003 sin cambios |
 | REQ-004 | SPEC-003 | DES-003 | TEST-027 | Approved | Codec Rust/Kotlin para `video_patch`: `fn` wire, validación de base y geometría de tiles (CR-002) |
 | REQ-004 | SPEC-003 | DES-003 | TEST-028 | Approved | Diff RGB server y composición atómica Android; keyframe periódico/fallback CR-002; ruta Android compone sobre una sola copia del Bitmap y rechaza base inválida antes del trabajo de imagen; el server omite encode/base64 cuando los RGB no cambian (test de frame estático) |
@@ -92,6 +93,7 @@
 | CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |
 | — | `video_config` por sesión: resolución/fps/calidad JPEG en caliente desde el drawer de la app (parser del server + VM) | 2026-10-09 | Applied (owner-requested) |
 | CR-002 | SPEC-003 v1.2.0: patches JPEG por tiles de 64 px, base_fn y keyframes periódicos; DES-003 y TEST-027/028 | 2026-10-17 | Applied |
+| CR-003 | Propuesta de audio PCM real desde el SDK; contrato pendiente de aprobación | 2026-10-17 | Open |
 
 ## Invariants of this matrix
 

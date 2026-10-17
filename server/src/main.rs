@@ -291,36 +291,16 @@ fn main() {
                             })
                         });
 
-                        // SPEC-005 §7: stream de audio demo (tono suave) mientras
-                        // no exista el juego con audio (§3: el origen real es el
-                        // Plugin). Misma conexión persistente; hilo propio
-                        // (ARCH §8: prioridad inputs > video > audio).
-                        let audio_writer = match stream.try_clone() {
-                            Ok(w) => Some(StreamSink {
-                                inner: w,
-                                lock: write_lock.clone(),
-                            }),
-                            Err(_) => None,
-                        };
-                        let audio_thread = audio_writer.map(|mut sink| {
-                            std::thread::spawn(move || {
-                                let mut chunk_counter = 0u64;
-                                let mut source = move |_seq: u64| {
-                                    chunk_counter += 1;
-                                    Some(twinpad_server::audio::demo_chunk(
-                                        chunk_counter,
-                                        twinpad_server::audio::CHUNK_SAMPLES,
-                                        twinpad_server::audio::DEMO_RATE,
-                                    ))
-                                };
-                                let _ = twinpad_server::audio::run_audio_stream(
-                                    &mut sink,
-                                    twinpad_server::audio::DEMO_RATE,
-                                    twinpad_server::audio::DEMO_CHANNELS,
-                                    &mut source,
-                                );
-                            })
-                        });
+                        // SPEC-005 §3/§5: no audio is sent until the SDK
+                        // provides a real PCM source. Never synthesize a tone
+                        // when the game has no captured audio.
+                        let audio_thread =
+                            twinpad_server::audio::spawn_audio_stream_if_available(None, || {
+                                stream.try_clone().ok().map(|inner| StreamSink {
+                                    inner,
+                                    lock: write_lock.clone(),
+                                })
+                            });
 
                         // El hilo retiene `stream` abierto (lectura keepalive;
                         // EOF = el cliente cerró). Aquí llegan los

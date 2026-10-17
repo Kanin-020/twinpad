@@ -4,13 +4,13 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-003 |
+| CR | CR-004 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| CR-003 | Publicar PCM del juego por el SDK Twinpad | SPEC-005, SPEC-006, REQ-006 | Open | Twinpad team | [CR-003-sdk-audio-pcm.md](CR-003-sdk-audio-pcm.md) |
 
 ## Applied
 
@@ -29,6 +29,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 0 |
+| Open | 1 |
 | Median time open → applied | — |
 | Last reviewed | 2026-10-16 |
