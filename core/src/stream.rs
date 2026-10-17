@@ -6,6 +6,7 @@
 //! exclusivamente `fn` (R2); `ts` es diagnóstico.
 
 use crate::error::{PairError, PairResult};
+use base64::Engine as _;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -23,6 +24,9 @@ pub enum FrameFormat {
     /// Archivo JPEG completo (JFIF con cabecera); tamaño libre (CR-001).
     #[serde(rename = "jpeg")]
     Jpeg,
+    /// Modalidad del stream con keyframes JPEG y parches JPEG por tiles (CR-002).
+    #[serde(rename = "jpeg_tiles")]
+    JpegTiles,
 }
 
 impl FrameFormat {
@@ -32,7 +36,7 @@ impl FrameFormat {
         match self {
             FrameFormat::Gray8 => Some(1),
             FrameFormat::Rgb8 => Some(3),
-            FrameFormat::Jpeg => None,
+            FrameFormat::Jpeg | FrameFormat::JpegTiles => None,
         }
     }
 }
@@ -58,6 +62,7 @@ pub enum StreamMsg {
     #[serde(rename = "video_frame")]
     VideoFrame {
         /// Número de frame: monotónico creciente, ordena la presentación (R2).
+        #[serde(rename = "fn")]
         fn_: u64,
         /// Milisegundos del reloj del server en el envío (diagnóstico).
         ts: u64,
@@ -69,6 +74,24 @@ pub enum StreamMsg {
         fmt: FrameFormat,
         /// Framebuffer crudo en base64url: exactamente `w×h×bpp` bytes.
         data: String,
+    },
+    /// server → app: un lote atómico de tiles JPEG sobre la última imagen aplicada (CR-002).
+    #[serde(rename = "video_patch")]
+    VideoPatch {
+        /// Número de imagen transmitida; mayor que `base_fn`.
+        #[serde(rename = "fn")]
+        fn_: u64,
+        /// Última imagen base que debe tener aplicada el receptor.
+        base_fn: u64,
+        /// Milisegundos del reloj del server al enviar.
+        ts: u64,
+        /// Dimensiones de la imagen completa.
+        w: u16,
+        h: u16,
+        /// Tamaño fijo del tile.
+        tile_size: u16,
+        /// Tiles completos; la última fila/columna puede ser menor.
+        patches: Vec<VideoTile>,
     },
     /// server → app: notifica frames perdidos por transporte (§10, R3:
     /// no se retransmite, el render avanza al más reciente).
@@ -86,6 +109,21 @@ pub enum StreamMsg {
         reason: StreamStopReason,
     },
 }
+
+/// Un tile JPEG que reemplaza el rectángulo indicado dentro del Framebuffer (CR-002).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VideoTile {
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+    pub fmt: FrameFormat,
+    pub data: String,
+}
+
+/// Tamaño normativo de tile (CR-002).
+pub const TILE_SIZE: u16 = 64;
 
 /// Causas de `stream_stop` (SPEC-003 §4).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -139,12 +177,54 @@ impl StreamMsg {
                 ..
             } => {
                 validate_dims(*w, *h)?;
+                if *fmt == FrameFormat::JpegTiles {
+                    return Err(PairError::MalformedMessage);
+                }
                 validate_frame_size(*w, *h, *fmt, data)
-                    // `fn_` no se valida aquí: `fn=0` es válido y "monotónico"
-                    // solo lo puede juzgar quien lleva el estado del stream.
+                    // `fn_` monotonicity requiere el estado del stream.
                     .map(|_| {
                         let _ = fn_;
                     })
+            }
+            StreamMsg::VideoPatch {
+                fn_,
+                base_fn,
+                w,
+                h,
+                tile_size,
+                patches,
+                ..
+            } => {
+                validate_dims(*w, *h)?;
+                if *fn_ <= *base_fn || *tile_size != TILE_SIZE || patches.is_empty() {
+                    return Err(PairError::MalformedMessage);
+                }
+                let columns = w.div_ceil(TILE_SIZE);
+                let rows = h.div_ceil(TILE_SIZE);
+                let mut occupied = std::collections::HashSet::with_capacity(patches.len());
+                for tile in patches {
+                    if tile.fmt != FrameFormat::Jpeg
+                        || tile.x % TILE_SIZE != 0
+                        || tile.y % TILE_SIZE != 0
+                        || tile.w != TILE_SIZE.min(w.saturating_sub(tile.x))
+                        || tile.h != TILE_SIZE.min(h.saturating_sub(tile.y))
+                        || tile.x >= *w
+                        || tile.y >= *h
+                    {
+                        return Err(PairError::MalformedMessage);
+                    }
+                    let tile_index = (tile.y / TILE_SIZE) * columns + tile.x / TILE_SIZE;
+                    if tile_index >= columns * rows || !occupied.insert(tile_index) {
+                        return Err(PairError::MalformedMessage);
+                    }
+                    let jpeg = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .decode(&tile.data)
+                        .map_err(|_| PairError::MalformedMessage)?;
+                    if jpeg.is_empty() {
+                        return Err(PairError::MalformedMessage);
+                    }
+                }
+                Ok(())
             }
             StreamMsg::StreamGap { from_fn, to_fn } => {
                 if from_fn > to_fn {
@@ -173,6 +253,9 @@ fn validate_frame_size(w: u16, h: u16, fmt: FrameFormat, data: &str) -> PairResu
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(data)
         .map_err(|_| PairError::MalformedMessage)?;
+    if fmt == FrameFormat::JpegTiles {
+        return Err(PairError::MalformedMessage);
+    }
     match fmt.bytes_per_pixel() {
         Some(bpp) => {
             let expected = usize::from(w) * usize::from(h) * bpp;
@@ -345,6 +428,80 @@ mod tests {
             to_fn: 5,
         };
         assert_eq!(gap.validate(), Err(PairError::MalformedMessage));
+    }
+
+    // TEST-027 — verifies SPEC-003/CR-002: patch wire shape and validation.
+    #[test]
+    fn video_patch_roundtrips_with_fn_wire_name_and_valid_tiles() {
+        let patch = StreamMsg::VideoPatch {
+            fn_: 2,
+            base_fn: 1,
+            ts: 50,
+            w: 80,
+            h: 70,
+            tile_size: TILE_SIZE,
+            patches: vec![VideoTile {
+                x: 64,
+                y: 64,
+                w: 16,
+                h: 6,
+                fmt: FrameFormat::Jpeg,
+                data: base64_url(&[0xff, 0xd8, 0xff, 0xd9]),
+            }],
+        };
+        let encoded = patch.encode().unwrap();
+        assert!(encoded.contains("\"fn\":2"));
+        assert!(!encoded.contains("fn_"));
+        assert_eq!(StreamMsg::decode(&encoded).unwrap(), patch);
+    }
+
+    #[test]
+    fn video_patch_rejects_wrong_base_order_empty_overlap_and_bad_edge_size() {
+        let tile = VideoTile {
+            x: 0,
+            y: 0,
+            w: 64,
+            h: 64,
+            fmt: FrameFormat::Jpeg,
+            data: base64_url(&[0xff, 0xd8, 0xff, 0xd9]),
+        };
+        let valid = |fn_, base_fn, patches| StreamMsg::VideoPatch {
+            fn_,
+            base_fn,
+            ts: 0,
+            w: 128,
+            h: 64,
+            tile_size: TILE_SIZE,
+            patches,
+        };
+        assert_eq!(
+            valid(1, 1, vec![tile.clone()]).validate(),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            valid(2, 1, vec![]).validate(),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            valid(2, 1, vec![tile.clone(), tile.clone()]).validate(),
+            Err(PairError::MalformedMessage)
+        );
+        let edge = VideoTile {
+            x: 64,
+            y: 0,
+            w: 63,
+            h: 64,
+            ..tile
+        };
+        assert_eq!(
+            valid(2, 1, vec![edge]).validate(),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    fn base64_url(bytes: &[u8]) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
     }
 
     #[test]

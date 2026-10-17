@@ -161,6 +161,10 @@ fn main() {
                     let _ = session_key; // se usará por el canal cifrado (futuro)
 
                     if session_alive {
+                        // Anti-lag @60fps (2026-10-10): el socket de sesión
+                        // sale preparado ANTES del primer frame (SNDBUF
+                        // acotado + NODELAY); después no hay ventana fácil.
+                        StreamSink::prepare_for_streaming(&stream);
                         // SPEC-006 §5/§7 paso 3: la sesión nueva recibe la
                         // lista vigente de juegos compatibles.
                         let games_line = (twinpad_core::game::GameMsg::GamesAvailable {
@@ -197,33 +201,14 @@ fn main() {
                         let video_config_shared = std::sync::Arc::new(std::sync::Mutex::new(
                             twinpad_server::video::VideoConfig::from_env(),
                         ));
-                        let grabber = if force_demo {
-                            None
-                        } else {
-                            match twinpad_capture::DesktopGrabber::new() {
-                                Ok(g) => {
-                                    let initial = video_config_shared
-                                        .lock()
-                                        .map(|c| {
-                                            format!(
-                                                "{}×{} @ {} fps JPEG q{}",
-                                                c.width, c.height, c.fps, c.jpeg_quality
-                                            )
-                                        })
-                                        .unwrap_or_else(|_| "config no legible".into());
-                                    println!(
-                                        "Fuente de video: escritorio del PC — {initial} (CR-001)."
-                                    );
-                                    Some(g)
-                                }
-                                Err(e) => {
-                                    println!(
-                                        "Captura de escritorio no disponible ({e:?}); usando patrón de demostración."
-                                    );
-                                    None
-                                }
-                            }
-                        };
+                        // POR QUÉ AQUÍ: crear el grabber AHORA STARIA el hilo
+                        // de sesión — el portal ScreenCast (Wayland) pide permiso
+                        // con DIÁLOGO y espera al owner (U4 paciencia, §9), y el
+                        // lector de sesión quedaría con el socket sin drenar:
+                        // la app quedaria "conectando" y los input_report
+                        // enquuing. Elegido: el grabber se construye DENTRO del
+                        // hilo de video (abajo), que corre en paralelo, y el
+                        // lector arranca de inmediato.
                         let video_thread = writer.map(|mut sink| {
                             let games = Arc::clone(&games_ref);
                             let video_config_shared = std::sync::Arc::clone(&video_config_shared);
@@ -246,6 +231,37 @@ fn main() {
                                         false,
                                     );
                                 } else {
+                                    // El grabber se crea EN ESTE hilo: el diálogo
+                                    // del portal (si aparece) ya no congela al
+                                    // lector de sesión (ver comentario de arriba).
+                                    let grabber = if force_demo {
+                                        None
+                                    } else {
+                                        match twinpad_capture::DesktopGrabber::new() {
+                                            Ok(g) => {
+                                                let initial = video_config_shared
+                                                    .lock()
+                                                    .map(|c| {
+                                                        format!(
+                                                            "{}×{} @ {} fps JPEG q{}",
+                                                            c.width, c.height, c.fps, c.jpeg_quality
+                                                        )
+                                                    })
+                                                    .unwrap_or_else(|_| "config no legible".into());
+                                                println!(
+                                                    "Fuente de video: escritorio del PC — {initial} (CR-001), modo {:?}.",
+                                                    g.mode()
+                                                );
+                                                Some(g)
+                                            }
+                                            Err(e) => {
+                                                println!(
+                                                    "Captura de escritorio no disponible ({e:?}); usando patrón de demostración."
+                                                );
+                                                None
+                                            }
+                                        }
+                                    };
                                     let result = match grabber {
                                         Some(g) => {
                                             let cfg_shared =
@@ -313,6 +329,13 @@ fn main() {
                         let mut last_seq: Option<u32> = None;
                         let reader_cfg = std::sync::Arc::clone(&video_config_shared);
                         use std::io::{BufRead, BufReader};
+                        // §9: el handshake armó SO_RCVTIMEO (prueba 10 s) sobre
+                        // este MISMO fd: en sesión v1 no hay tráfico periódico
+                        // (U4), dejarlo expira la lectura y mata la sesión sin
+                        // input. Reset a bloqueo indefinido: EOF es la única
+                        // señal de fin (el emisor descubre el corte al fallar
+                        // su escritura).
+                        let _ = stream.set_read_timeout(None);
                         let mut reader = BufReader::new(stream);
                         let mut line = String::new();
                         loop {
@@ -428,7 +451,30 @@ struct StreamSink {
     lock: SessionWriteLock,
 }
 
+/// Tamaño máximo del buffer de envío del socket (anti-lag). POR QUÉ: con
+/// streams @60 fps el kernel acumula el exceso de frames en el SNDBUF
+/// (~256 KB..4 MB por defecto); un enlance Wi-Fi que drena menos que el
+/// bitrate llena ese buffer con SEGUNDOS de video viejo — el síntoma del
+/// lag de 0.5–2 s con "saltos" (el cursor se teletransporta). Acotado a
+/// 1 frame grande (4 MiB), un SNDBUF lleno hace que `write` BLOQUEE en el
+/// hilo del emisor; ahí entra el drop adaptativo del emisor.
+const MAX_SND_BUF_BYTES: usize = 4 * 1024 * 1024;
+
 impl StreamSink {
+    /// Socket listo para streaming: `SO_SNDBUF` acotado (el lag tope por
+    /// cola interna queda en ~0.1–0.3 s) y TCP_NODELAY (una línea de video
+    /// no debe esperar al Nagle de la precedente). Sin esto, un Wi-Fi que
+    /// drena menos que el bitrate llena el SNDBUF default (~256 KB–4 MB)
+    /// con SEGUNDOS de video viejo: el lag de 0.5–2 s con saltos.
+    /// API safe de `socket2` (ENG §4: sin unsafe en el árbol de server).
+    pub fn prepare_for_streaming(stream: &std::net::TcpStream) {
+        use socket2::SockRef;
+        // `SockRef` deref a `Socket`: ambos setters viven ahí.
+        let sock = SockRef::from(stream);
+        let _ = sock.set_send_buffer_size(MAX_SND_BUF_BYTES);
+        let _ = sock.set_tcp_nodelay(true);
+    }
+
     /// Escribe la línea completa (con '\n' y flush) bajo el lock compartido;
     /// `false` si la conexión cayó.
     fn send_locked(&mut self, line: &str) -> bool {

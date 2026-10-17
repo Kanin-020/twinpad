@@ -1758,6 +1758,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
 
 [[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1828,7 +1838,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
@@ -1950,7 +1960,12 @@ dependencies = [
 name = "twinpad-capture"
 version = "0.1.0"
 dependencies = [
+ "async-io",
+ "futures-lite",
+ "pipewire",
+ "serde",
  "xcap",
+ "zbus",
 ]
 
 [[package]]
@@ -1984,7 +1999,9 @@ dependencies = [
  "base64",
  "getrandom 0.3.4",
  "image",
+ "libc",
  "qrcodegen",
+ "socket2",
  "twinpad-capture",
  "twinpad-core",
  "twinpad-sdk",

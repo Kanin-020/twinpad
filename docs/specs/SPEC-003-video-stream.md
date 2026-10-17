@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (framebuffers) |
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
-| Realized by | DES-XXX (`-` hasta asignar) |
-| Verified by | TEST-015, TEST-016, TEST-017 |
-| Last updated | 2026-10-08 |
+| Realized by | DES-003 (CR-002; Draft) |
+| Verified by | TEST-015, TEST-016, TEST-017, TEST-027, TEST-028 |
+| Last updated | 2026-10-16 |
 
 ## 1. Purpose
 
@@ -18,7 +18,7 @@ Define el comportamiento observable del transporte y la presentación del Stream
 
 ## 2. Definitions
 
-- **Framebuffer**: un cuadro completo de la Segunda pantalla, codificado como imagen (ADR-005: framebuffers/imágenes, no HTML ni datos estructurados).
+- **Framebuffer**: imagen completa de un frame de la Segunda pantalla. En el wire puede llegar como keyframe completo o reconstruirse aplicando `video_patch` sobre el último Framebuffer válido (CR-002).
 - **Stream de video**: secuencia ordenada de Framebuffers transmitida PC → Android durante una sesión.
 - **Frame number (`fn`)**: número secuencial monótono del Framebuffer dentro del stream.
 - **Frame activo**: el último Framebuffer recibido y descodificable en el Android.
@@ -34,16 +34,19 @@ Define el comportamiento observable del transporte y la presentación del Stream
 
 | Field | Type | Constraints | Required |
 |---|---|---|---|
-| `type` | string | exactamente `"video_frame"` | yes |
-| `fn` | integer (uint64) | monotónico creciente, empieza en 0 en cada stream; nunca se repite | yes |
+| `type` | string | `"video_frame"` para keyframes completos | yes |
+| `fn` | integer (uint64) | monotónico creciente, empieza en 0 en cada stream; nunca se repite (en JSON se llama `fn`; en Rust es `fn_`) | yes |
 | `ts` | integer (uint64) | milisegundos del reloj del server (monótono respecto de sí mismo) en el envío | yes |
 | `w` | integer (uint16) | ancho del Framebuffer en píxeles, 16–3840 | yes |
 | `h` | integer (uint16) | alto del Framebuffer en píxeles, 16–2160 | yes |
-| `fmt` | string | `gray8` \| `rgb8` \| `jpeg` (v1.1, CR-001) | yes |
-| `data` | string | `rgb8`/`gray8`: base64url del framebuffer crudo, `w×h×bytes(fmt)` bytes; `jpeg`: base64url del archivo JPEG completo (con cabecera), tamaño libre | yes |
-| Control `stream_start` | mensaje | `type:"stream_start"`, `w`,`h`,`fmt`,`fps` (uint8, 1–60) — anuncia el stream y sus parámetros iniciales | yes antes del primer frame |
+| `fmt` | string | `gray8` \| `rgb8` \| `jpeg` (CR-001) \| `jpeg_tiles` (solo `stream_start`, CR-002) | yes |
+| `data` | string | `rgb8`/`gray8`: base64url del framebuffer crudo, `w×h×bytes(fmt)` bytes; `jpeg`: base64url del archivo JPEG completo (con cabecera), tamaño libre | yes para `video_frame` |
+| Control `stream_start` | mensaje | `type:"stream_start"`, `w`,`h`,`fmt`,`fps` (uint8, 1–60) — anuncia el stream y sus parámetros iniciales; en el modo tiles `fmt:"jpeg_tiles"` | yes antes del primer frame/keyframe |
+| `video_patch` | mensaje | `type:"video_patch"`, `fn`, `base_fn`, `ts`, `w`, `h`, `tile_size:64`, `patches` no vacío; cada patch tiene `x`,`y`,`w`,`h`,`fmt:"jpeg"`,`data` base64url de un JPEG del tile | solo en `jpeg_tiles`, tras keyframe |
 | Control `stream_stop` | mensaje | `type:"stream_stop"`, `reason`: `plugin_stopped` \| `server_shutdown` | yes al terminar |
 | Control `stream_gap` | mensaje | `type:"stream_gap"`, `from_fn`,`to_fn` — notifica frames perdidos por transporte | opcional |
+
+En `video_patch`, `fn` es creciente y mayor que `base_fn`; `base_fn` identifica el último keyframe o patch emitido y aplicado antes del mensaje. `x` e `y` deben ser múltiplos de 64; `w`/`h` son 64, salvo tiles de borde, y el rectángulo debe quedar dentro de `w×h`. Cada JPEG debe decodificar a las dimensiones declaradas. El servidor compara tiles RGB de 64×64 contra el frame fuente anterior; no emite mensaje cuando no hay tiles modificados. Android aplica el mensaje completo de forma atómica solo si `base_fn` coincide. Un mismatch o tile inválido descarta el patch y espera un keyframe. `stream_start fmt:"jpeg_tiles"` exige actualización conjunta de servidor y Android; las versiones antiguas no son compatibles. Los keyframes son `video_frame fmt:"jpeg"` y se envían al iniciar/cambiar resolución y al menos cada 1 s. Si el tamaño serializado total de patches no es menor que el keyframe completo JPEG, se envía el keyframe completo en su lugar.
 
 Canal: la conexión TCP de la sesión (mismo socket que el Handshake de SPEC-001, persistente desde esta iteración). Cada mensaje es una línea NDJSON terminada en `\n`.
 
@@ -51,9 +54,9 @@ Canal: la conexión TCP de la sesión (mismo socket que el Handshake de SPEC-001
 
 | Result | Value / shape | Condition |
 |---|---|---|
-| Pantalla de Segunda pantalla | vista dedicada que presenta el Frame activo a pantalla completa del área asignada, escalado a la orientación vigente | stream activo con frames recibidos |
+| Pantalla de Segunda pantalla | vista dedicada que presenta el Frame activo completo a pantalla completa del área asignada, escalado a la orientación vigente | stream activo con keyframe o patches aplicados sobre una base válida |
 | Estado "sin segunda pantalla activa" | mensaje en la vista, no pantalla congelada | sesión activa sin stream (REQ-004 AC-3) |
-| Frame descartado | el Framebuffer corrupto/incompleto no se muestra; se mantiene el Frame activo previo | `data` inconsistente con `w`,`h`,`fmt` |
+| Frame/patch descartado | un Framebuffer o patch corrupto/incompleto no se muestra; se mantiene el Frame activo previo; tras patch inválido se espera el siguiente keyframe | `data` inconsistente con `w`,`h`,`fmt` o `base_fn` distinto de la base aplicada |
 | Reanudación | el stream se recibe de nuevo en la misma conexión tras un corte transitorio de red del lado Android < 10 s | reconexión TCP (REQ-005 AC-2) |
 
 ## 6. States
@@ -67,7 +70,9 @@ Estados del stream (independientes del estado de sesión de SPEC-002):
 | From | Event | To | Side effects |
 |---|---|---|---|
 | `V0` | `stream_start` | `V1` | vista pasa a mostrar frames |
-| `V1` | `video_frame` con `fn` = último+1 | `V1` | Frame activo actualizado |
+| `V1` | `video_frame` válido | `V1` | Keyframe completo aplicado; reemplaza la base y limpia espera de keyframe |
+| `V1` | `video_patch` con `base_fn` igual al último frame aplicado y `fn` mayor | `V1` | Todos los tiles se componen atómicamente; actualiza `fn` aplicado |
+| `V1` | `video_patch` con `base_fn` distinto o tile inválido | `V1` | Se descarta todo el patch y se espera keyframe; no se altera el Frame activo |
 | `V1` | `video_frame` con `fn` ≤ último | `V1` | frame tardío descartado (no se muestra) |
 | `V1` | `stream_gap` | `V1` | los `fn` del hueco se marcan saltados |
 | `V1` | `stream_stop` | `V0` | vista vuelve a "sin segunda pantalla activa" |
@@ -79,11 +84,11 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 
 ## 7. Main flow
 
-1. Con la sesión establecida (SPEC-001), el Server PC envía `stream_start` con `w`, `h`, `fmt` y `fps` acordados.
-2. El Server PC captura el Framebuffer actual del Plugin y envía `video_frame` con `fn` incremental y `ts` del envío; repite a `fps` mientras haya contenido.
-3. El Android recibe cada `video_frame`, valida que `data` decodifique exactamente `w×h×bytes(fmt)` y actualiza el Frame activo.
-4. La vista de Segunda pantalla presenta el Frame activo escalado a la orientación del teléfono, sin intervención del usuario (REQ-004 AC-1).
-5. Al terminar, el Server envía `stream_stop` y la vista vuelve a "sin segunda pantalla activa".
+1. Con la sesión establecida (SPEC-001), el Server PC envía `stream_start` con `w`, `h`, `fmt:"jpeg_tiles"` y `fps` acordados.
+2. Antes de cualquier patch, el Server envía un keyframe `video_frame` JPEG completo con `fn=0`. Para cada frame fuente nuevo compara tiles RGB de 64×64 con la fuente anterior: si ninguno cambia, no envía imagen; si cambian, envía un `video_patch` con `base_fn` del último mensaje de imagen emitido y todos los tiles modificados. `fn` aumenta solo para mensajes de imagen emitidos.
+3. El Server envía un keyframe completo al inicio, tras cambio de resolución y en intervalos ≤1 s. Si el tamaño wire del mensaje de patch no es menor que el keyframe JPEG completo del mismo frame, reemplaza el patch por keyframe.
+4. El Android acepta keyframes completos y aplica patches solo si `base_fn` coincide y todos los JPEG/rectángulos son válidos; compone primero en una imagen de trabajo y publica el resultado entero de forma atómica. Si falla base o validación, conserva el Frame activo, ignora patches hasta keyframe y recupera sincronía en ≤1 s.
+5. La vista de Segunda pantalla presenta el Frame activo escalado a la orientación del teléfono, sin intervención del usuario (REQ-004 AC-1). Al terminar, el Server envía `stream_stop` y la vista vuelve a "sin segunda pantalla activa".
 
 ## 8. Alternative flows
 
@@ -109,7 +114,7 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 
 | Condition | Observable behavior | Error code / message |
 |---|---|---|
-| `video_frame` con `data` de longitud inconsistente | el frame se descarta; se mantiene el Frame activo previo; el stream continúa | sin mensaje al usuario |
+| `video_frame` inválido o `video_patch` con base/tiles inválidos | se descarta el mensaje completo y se mantiene el Frame activo; tras patch inválido el Android ignora patches hasta el próximo keyframe | sin mensaje al usuario |
 | `video_frame` con `fn` ≤ último visto | frame tardío descartado silenciosamente | — |
 | Mensaje de stream con `type` desconocido o campos faltantes | se trata como violación de protocolo: la sesión termina con el mecanismo de SPEC-002 | `E4` (SPEC-001 §9) |
 | `stream_start`/frame recibidos **sin sesión autenticada** | conexión rechazada en el server | `E3` |
@@ -120,20 +125,20 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 
 | Case | Expected behavior |
 |---|---|
-| Primer frame con `fn` ≠ 0 o sin `stream_start` previo | el frame se descarta; el stream no arranca hasta recibir `stream_start` |
-| Dos `video_frame` con el mismo `fn` | el segundo se descarta (idempotencia por `fn`) |
-| Frames con resolución distinta a la del último `stream_start` | frame descartado (inconsistente con parámetros vigentes) |
+| Primer keyframe con `fn` ≠ 0 o sin `stream_start` previo | el keyframe se descarta; el stream no arranca hasta recibir `stream_start` |
+| `video_frame`/`video_patch` con `fn` ≤ último aplicado | el mensaje se descarta silenciosamente; la composición no retrocede |
+| Keyframe/patch con resolución distinta a `stream_start` o patches superpuestos/inválidos | se descarta mensaje; un patch inválido obliga a esperar keyframe |
 | Orientación del teléfono cambia en `V1` | la vista re-escala el Frame activo; sin cortes ni re-negociación |
 | `stream_stop` durante `V2` | al reconectar se entrega `V0` ("sin segunda pantalla activa") |
 | Dos Android en sesión (NFR-006) | cada uno recibe su propio stream por su conexión; el server no intercala frames de uno en otro |
-| `stream_gap` que abarca todo lo recibido | la vista mantiene el último Frame activo válido |
+| `stream_gap` o patch perdido/malformado | se mantiene el último Frame válido; cualquier patch con `base_fn` incorrecta se descarta y el siguiente keyframe recupera sincronía en ≤1 s |
 | Reloj del server retrocede (`ts` no monótono) | `ts` se usa solo para diagnóstico; la ordenación es por `fn` y jamás por `ts` |
 
 ## 11. Business rules
 
 - **R1:** el stream solo existe sobre una sesión autenticada de SPEC-001; sin sesión no hay transmisión (NFR-004).
 - **R2:** el orden de presentación lo determina exclusivamente `fn`; ningún otro campo altera el orden.
-- **R3:** la latencia objetivo es la de NFR-001 (p95 ≤ 60 ms captura→visible); para cumplirla el stream no retransmite frames: los perdidos se saltan (`stream_gap`) y el render avanza al más reciente.
+- **R3:** la latencia objetivo es la de NFR-001 (p95 ≤ 60 ms captura→visible); el cliente aplica patches en orden, descarta los que no coinciden con `base_fn` y recupera la base con un keyframe en ≤1 s. El emisor no acumula ni retransmite imágenes antiguas.
 - **R4:** ante corte < 10 s, la reanudación reutiliza la sesión autenticada y jamás exige re-pairing (REQ-005 AC-2).
 - **R5:** la degradación la decide siempre el Server (fps primero, resolución después); el Android nunca la solicita en v1.
 - **R6:** si no hay stream, la vista lo indica explícitamente; jamás muestra un Frame congelado como si estuviera vivo (REQ-004 AC-3).
@@ -142,7 +147,7 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 
 | Contract | Canonical source | Notes |
 |---|---|---|
-| Mensajes de stream (`stream_start`/`video_frame`/`stream_stop`/`stream_gap`) | este documento §4; NDJSON según SPEC-001 §4.2 (misma conexión y framing) | v1; extensible con nuevos `type` por CR |
+| Mensajes de stream (`stream_start`/`video_frame`/`video_patch`/`stream_stop`/`stream_gap`) | este documento §4; NDJSON según SPEC-001 §4.2 (misma conexión y framing) | v1.2.0; CR-002 requiere actualización conjunta Android/servidor, sin compatibilidad anterior |
 | Autenticación de la sesión | SPEC-001 §7/§8 | sin duplicación: se referencia |
 | Formato de Framebuffer | ADR-005 + §4 `fmt` de este SPEC | `gray8` (1 B/px), `rgb8` (3 B/px), fila mayor |
 
@@ -155,11 +160,19 @@ Scenario: Flujo principal (REQ-004 AC-1)
   And luego video_frame(fn=0..n) consecutivos
   Then la vista del Android muestra cada frame sin intervención del usuario
 
+Scenario: Patch atómico y recuperación por keyframe
+  Given stream jpeg_tiles con keyframe aplicado fn=42
+  When llega video_patch(fn=43, base_fn=42) con todos sus tiles JPEG válidos
+  Then Android compone todos los tiles y publica la imagen como fn=43
+  When llega video_patch(fn=44, base_fn=42)
+  Then descarta todo el patch sin alterar fn=43 y espera un keyframe
+  And el siguiente keyframe completo se aplica y recupera la sincronía
+
 Scenario: Frame corrupto no congela la vista
   Given stream activo con Frame activo fn=42
   When llega video_frame(fn=43) con data inconsistente
   Then el frame 43 se descarta y la vista sigue mostrando fn=42
-  And el siguiente video_frame(fn=44) válido se muestra
+  And el siguiente video_frame válido se muestra
 
 Scenario: Corte breve de red (REQ-005 AC-2)
   Given stream en V1 y la red del teléfono cae 5 s
@@ -175,7 +188,9 @@ Scenario: Sin juego compatible (REQ-004 AC-3)
 
 ## 14. Invariants
 
-- `fn` es estrictamente creciente en los frames aceptados.
+- `fn` es estrictamente creciente en keyframes y patches aplicados; cada `video_patch.base_fn` identifica el último mensaje de imagen aplicado.
+- Los patches se aplican completamente o no se aplican; nunca se presenta una mezcla parcial.
+- Desde cualquier patch inválido/pérdida de base, se espera un keyframe completo que llega en ≤1 s.
 - Ningún frame se muestra antes de un `stream_start` vigente.
 - La sesión de SPEC-001 precede siempre a cualquier tráfico de stream.
 - Tras cada operación (frame, gap, corte), la vista muestra el Frame activo válido más reciente o el estado "sin segunda pantalla activa"; nunca basura decodificada.
@@ -191,6 +206,7 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 | Flujo principal (§7) y AC-1 de REQ-004 | TEST-015 |
 | Frame corrupto/tardío y edge cases de §10 | TEST-016 |
 | Reanudación tras corte breve (§8.2, REQ-005 AC-2) | TEST-017 |
+| Codec, diff por tiles, base mismatch, composición atómica y keyframe periódico | TEST-027, TEST-028 |
 | Latencia NFR-001 y CPU NFR-005 | pruebas de performance en banco físico (fuera de CI) |
 
 ## 17. Open questions
@@ -209,7 +225,7 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 - [x] No implementation detail beyond the boundary contract (el canal es el de SPEC-001; el códec de compresión queda deliberado fuera de v1 salvo CR).
 - [x] Every aspect has a TEST row; rows mirrored in traceability.md.
 - [x] No contradictions with the implementing REQ.
-- [x] No placeholders; Status: Draft.
+- [x] No placeholders; Status: Approved (CR-002).
 
 ## Changelog
 
@@ -218,3 +234,4 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |
+| 1.2.0 | 2026-10-16 | Owner (usuario, CR-002) | `jpeg_tiles`, patches JPEG de 64×64, base_fn y keyframes ≤1 s; despliegue coordinado sin compatibilidad hacia atrás |

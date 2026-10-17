@@ -9,6 +9,19 @@ rust-version.workspace = true
 # Captura de pantalla multiplataforma (Windows 8.1+, X11, macOS), Apache-2.0.
 # Requiere dependencias de sistema en Linux (ver docs/engineering/guidelines.md).
 xcap = "0.9"
+# Stream continuo de escritorio vía portal ScreenCast (Wayland/KDE): la
+# sesión del portal se pide con zbus y PipeWire se conecta por el fd del
+# portal (el node_id del stream solo existe en esa conexión remota).
+# Ambas ya eran dependencias transitivas de xcap; quedan explícitas: las
+# usamos directamente (ENG: nadie consume una dep sin declararla).
+zbus = "5"
+pipewire = "0.10"
+serde = "1"
+# async-io y futures-lite = deps transitivas de zbus: las usamos directo
+# para el flujo del portal en un único hilo async (ENG §11: nadie consume
+# una dep sin declararla).
+async-io = "2"
+futures-lite = "2"
 
 [lints]
 workspace = true

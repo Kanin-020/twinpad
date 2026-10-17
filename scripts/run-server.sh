@@ -7,9 +7,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> Compilando twinpad-server..."
-cargo build -q -p twinpad-server
+echo "==> Compilando twinpad-server (release)..."
+cargo build -q --release -p twinpad-server
 
 PORT="${1:-8420}"
-echo "==> Servidor en el puerto $PORT (Ctrl+C para salir)"
-exec ./target/debug/twinpad-server "$PORT"
+echo "==> Servidor release en el puerto $PORT (Ctrl+C para salir)"
+exec ./target/release/twinpad-server "$PORT"
