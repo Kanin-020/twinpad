@@ -103,6 +103,11 @@ impl GameRegistry {
             .collect()
     }
 
+    /// Indica si un juego sigue registrado aunque aún no haya publicado un frame.
+    pub fn has_live_game(&self, game_id: &str) -> bool {
+        lock_or_reset(&self.games).contains_key(game_id)
+    }
+
     /// Juegos vivos (para logs).
     pub fn len(&self) -> usize {
         lock_or_reset(&self.games).len()
@@ -502,6 +507,28 @@ mod tests {
         assert_eq!(line, "{\"type\":\"input_report\",\"seq\":1}\n");
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_input("{}"));
+    }
+
+    // TEST-049 — verifies SPEC-006/CR-008: a live Cemu adapter is discoverable before its first DRC frame.
+    #[test]
+    fn live_cemu_is_detected_before_first_frame() {
+        let registry = GameRegistry::new();
+        let (server_side, _client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into(), "audio".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.has_live_game("cemu"));
+        assert!(registry.preferred_source().is_none());
+        assert!(registry.latest_frame("cemu").is_none());
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.has_live_game("cemu"));
     }
 
     #[test]

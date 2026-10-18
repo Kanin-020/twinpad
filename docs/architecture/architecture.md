@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | ID | ARCH |
-| Version | 0.5.0 |
+| Version | 0.6.0 |
 | Status | Draft |
 | Owner | Twinpad team |
 | Last updated | 2026-10-18 |
@@ -43,7 +43,7 @@ C4Context
 | `Servidor PC` | Gestionar sesiones, exponer el QR de vinculación y coordinar los streams | service (persistente) | REQ-001, REQ-002 |
 | `Twinpad Core (PC)` | Ejecutar transporte LAN/Bluetooth, captura de framebuffer/audio y coordinar el forwarding autenticado de inputs | module (Rust) | REQ-003, REQ-004, REQ-005 |
 | `SDK Twinpad` | Permitir a un juego anunciar contenido de segunda pantalla y recibir inputs | lib | REQ-006 |
-| `Adaptador experimental Cemu` | Publicar textura/PCM DRC y aplicar inputs autenticados al GamePad Wii U emulado por IPC local durante pruebas semi-reales; inicia/reutiliza Servidor PC y muestra su QR vigente al solicitar la conexión | module (C++) | CR-004, CR-005, CR-006, CR-007, SPEC-004, SPEC-006 |
+| `Adaptador experimental Cemu` | Capturar automáticamente textura y PCM DRC sin abrir la vista separada, aplicar inputs autenticados al GamePad Wii U emulado por IPC local durante pruebas semi-reales, e iniciar/reutilizar Servidor PC y mostrar su QR vigente al solicitar conexión | module (C++) | CR-004..CR-008, SPEC-004, SPEC-006 |
 | `Cargador de Config externa` | Cargar y validar configuraciones de juegos no integrados | module (Rust) | REQ-007 |
 | `App Twinpad (Android)` | Mostrar la Segunda pantalla y capturar inputs táctiles/físicos | app (Kotlin) | REQ-004, REQ-008 |
 | `Motor HID (Android)` | Presentar el celular como Gamepad HID vía Bluetooth y codificar inputs al descriptor | module (Kotlin+Rust) | REQ-003 |
@@ -58,7 +58,7 @@ C4Context
 | `App Twinpad (Android)` | `Twinpad Core (PC)` | Protocolo de sesión (transporte) | Acceso directo a captura del PC |
 | `Motor HID (Android)` | `App Twinpad (Android)` | Interfaz interna de inputs | Conocer el juego o su contenido |
 | `SDK Twinpad` | `Servidor PC` | API de anuncio/registro del juego | Escribir directo en la red/transporte |
-| `Adaptador experimental Cemu` | `Servidor PC` | TCP 127.0.0.1:8423 para consultar URI/matriz QR vigente antes del inicio manual; IPC de juego de SPEC-006; auto-connect persistente opt-in solo con título activo; captura GamePad limitada a 5 fps | Acceso a la sesión Android directa o exposición del endpoint QR fuera de loopback |
+| `Adaptador experimental Cemu` | `Servidor PC` | TCP 127.0.0.1:8423 para consultar URI/matriz QR vigente antes del inicio manual; IPC de juego de SPEC-006; auto-connect persistente opt-in solo con título activo; captura interna DRC limitada a 5 fps, independiente de la vista separada | Acceso a la sesión Android directa o exposición del endpoint QR fuera de loopback |
 | `Cargador de Config externa` | `Twinpad Core (PC)` | Modelo de configuración validado | Ejecutar código del juego |
 | `Twinpad Core (PC)` | `Servidor PC` | Eventos internos de sesión | Depender del juego concreto |
 | `Captura (PC)` | `Twinpad Core (PC)` | Stream de frames/audio | Renderizado o lógica de UI |
@@ -97,7 +97,7 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | External system | Purpose | Direction | Contract | Failure behavior |
 |---|---|---|---|---|
 | Juego / Aplicación huesped (con SDK) | Contenido de segunda pantalla + inputs | inbound/outbound | API del SDK Twinpad | Juego cae → sesión continúa sin segunda pantalla |
-| Cemu (adaptador experimental CR-004/CR-005/CR-006/CR-007) | Prueba semi-real de textura GamePad, audio DRC e inputs al VPAD; mostrar QR vigente al iniciar conexión | bidirectional vía Servidor PC | TCP `127.0.0.1:8423` para QR y TCP localhost NDJSON para el adaptador; Cemu localiza `twinpad-server` en PATH si no existe instancia activa | no se obtiene QR → error y no conecta; IPC de juego ausente → retry cada 2 s tras solicitud; al cerrar se pregunta solo por la instancia iniciada por Cemu |
+| Cemu (adaptador experimental CR-004..CR-008) | Captura interna de textura/PCM DRC sin activar la vista separada, inputs al VPAD y QR al iniciar conexión | bidirectional vía Servidor PC | TCP `127.0.0.1:8423` para QR y TCP localhost NDJSON para el adaptador; Cemu localiza `twinpad-server` en PATH si no existe instancia activa | no se obtiene QR → error y no conecta; IPC de juego ausente → retry cada 2 s tras solicitud; al cerrar se pregunta solo por la instancia iniciada por Cemu |
 | Juego sin integración (vía Config externa) | Solo inputs (gamepad estándar) | inbound | Signature HID | Sin captura de pantalla garantizada |
 | SO Windows (HID) | Registrar el Gamepad HID | outbound | Driver/HID del sistema | Sin registro → juego no ve el control |
 | Router WiFi LAN / Bluetooth | Transporte | — | CTX-C2 | Degradación por señal; reconexión automática |
@@ -170,3 +170,4 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | 0.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-005) | Cemu experimental bidireccional por título; reintento/captura DRC automáticos e inputs directos al VPAD emulado |
 | 0.4.0 | 2026-10-18 | Product owner + Twinpad team (CR-006) | Control manual y preferencia opt-in persistente para iniciar la conexión Cemu |
 | 0.5.0 | 2026-10-18 | Product owner + Twinpad team (CR-007) | Cemu inicia/reutiliza twinpad-server desde PATH y solicita QR vigente por endpoint limitado a loopback |
+| 0.6.0 | 2026-10-18 | Product owner + Twinpad team (CR-008) | Cemu captura internamente el DRC a 5 fps sin activar la vista separada |

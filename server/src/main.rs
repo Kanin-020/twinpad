@@ -253,13 +253,29 @@ fn main() {
                                 // el stream (fuente preferente, §8.1 de SPEC-006);
                                 // si no, las fuentes de SPEC-003 §17
                                 // (escritorio/demo). El sondeo es por frame.
-                                if games.preferred_source().is_some() {
-                                    println!(
-                                        "Fuente de video: juego con SDK Twinpad (SPEC-006 AC-2)."
-                                    );
+                                let cemu_live = games.has_live_game("cemu");
+                                if cemu_live || games.preferred_source().is_some() {
+                                    if cemu_live {
+                                        println!(
+                                            "Fuente de video: DRC de Cemu; esperando el primer framebuffer si aún no llegó (CR-008)."
+                                        );
+                                        if let Ok(mut selected) = selected_game.lock() {
+                                            *selected = Some("cemu".to_string());
+                                        }
+                                    } else {
+                                        println!(
+                                            "Fuente de video: juego con SDK Twinpad (SPEC-006 AC-2)."
+                                        );
+                                    }
                                     let selected_game_for_poll = Arc::clone(&selected_game);
                                     let mut poll = move || {
-                                        let source = games.preferred_source();
+                                        let source = if games.has_live_game("cemu") {
+                                            games
+                                                .latest_frame("cemu")
+                                                .map(|frame| ("cemu".to_string(), frame))
+                                        } else {
+                                            games.preferred_source()
+                                        };
                                         if let Ok(mut selected) = selected_game_for_poll.lock() {
                                             *selected = source
                                                 .as_ref()

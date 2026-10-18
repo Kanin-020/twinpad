@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-008 |
+| CR | CR-009 |
 
 ## Open / In review
 
@@ -23,6 +23,7 @@
 | CR-005 | Flujo experimental Cemu: conexión, DRC e inputs | SPEC-004/006, ARCH, DES-004 | 2026-10-18 | [CR-005-cemu-automatic-drc-and-input.md](CR-005-cemu-automatic-drc-and-input.md) |
 | CR-006 | Conexión Twinpad de Cemu configurable | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-006-configurable-cemu-connection.md](CR-006-configurable-cemu-connection.md) |
 | CR-007 | Iniciar servidor Twinpad y mostrar QR en Cemu | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-007-cemu-start-server-and-show-qr.md](CR-007-cemu-start-server-and-show-qr.md) |
+| CR-008 | Captura automática y oculta del DRC para Twinpad | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-008-automatic-hidden-drc-capture.md](CR-008-automatic-hidden-drc-capture.md) |
 
 ## Rejected / Withdrawn
 

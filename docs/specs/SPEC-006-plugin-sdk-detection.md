@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.5.0 |
+| Version | 1.6.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1; contratos de AC-2/AC-3 quedan en el SDK) |
-| Realized by | DES-004 (CR-005/CR-006/CR-007, Draft; adaptador Cemu) |
-| Verified by | TEST-021, TEST-044, TEST-046, TEST-047 |
+| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008, Draft; adaptador Cemu) |
+| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049 |
 | Last updated | 2026-10-18 |
 
 ## 1. Purpose
@@ -59,12 +59,12 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 
 ## 7. Main flow
 
-1. El juego con SDK envía su anuncio (`game_id`, `game_name`, `capabilities`) al Servidor. Para Cemu experimental, al elegir “Iniciar conexión” con un título activo, Cemu inicia `twinpad-server` desde PATH si no hay una instancia local que responda; luego obtiene el QR vigente por TCP solo en `127.0.0.1:8423`, lo presenta en Cemu y, al cerrarlo, inicia la conexión del adaptador. El endpoint devuelve el URI canónico y la matriz vigente derivados del TokenStore del Servidor PC; no emite tokens nuevos. La conexión automática sigue siendo persistente y false por defecto; si se habilita con título activo y no existe conexión, la conexión comienza inmediatamente; deshabilitarla no desconecta una conexión existente y solo impide auto-inicio en títulos posteriores. El servidor iniciado por Cemu permanece activo tras el título; al cerrar Cemu se pregunta si detener únicamente ese proceso. Con adaptador iniciado, Cemu solo mientras el título esté activo conecta/reintenta cada 2 s, anuncia y publica textura GamePad limitada a 5 fps y conserva PCM DRC 48 kHz desacoplado. Al salir del título la conexión y captura se detienen.
+1. El juego con SDK envía su anuncio (`game_id`, `game_name`, `capabilities`) al Servidor. Para Cemu experimental, al elegir “Iniciar conexión” con un título activo, Cemu inicia `twinpad-server` desde PATH si no hay una instancia local que responda; luego obtiene el QR vigente por TCP solo en `127.0.0.1:8423`, lo presenta en Cemu y, al cerrarlo, inicia la conexión del adaptador. El endpoint devuelve el URI canónico y la matriz vigente derivados del TokenStore del Servidor PC; no emite tokens nuevos. La conexión automática sigue siendo persistente y false por defecto; si se habilita con título activo y no existe conexión, la conexión comienza inmediatamente; deshabilitarla no desconecta una conexión existente y solo impide auto-inicio en títulos posteriores. El servidor iniciado por Cemu permanece activo tras el título; al cerrar Cemu se pregunta si detener únicamente ese proceso. Con adaptador iniciado, Cemu solo mientras el título esté activo conecta/reintenta cada 2 s y anuncia. Mientras la conexión Cemu esté viva, el Server espera el primer framebuffer DRC/GamePad en lugar de escoger desktop/demo; al llegar, Cemu lo captura internamente aunque “Separate GamePad View” esté cerrada, limitada a 5 fps, y conserva PCM DRC 48 kHz desacoplado. No abre la vista separada ni solicita elegir una pantalla; el render visual normal de Cemu no cambia. Al salir del título la conexión y captura se detienen.
 2. El Servidor valida el anuncio (§4) y lo registra como disponible.
 3. Con sesión autenticada, el Servidor publica la lista de juegos disponibles a la app.
 4. La app muestra el juego como compatible disponible (REQ-006 AC-1).
 5. Si el juego declara `audio`, el SDK abre la conexión de audio separada y consume el callback de fuente PCM; `game_audio_start` anuncia rate/canales/s16le, los chunks incluyen `seq` incremental y `data` base64url (≤16 KiB decodificados), y `game_audio_stop` termina la fuente. Cierre/crash de la conexión primary o de audio termina el stream, sin afectar la sesión de Pairing.
-6. Para Cemu (CR-005), el Servidor reenvía cada `input_report` válido desde la primera sesión autenticada que envía inputs al socket primario del anuncio activo, como NDJSON con LF; el adaptador aplica el reporte al GamePad Wii U emulado. Mientras está conectado, Twinpad es la fuente exclusiva de controles VPAD y los mappings locales se ignoran. La selección de video/fallback permanece según SPEC-003; source switching tardío no se añade.
+6. Para Cemu (CR-005), el Servidor reenvía cada `input_report` válido desde la primera sesión autenticada que envía inputs al socket primario del anuncio activo, como NDJSON con LF; el adaptador aplica el reporte al GamePad Wii U emulado. Mientras está conectado, Twinpad es la fuente exclusiva de controles VPAD y los mappings locales se ignoran. Bajo CR-008, el origen de video Twinpad de Cemu es la textura DRC capturada internamente y no requiere “Separate GamePad View”; el selector normal de esa vista permanece independiente para pruebas/depuración. Los streams genéricos SDK y su fallback conservan SPEC-003; no se agrega selección de pantalla al flujo Cemu.
 
 El menú superior “Twinpad” contiene exactamente los elementos “Iniciar conexión” y “Configuraciones”. “Iniciar conexión” se deshabilita sin título activo y no inicia otra conexión si el cliente ya está activo. Antes de solicitar la conexión muestra una ventana con el QR vigente; si el inicio/consulta local falla, informa el error y no inicia el adaptador. “Configuraciones” abre una ventana modal con el control persistente “Conexión automática”.
 
@@ -102,6 +102,7 @@ El menú superior “Twinpad” contiene exactamente los elementos “Iniciar co
 - **R3:** el crash de un juego jamás rompe la sesión de SPEC-001 (REQ-006 §8).
 - **R4 (CR-006):** auto-connect Cemu persistente y opt-in, inicialmente desactivado; desactivarlo no cierra una conexión actual.
 - **R5 (CR-007):** “Iniciar conexión” muestra en Cemu el QR vigente antes de solicitar el adaptador. El Servidor PC atiende su consulta únicamente en loopback; Cemu reutiliza una instancia local o inicia el servidor por PATH. Al cerrar, solo pregunta si detener la instancia que inició.
+- **R6 (CR-008):** con el adaptador Cemu conectado y un título activo, la captura DRC es interna, automática, independiente de la ventana “Separate GamePad View” y limitada a 5 fps; no pregunta ni cambia el render visible normal. Esa opción de Cemu no se elimina y es independiente para pruebas/depuración.
 
 ## 12. Contracts
 
@@ -154,6 +155,14 @@ Scenario: Fallo al iniciar/consultar el servidor
   Then Cemu muestra un error
   And no solicita la conexión del adaptador
 
+Scenario: Captura automática y oculta del DRC para Twinpad (TEST-048)
+  Given Cemu tiene un título activo, Twinpad está conectado y “Separate GamePad View” está cerrada
+  When el juego renderiza el framebuffer DRC
+  Then Twinpad recibe la imagen del GamePad automáticamente, como máximo a 5 fps
+  And el audio DRC continúa transmitiéndose por el canal existente
+  And Cemu no abre la vista separada ni pregunta qué pantalla transmitir
+  And la salida visual normal de Cemu no cambia
+
 Scenario: Preferencia Twinpad y elementos del menú (TEST-046)
   Given no existe valor guardado para twinpad_auto_connect
   When Cemu carga la configuración
@@ -179,6 +188,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Conexión Cemu title-scoped, reintento, framing IPC y recepción de input | TEST-044 |
 | Preferencia Cemu persistente, estado inicial false, activación/desactivación en vivo y opciones del menú | TEST-046 |
 | QR vigente consultado por loopback, mostrado antes de conectar; errores locales observables | TEST-047 |
+| Captura DRC automática y oculta, limitada a 5 fps, sin selección de pantalla | TEST-048, TEST-049 |
 
 ## 17. Open questions
 
@@ -196,3 +206,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-005) | Cemu conecta/reintenta por título y consume input_report del GamePad emulado; conserva fallback de video actual |
 | 1.4.0 | 2026-10-18 | Product owner + Twinpad team (CR-006) | Auto-connect Cemu persistente opt-in y menú Twinpad con inicio manual/configuraciones |
 | 1.5.0 | 2026-10-18 | Product owner + Twinpad team (CR-007) | “Iniciar conexión” inicia/reutiliza el Servidor PC, consulta el QR vigente solo por loopback, lo muestra antes de iniciar el adaptador y pregunta al cerrar si detener el proceso propio |
+| 1.6.0 | 2026-10-18 | Product owner + Twinpad team (CR-008) | Cemu captura la imagen DRC automáticamente sin abrir Separate GamePad View ni pedir seleccionar pantalla; conserva audio DRC y el límite de 5 fps |

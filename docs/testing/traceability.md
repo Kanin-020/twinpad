@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-048 |
+| TEST | TEST-050 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -48,6 +48,8 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-045 | Draft | Adaptador Cemu: ciclo por título, reconexión, parser y mapeo/manejo exclusivo al VPAD (CR-005) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-046 | Draft | Aceptación Cemu: preferencia opt-in persistente/false por defecto, auto-connect inmediato al activarlo, no desconexión al desactivarlo, inicio manual solo con título y menú exacto “Iniciar conexión”, “Configuraciones” (CR-006); build verificado, prueba UI/config en Cemu pendiente |
 | REQ-006 | SPEC-006 | DES-004 | TEST-047 | Draft | `server/src/main.rs::tests::cemu_qr_ipc_returns_current_uri_and_matrix_only_on_loopback`: listener exclusivo `127.0.0.1`, consulta `GET_QR` y respuesta con URI canónico/matriz del TokenStore vigente; Cemu inicia/reutiliza twinpad-server desde PATH, presenta la imagen antes de conectar y pregunta al cerrar solo por el proceso que lanzó (CR-007; Cemu build verificado, smoke de ventana requiere título de prueba) |
+| REQ-006 | SPEC-006 | DES-004 | TEST-048 | Draft | Aceptación CR-008: DRC capturado internamente aunque “Separate GamePad View” esté cerrada; sin selección/pregunta ni cambio visual, límite máximo 5 fps; build verificado y E2E con título real pendiente |
+| REQ-006 | SPEC-006 | DES-004 | TEST-049 | Draft | El server identifica un adaptador Cemu vivo antes del primer frame para esperar el DRC sin elegir desktop/demo y habilitar desde el inicio la fuente de audio Cemu (`server::games::tests::live_cemu_is_detected_before_first_frame`) |
 | REQ-006 | SPEC-006 | `-` | TEST-026 | Approved | Frames `rgb8` del SDK se codifican como JPEG q80 por el servidor antes de emitirse con `fmt=jpeg`; caso JPEG preexistente permanece JPEG, wire contract SPEC-003 sin cambios |
 | REQ-004 | SPEC-003 | DES-003 | TEST-027 | Approved | Codec Rust/Kotlin para `video_patch`: `fn` wire, validación de base y geometría de tiles (CR-002) |
 | REQ-004 | SPEC-003 | DES-003 | TEST-028 | Approved | Diff RGB server y composición atómica Android; keyframe periódico/fallback CR-002; ruta Android compone sobre una sola copia del Bitmap y rechaza base inválida antes del trabajo de imagen; el server omite encode/base64 cuando los RGB no cambian (test de frame estático) |
@@ -108,6 +110,7 @@
 | CR-005 | Cemu title-scoped con input directo al VPAD; touch wire extendido, fallback de video conservado | 2026-10-18 | Approved |
 | CR-006 | Auto-connect Cemu opt-in persistente, conexión manual y menú de dos opciones | 2026-10-18 | Approved |
 | CR-007 | Cemu inicia/reutiliza Servidor PC desde PATH y presenta el QR vigente por interfaz exclusiva loopback | 2026-10-18 | Approved |
+| CR-008 | Captura automática y oculta del DRC, independiente de Separate GamePad View, con límite de 5 fps | 2026-10-18 | Approved |
 
 ## Invariants of this matrix
 
