@@ -22,6 +22,18 @@ pub enum QrEncodeError {
 ///
 /// # Errors
 /// `UriTooLong` si el payload excede la capacidad del QR (ecc medio).
+pub fn encode_matrix(uri: &str) -> Result<Vec<String>, QrEncodeError> {
+    let code = QrCode::encode_text(uri, QrCodeEcc::Medium).map_err(|_| UriTooLong)?;
+    let size = code.size();
+    Ok((0..size)
+        .map(|y| {
+            (0..size)
+                .map(|x| if code.get_module(x, y) { '1' } else { '0' })
+                .collect()
+        })
+        .collect())
+}
+
 pub fn render_terminal(uri: &str) -> Result<String, QrEncodeError> {
     let code = QrCode::encode_text(uri, QrCodeEcc::Medium).map_err(|_| UriTooLong)?;
     let size = code.size();

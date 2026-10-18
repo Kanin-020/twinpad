@@ -6,12 +6,16 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewParent
+import android.widget.ImageView
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
 import com.twinpad.android.app.wire.InputReport
+import com.twinpad.android.app.wire.ProtocolConstants
 import kotlinx.coroutines.launch
 
 /** Bits de botones A/B/X/Y (SPEC-004 §4; máscara 0–3). */
@@ -59,6 +63,7 @@ class ProfileSurface(
     private var draggingIdx: Int = -1
     private var dragLastX = 0f
     private var dragLastY = 0f
+    private var drcTouchActive = false
 
     private val controlPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val selectionPaint =
@@ -76,6 +81,12 @@ class ProfileSurface(
     init {
         // H1 (§6): al estar el canal entre READY, el reporte de reposo salió.
         gamepad.onChannelReady()?.let(onInput)
+    }
+
+    /** Actualiza yaw/pitch/roll absolutos; una muestra se agrega al reporte completo. */
+    fun updateGyro(orientationTurns: List<Int>) {
+        surface.setGyro(orientationTurns)
+        emit()
     }
 
     /** Alternar edición/uso; al salir se guarda el perfil (§5, AC-1). */
@@ -110,6 +121,11 @@ class ProfileSurface(
     ): Boolean {
         val idx = hitTest(nx, ny)
         draggingIdx = idx
+        if (idx < 0 && !editing) {
+            drcTouchActive = true
+            updateDrcTouch(nx, ny, pressed = true)
+            emit()
+        }
         if (editing) {
             selectedIdx = idx
             dragLastX = event.x
@@ -126,6 +142,11 @@ class ProfileSurface(
         ny: Float,
         event: MotionEvent,
     ): Boolean {
+        if (drcTouchActive && draggingIdx < 0 && !editing) {
+            updateDrcTouch(nx, ny, pressed = true)
+            emit()
+            return true
+        }
         if (draggingIdx < 0) return false
         if (editing) {
             moveSelected(event.x - dragLastX, event.y - dragLastY)
@@ -138,10 +159,57 @@ class ProfileSurface(
     }
 
     private fun onUp(): Boolean {
-        if (!editing && draggingIdx >= 0) applyControl(draggingIdx, 0f, 0f, pressed = false)
+        if (drcTouchActive) {
+            drcTouchActive = false
+            surface.setTouch(surface.snapshot().touchX, surface.snapshot().touchY, pressed = false)
+            emit()
+        } else if (!editing && draggingIdx >= 0) {
+            applyControl(draggingIdx, 0f, 0f, pressed = false)
+        }
         draggingIdx = -1
         invalidate()
         return true
+    }
+
+    private fun findContentRoot(): ViewGroup? {
+        var current: ViewParent? = parent
+        while (current != null && current !is ViewGroup) current = current.parent
+        return current as? ViewGroup
+    }
+
+    /** Actualiza el toque DRC en coordenadas normalizadas de la imagen visible. */
+    private fun updateDrcTouch(
+        nx: Float,
+        ny: Float,
+        pressed: Boolean,
+    ) {
+        val image = findContentRoot()?.findViewById<ImageView>(com.twinpad.android.app.R.id.video_view) ?: return
+        val drawable = image.drawable ?: return
+        val bitmapWidth = drawable.intrinsicWidth.toFloat().coerceAtLeast(1f)
+        val bitmapHeight = drawable.intrinsicHeight.toFloat().coerceAtLeast(1f)
+        val viewWidth = image.width.toFloat().coerceAtLeast(1f)
+        val viewHeight = image.height.toFloat().coerceAtLeast(1f)
+        val imageLocation = IntArray(2)
+        val surfaceLocation = IntArray(2)
+        image.getLocationOnScreen(imageLocation)
+        getLocationOnScreen(surfaceLocation)
+        val pointerX = nx * width - (imageLocation[0] - surfaceLocation[0])
+        val pointerY = ny * height - (imageLocation[1] - surfaceLocation[1])
+        val scale = minOf(viewWidth / bitmapWidth, viewHeight / bitmapHeight)
+        val shownWidth = bitmapWidth * scale
+        val shownHeight = bitmapHeight * scale
+        val left = (viewWidth - shownWidth) / 2f
+        val top = (viewHeight - shownHeight) / 2f
+        val localX = pointerX - left
+        val localY = pointerY - top
+        if (!(localX in 0f..shownWidth && localY in 0f..shownHeight)) return
+        val x = (localX / shownWidth).coerceIn(0f, 1f)
+        val y = (localY / shownHeight).coerceIn(0f, 1f)
+        surface.setTouch(
+            (x * ProtocolConstants.TOUCH_MAX).toInt(),
+            (y * ProtocolConstants.TOUCH_MAX).toInt(),
+            pressed,
+        )
     }
 
     /** Aplica el gesto del control al estado de la Signature (S1, §7). */
@@ -186,18 +254,15 @@ class ProfileSurface(
         when (c.hid) {
             "trigger_l2" -> surface.setTrigger(if (pressed) 1f else 0f, isLeft = true)
             "trigger_r2" -> surface.setTrigger(if (pressed) 1f else 0f, isLeft = false)
-            else ->
+            else -> {
+                val currentButtons = surface.snapshot().buttons
+                val button = buttonBit(c.hid)
                 surface.setButtons(
-                    if (pressed) surfaceButtons() or buttonBit(c.hid) else surfaceButtons() and buttonBit(c.hid).inv(),
+                    if (pressed) currentButtons or button else currentButtons and button.inv(),
                 )
+            }
         }
     }
-
-    private fun surfaceButtons(): Int = gamepadButtons()
-
-    private fun gamepadButtons(): Int = snapshotButtons()
-
-    private fun snapshotButtons(): Int = surface.snapshot().buttons
 
     /** Dir. del D-pad según el cuadrante del toque (0=N en sentido horario). */
     private fun quadrantDirection(

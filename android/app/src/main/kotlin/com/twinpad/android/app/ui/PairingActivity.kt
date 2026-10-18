@@ -1,6 +1,10 @@
 package com.twinpad.android.app.ui
 
 import android.Manifest
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -28,10 +32,13 @@ import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
+import com.twinpad.android.app.wire.ProtocolConstants
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private const val MICROSECONDS_PER_MILLISECOND = 1_000.0
+private const val RADIANS_PER_TURN = 2f * Math.PI.toFloat()
 
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
@@ -65,6 +72,30 @@ class PairingActivity : AppCompatActivity() {
     private var controlsVisible = true
     private var pendingFrameNumber: Long? = null
     private var pendingFramePublishedAtNanos = 0L
+    private lateinit var sensorManager: SensorManager
+    private var rotationVector: Sensor? = null
+    private val orientationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
+    private val sensorListener =
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                SensorManager.getRotationMatrixFromVector(orientationMatrix, event.values)
+                SensorManager.getOrientation(orientationMatrix, orientationAngles)
+                val scale = ProtocolConstants.GYRO_TURN_SCALE
+                surfaceRef?.updateGyro(
+                    listOf(
+                        radiansToTurns(orientationAngles[0], scale),
+                        radiansToTurns(orientationAngles[1], scale),
+                        radiansToTurns(orientationAngles[2], scale),
+                    ),
+                )
+            }
+
+            override fun onAccuracyChanged(
+                sensor: Sensor?,
+                accuracy: Int,
+            ) = Unit
+        }
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -75,6 +106,8 @@ class PairingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_pairing)
         viewModel = ViewModelProvider(this)[PairingViewModel::class.java]
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         cameraController =
             PairingCameraController(this) { raw ->
                 viewModel.onEvent(PairingEvent.QrScanned(raw))
@@ -362,7 +395,20 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        rotationVector?.let {
+            sensorManager.registerListener(
+                sensorListener,
+                it,
+                SensorManager.SENSOR_DELAY_GAME,
+                ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
+            )
+        }
+    }
+
     override fun onPause() {
+        sensorManager.unregisterListener(sensorListener)
         super.onPause()
         viewModel.onAppBackgrounded() // SPEC-002 §8.3
     }
@@ -373,6 +419,15 @@ class PairingActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
+
+/** Convierte radianes absolutos a vueltas int16 según el contrato de input. */
+private fun radiansToTurns(
+    radians: Float,
+    scale: Float,
+): Int =
+    (radians / RADIANS_PER_TURN * scale)
+        .roundToInt()
+        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
 
 /** Mapeo error → string canónico (SPEC-002 §9, R4). */
 fun com.twinpad.android.app.core.PairingError.resId(): Int =

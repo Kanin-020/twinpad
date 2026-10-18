@@ -10,7 +10,7 @@
 | Owner | Eng lead |
 | Refines | CTX scope item "Integración por plugin (SDK Twinpad)" y CTX-C7 |
 | Implemented by | `-` |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-10-17 |
 
 ## 1. Objective
 
@@ -38,6 +38,7 @@ Twinpad debe proveer un SDK Twinpad que un Juego / Aplicación huesped pueda int
 
 - Un juego con SDK integrado es detectado automáticamente por Twinpad Core al ejecutarse.
 - El juego puede publicar contenido de Segunda pantalla a través del SDK.
+- Si declara capacidad `audio`, el juego puede entregar PCM real mediante una fuente callback del SDK y Twinpad lo reproduce en Android sin que la fuente retrase la publicación de frames.
 - El juego recibe los inputs del gamepad a través del canal acordado con el SDK.
 
 ## 6. Acceptance criteria
@@ -45,6 +46,7 @@ Twinpad debe proveer un SDK Twinpad que un Juego / Aplicación huesped pueda int
 - [ ] AC-1: Dado un juego con SDK integrado, cuando se ejecuta con el servidor activo, entonces Twinpad Core lo detecta y la app Android lo muestra como juego compatible disponible.
 - [ ] AC-2: Dado un juego detectado y sesión activa, cuando el juego publica un frame de segunda pantalla vía SDK, entonces llega al celular (sujeto a REQ-004).
 - [ ] AC-3: Dado un juego detectado, cuando el juego consulta el estado de controles vía SDK, entonces obtiene la Signature HID declarada y los eventos de input correspondientes.
+- [ ] AC-4: Dado un juego vivo con capacidad `audio`, cuando su fuente callback publica PCM `s16le`, entonces el Android reproduce ese audio; ante congestión se descartan chunks PCM antiguos sin bloquear la publicación de frames, y sin fuente PCM el teléfono permanece en silencio.
 
 ## 7. Non-functional concerns
 
@@ -86,3 +88,4 @@ Twinpad debe proveer un SDK Twinpad que un Juego / Aplicación huesped pueda int
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
+| 0.2.0 | 2026-10-17 | Owner + Twinpad team (CR-003) | Añade AC-4 para publicación de PCM desde SDK y silencio si no existe fuente |

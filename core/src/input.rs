@@ -58,10 +58,16 @@ pub enum InputMsg {
         trigger_l2: u8,
         /// Trigger analógico R2 (0–255).
         trigger_r2: u8,
-        /// Giroscopio de 3 ejes (opcional; −32768…32767 por eje; §10:
-        /// dispositivo sin gyro → el reporte viaja sin el campo).
+        /// Giroscopio absoluto yaw/pitch/roll, vueltas en int16 (32767 ≈ +1 vuelta).
+        /// Ausente cuando el dispositivo no ofrece orientación absoluta.
         #[serde(skip_serializing_if = "Option::is_none")]
         gyro: Option<[i16; GYRO_AXES]>,
+        /// Posición X del toque sobre la imagen DRC, normalizada a 0…65535.
+        touch_x: u16,
+        /// Posición Y del toque sobre la imagen DRC, normalizada a 0…65535.
+        touch_y: u16,
+        /// Estado de contacto; al soltar se conserva touch_x/touch_y.
+        touch_pressed: bool,
     },
 }
 
@@ -112,6 +118,9 @@ mod tests {
             trigger_l2: 0,
             trigger_r2: 0,
             gyro: None,
+            touch_x: 0,
+            touch_y: 0,
+            touch_pressed: false,
         }
     }
 
@@ -128,6 +137,9 @@ mod tests {
             trigger_l2: 128,
             trigger_r2: 255,
             gyro: Some([-100, 0, 32767]),
+            touch_x: 1234,
+            touch_y: 65535,
+            touch_pressed: true,
         };
         let line = msg.encode().unwrap();
         assert!(!line.contains('\n'));
@@ -187,6 +199,30 @@ mod tests {
         let InputMsg::InputReport { ref mut dpad, .. } = msg;
         *dpad = 9;
         assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
+    }
+
+    // TEST-043 — verifies SPEC-004 §4/CR-005 touch and absolute orientation wire fields.
+    #[test]
+    fn touch_and_absolute_orientation_roundtrip() {
+        let msg = InputMsg::InputReport {
+            seq: 12,
+            stick_lx: 0,
+            stick_ly: 0,
+            stick_rx: 0,
+            stick_ry: 0,
+            dpad: DPAD_NEUTRAL,
+            buttons: 0,
+            trigger_l2: 0,
+            trigger_r2: 0,
+            gyro: Some([16384, -8192, 32767]),
+            touch_x: 32768,
+            touch_y: 65535,
+            touch_pressed: true,
+        };
+        let line = msg.encode().unwrap();
+        assert_eq!(InputMsg::decode(&line).unwrap(), msg);
+        assert!(line.contains("\"touch_pressed\":true"));
+        assert!(line.contains("\"gyro\":[16384,-8192,32767]"));
     }
 
     #[test]

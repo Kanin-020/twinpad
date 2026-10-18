@@ -21,8 +21,13 @@ data class InputReport(
     val buttons: Int,
     val triggerL2: Int,
     val triggerR2: Int,
-    /** Ejes del giroscopio; `null` = el dispositivo no lo aporta (§10). */
+    /** Orientación absoluta yaw/pitch/roll en vueltas int16; null si no está disponible. */
     val gyro: List<Int>? = null,
+    /** Posición sobre la imagen DRC normalizada a 0…65535. */
+    val touchX: Int = 0,
+    val touchY: Int = 0,
+    /** Estado del contacto en la imagen DRC. */
+    val touchPressed: Boolean = false,
 )
 
 /**
@@ -49,6 +54,9 @@ object InputCodec {
                 report.gyro?.let { axes ->
                     put("gyro", kotlinx.serialization.json.JsonArray(axes.map { JsonPrimitive(it) }))
                 }
+                put("touch_x", report.touchX.coerceIn(0, ProtocolConstants.TOUCH_MAX))
+                put("touch_y", report.touchY.coerceIn(0, ProtocolConstants.TOUCH_MAX))
+                put("touch_pressed", report.touchPressed)
             }
         return json.encodeToString(JsonObject.serializer(), obj)
     }

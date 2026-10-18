@@ -16,6 +16,7 @@ pub mod audio;
 pub mod crypto;
 pub mod error;
 pub mod game;
+pub mod game_audio;
 pub mod handshake;
 pub mod input;
 pub mod message;

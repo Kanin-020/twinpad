@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| DES | DES-004 |
+| DES | DES-005 |
 
 ## Active designs
 
@@ -15,6 +15,7 @@
 | DES-001 | Realización del protocolo de Pairing y Handshake | SPEC-001 (parcial) | `Approved` | [DES-001-session-protocol.md](DES-001-session-protocol.md) |
 | DES-002 | Realización de la app Android de Pairing | SPEC-002 (full) | `Approved` | [DES-002-android-pairing-app.md](DES-002-android-pairing-app.md) |
 | DES-003 | Realización de video por tiles | SPEC-003 §4/§6–§7/§9–§10/§14 (CR-002) | `Draft` | [DES-003-video-tiles.md](DES-003-video-tiles.md) |
+| DES-004 | Realización del adaptador experimental Cemu bidireccional | SPEC-004 §4/§7/§12, SPEC-006 §3/§7/§9/§12/§16 (CR-005/CR-006/CR-007) | `Draft` | [DES-004-cemu-adapter.md](DES-004-cemu-adapter.md) |
 
 ## Superseded / Deprecated
 
@@ -26,6 +27,6 @@
 
 | Metric | Value |
 |---|---|
-| Active DES | 3 |
+| Active DES | 4 |
 | Approved SPECs without DES | 0 |
-| Last reviewed | 2026-10-17 |
+| Last reviewed | 2026-10-18 |

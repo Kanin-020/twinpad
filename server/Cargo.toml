@@ -13,6 +13,7 @@ getrandom = "0.3"
 # libc ya era transitiva (zbus); se declara explícita por uso directo.
 libc = "0.2"
 base64 = "0.22"
+serde_json = "1"
 # Encode JPEG del stream (CR-001): revisión ENG §11 — rust-image org,
 # MIT/Apache, mantenido, sin unsafe directo; solo la feature jpeg.
 image = { version = "0.25", default-features = false, features = ["jpeg"] }

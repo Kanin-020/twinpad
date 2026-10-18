@@ -2008,6 +2008,7 @@ dependencies = [
  "jpeg-encoder",
  "libc",
  "qrcodegen",
+ "serde_json",
  "socket2",
  "twinpad-capture",
  "twinpad-core",

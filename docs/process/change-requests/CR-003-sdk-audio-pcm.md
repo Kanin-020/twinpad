@@ -5,11 +5,11 @@
 | ID | CR-003 |
 | Title | Publicar PCM del juego por el SDK Twinpad |
 | Type | `New behavior / Scope change` |
-| Status | `Open` |
+| Status | `Approved` |
 | Author | Twinpad team |
 | Created | 2026-10-17 |
-| Decided | — |
-| Decided by | — |
+| Decided | 2026-10-17 |
+| Decided by | Product owner (usuario) |
 
 ## 1. Target
 
@@ -17,13 +17,13 @@
 |---|---|
 | Document(s) changed | SPEC-005, SPEC-006, REQ-006, DES-006 (si se asigna) |
 | Sections | SPEC-005 §3/§4/§7; SPEC-006 §4/§7/§9; SDK API |
-| Current version → new version | Sin cambios hasta aprobación |
+| Current version → new version | SPEC-005 1.0.0 → 1.1.0; SPEC-006 1.0.0 → 1.1.0; REQ-006 0.1.0 → 0.2.0 |
 
 ## 2. Requested change
 
 **Current:** SPEC-005 §3 requiere audio disponible desde el Plugin, pero SPEC-006 y la API actual de `TwinpadGame` no definen mensaje ni método para entregar PCM; el SDK actual solo anuncia juegos y publica frames.
 
-**Proposed:** Extender el SDK Twinpad para que el Plugin del juego pueda publicar PCM `s16le` con `rate` y `channels` conforme a SPEC-005 §4. Definir el framing IPC, límites y tamaño de chunk, orden, timestamps, sincronía de múltiples productores, comportamiento ante backpressure, comienzo/fin/cambio de formato, liveness y prioridad frente a frames antes de implementarlo. El servidor solo reenviará audio que haya recibido de una fuente viva; en ausencia de PCM real permanecerá en silencio.
+**Approved:** El SDK ofrece una fuente callback consumida en un hilo dedicado. Usa una segunda conexión TCP localhost separada del canal de frames (puerto 8422) con NDJSON `game_audio_start/chunk/stop`, asociada al `game_id` anunciado por la conexión primaria. `game_audio_start` declara `rate`, `channels`, `sample_fmt=s16le`; cada chunk lleva `seq`, `ts` monotónico del proceso, y PCM `data` base64url con ≤16 KiB decodificados; `game_audio_stop` finaliza la fuente. Una sola fuente por juego/capability `audio`; formatos válidos 8k–192k, mono/estéreo. El callback alimenta una cola acotada de 8 chunks; al llenarse se descarta PCM antiguo, sin bloquear el hilo que publica frames. El Server valida vida/capability/duplicados y reenvía únicamente el audio del juego actualmente seleccionado por el stream de video. En la sesión de Android, el escritor serializado prioriza video ante cada límite de mensaje y drena audio pendiente solo cuando video no espera. Sin fuente no se anuncia audio. Cierre del proceso o conexión detiene la fuente con `audio_stop` cuando el socket de sesión siga vivo; no rompe pairing.
 
 ## 3. Motivation
 
@@ -33,15 +33,15 @@ El binario del servidor actualmente genera un seno sintético de 440 Hz de forma
 
 | Artifact | Affected? | Impact | Action needed |
 |---|---|---|---|
-| REQ-006 | Sí | Capacidad existente `audio` debe corresponder a una API de entrega | Precisar acceptance criteria y alcance |
-| SPEC-005 | Sí | El origen y el flujo principal deben alinearse con la disponibilidad de fuente real | Definir flujo de ausencia y entrega del Plugin |
-| SPEC-006 | Sí | IPC SDK actual solo incluye anuncio y frames | Definir mensaje/ciclo de audio |
-| ARCH | Sí | Captura y envío de audio se asignarán entre SDK/Core/Server | Actualizar responsabilidades si cambia la frontera |
+| REQ-006 | Sí | Añadido AC-4 de entrega PCM desde SDK | Actualizado a 0.2.0 |
+| SPEC-005 | Sí | Origen, IPC separado, cola drop-old y prioridad de video | Actualizado a 1.1.0 |
+| SPEC-006 | Sí | Segunda conexión localhost de audio y ciclo de vida | Actualizado a 1.1.0 |
+| ARCH | Sí | SDK → Server por IPC separado; salida de sesión prioriza video | Sin cambio de límites: contrato reflejado en SPEC-005/006 |
 | DES-006 | Posible | El diseño IPC/SDK necesitará detalles | Crear o actualizar DES después de acordar el contrato |
-| TEST | Sí | Requiere tests de API, contrato IPC y sesión E2E | Reservar TEST ID al aceptar diseño |
-| Code | Sí | SDK, core protocol, server/game registry, session forwarding y tests | Implementar en cambio separado tras aprobación |
+| TEST | Sí | TEST-036 (contrato/SDK/server), TEST-037 (audio session/prioridad) |
+| Code | Sí | Core protocol, SDK source callback, listener audio, cola drop-old y session writer prioritization |
 | Data / migrations | No | No hay almacenamiento persistente | Ninguna |
-| Integrations / contracts | Sí | Se amplía el protocolo IPC local del SDK | Versionado/compatibilidad por definir |
+| Integrations / contracts | Sí | Segunda conexión IPC en 127.0.0.1:8422 con mensajes `game_audio_*` |
 
 ## 5. Options considered
 
@@ -50,21 +50,24 @@ El binario del servidor actualmente genera un seno sintético de 440 Hz de forma
 
 ## 6. Decision
 
-- **Outcome:** `Deferred`
-- **Rationale:** El owner eligió el origen SDK, pero el contrato de PCM sigue sin especificar framing IPC, fragmentación, lifecycle y backpressure. No se debe inventar esos comportamientos ni modificar un SPEC Approved sin decisión explícita. Se implementará el silencio cuando no haya fuente real como corrección acotada; la entrega real queda bloqueada hasta aprobar esta CR con las decisiones pendientes.
-- **Rollout:** Tras aprobación, actualizar los documentos contractuales y luego implementar la ampliación del SDK en una iteración separada.
+- **Outcome:** `Approved`
+- **Rationale:** El Product owner aprobó explícitamente callback dedicado, TCP IPC separado, mensajes `game_audio_*`, máximo 16 KiB por chunk, cola drop-old de 8 chunks y prioridad video antes de cada mensaje. No se requiere mantener TCP compartido entre IPC y frames, ni aceptar head-of-line blocking del productor.
+- **Rollout:** Cambios documentales y de implementación juntos en esta iteración; audio compatible opt-in por capability `audio`.
 
-## 7. Decisiones pendientes para aprobar
+## 7. Decisiones aprobadas por el owner
 
-- API del SDK: método bloqueante de escritura, callback de fuente o producer thread.
-- Si `audio_start/chunk/stop` del SPEC se reutilizan en IPC o se define un mensaje IPC `game_audio` separado.
-- Tamaño/fragmentación PCM sobre IPC y política de backpressure.
-- Un único productor de audio por juego frente a selección/mezcla de varios.
-- Semántica de `AudioStop` en cierre/crash y reconexión del SDK.
-- Coordinación/sincronía con el stream de video `game_frame`.
+- Fuente callback dedicada; máximo una fuente PCM por juego.
+- Segunda conexión TCP localhost de audio en puerto 8422; mensajes NDJSON separados `game_audio_start/chunk/stop` y `game_id`.
+- PCM `s16le`, 8k–192k, mono/estéreo, ≤16 KiB por chunk decodificado.
+- Cola de ocho chunks; drop-old sin bloqueo del hilo productor de frames.
+- Server acepta audio solo para juego vivo con capability `audio`; audio solo del juego actualmente seleccionado para video.
+- Mensajes de sesión Android: video antes de audio en cada frontera de mensaje; pendiente el mensaje en curso no se interrumpe.
+- Fin de callback o cierre del proceso/socket emite `audio_stop` best-effort si la sesión sigue activa.
+- Timestamp IPC son milisegundos monotónicos de origen; el server genera el timestamp de envío de sesión según SPEC-005.
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-17 | Twinpad team | Opened from report of continuous synthetic beep and missing SDK PCM path |
+| 1.0.0 | 2026-10-17 | Product owner | Approved callback API, independent audio IPC and drop-old queue with video priority |

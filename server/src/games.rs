@@ -49,6 +49,9 @@ struct GameEntry {
     /// Último `game_frame` publicado (AC-2); `None` hasta que el juego
     /// publique el primero (§10: capacidades sin usar → sin stream).
     last_frame: Option<GameFrame>,
+    audio_start: Option<(u32, u8)>,
+    audio_chunks: std::collections::VecDeque<Vec<u8>>,
+    audio_connection_active: bool,
 }
 
 /// Registro en memoria de juegos compatibles vivos (§6: D0/D1 por juego).
@@ -78,6 +81,9 @@ impl GameRegistry {
                 info,
                 _stream: stream,
                 last_frame: None,
+                audio_start: None,
+                audio_chunks: std::collections::VecDeque::new(),
+                audio_connection_active: false,
             },
         );
         Ok(())
@@ -127,6 +133,76 @@ impl GameRegistry {
             .and_then(|e| e.last_frame.clone())
     }
 
+    /// Registra el inicio de una fuente PCM solo para juego vivo con capability audio.
+    pub fn start_audio(&self, game_id: &str, rate: u32, channels: u8) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        if !entry.info.capabilities.iter().any(|cap| cap == "audio")
+            || entry.audio_connection_active
+        {
+            return false;
+        }
+        entry.audio_start = Some((rate, channels));
+        entry.audio_chunks.clear();
+        entry.audio_connection_active = true;
+        true
+    }
+
+    /// Encola PCM recibido; al saturar descarta los chunks antiguos (CR-003).
+    pub fn push_audio(&self, game_id: &str, pcm: Vec<u8>) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        if !entry.audio_connection_active {
+            return false;
+        }
+        while entry.audio_chunks.len() >= 8 {
+            entry.audio_chunks.pop_front();
+        }
+        entry.audio_chunks.push_back(pcm);
+        true
+    }
+
+    /// Retira una fuente de audio al recibir stop o perder su conexión.
+    pub fn stop_audio(&self, game_id: &str) -> Option<(u32, u8)> {
+        let mut games = lock_or_reset(&self.games);
+        let entry = games.get_mut(game_id)?;
+        entry.audio_connection_active = false;
+        entry.audio_chunks.clear();
+        entry.audio_start.take()
+    }
+
+    /// Indica si el juego mantiene una fuente PCM activa.
+    pub fn audio_active(&self, game_id: &str) -> bool {
+        lock_or_reset(&self.games)
+            .get(game_id)
+            .is_some_and(|entry| entry.audio_start.is_some())
+    }
+
+    /// Audio pendiente del juego vivo seleccionado, sin clonar si no existe.
+    pub fn pop_audio(&self, game_id: &str) -> Option<((u32, u8), Vec<u8>)> {
+        let mut games = lock_or_reset(&self.games);
+        let entry = games.get_mut(game_id)?;
+        Some((entry.audio_start?, entry.audio_chunks.pop_front()?))
+    }
+
+    /// Formato vigente de una fuente de audio activa.
+    pub fn audio_params(&self, game_id: &str) -> Option<(u32, u8)> {
+        lock_or_reset(&self.games)
+            .get(game_id)
+            .and_then(|entry| entry.audio_start)
+    }
+
+    /// Indica si un juego tiene una fuente PCM activa.
+    pub fn has_audio_source(&self, game_id: &str) -> bool {
+        lock_or_reset(&self.games)
+            .get(game_id)
+            .is_some_and(|entry| entry.audio_start.is_some())
+    }
+
     /// Fuente preferente del stream de SPEC-003: el primer juego vivo (por
     /// `game_id`, determinista) que haya publicado frames. `None` si ninguno
     /// (el server usa su fuente de escritorio/demo, SPEC-003 §17).
@@ -134,6 +210,21 @@ impl GameRegistry {
         lock_or_reset(&self.games)
             .iter()
             .find_map(|(id, entry)| entry.last_frame.clone().map(|frame| (id.clone(), frame)))
+    }
+
+    /// Reenvía un `input_report` de la sesión autorizada al adaptador Cemu vivo.
+    pub fn send_cemu_input(&self, line: &str) -> bool {
+        use std::io::Write;
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut("cemu") else {
+            return false;
+        };
+        entry
+            ._stream
+            .write_all(line.as_bytes())
+            .and_then(|_| entry._stream.write_all(b"\n"))
+            .and_then(|_| entry._stream.flush())
+            .is_ok()
     }
 }
 
@@ -164,6 +255,54 @@ pub fn run_ipc_listener(
         let publish = std::sync::Arc::clone(&publish);
         std::thread::spawn(move || handle_game_connection(stream, &registry, publish.as_ref()));
     }
+}
+
+/// Listener de PCM: valida anuncio/capability y mantiene una sola fuente por juego.
+pub fn run_audio_ipc_listener(listener: TcpListener, registry: Arc<GameRegistry>) {
+    for stream in listener.incoming() {
+        let Ok(stream) = stream else { continue };
+        let registry = Arc::clone(&registry);
+        std::thread::spawn(move || handle_audio_connection(stream, &registry));
+    }
+}
+
+fn handle_audio_connection(stream: TcpStream, registry: &GameRegistry) {
+    let Ok(reader_stream) = stream.try_clone() else {
+        return;
+    };
+    let mut reader = BufReader::new(reader_stream);
+    let Some(line) = read_line_with_timeout(&mut reader, ANNOUNCE_TIMEOUT) else {
+        return;
+    };
+    let Ok(twinpad_core::game_audio::GameAudioMsg::Start {
+        game_id,
+        rate,
+        channels,
+        ..
+    }) = twinpad_core::game_audio::GameAudioMsg::decode(&line)
+    else {
+        return;
+    };
+    if !registry.start_audio(&game_id, rate, channels) {
+        return;
+    }
+    while let Some(line) = read_line(&mut reader) {
+        match twinpad_core::game_audio::GameAudioMsg::decode(&line) {
+            Ok(twinpad_core::game_audio::GameAudioMsg::Chunk {
+                game_id: id, data, ..
+            }) if id == game_id => {
+                use base64::Engine as _;
+                if let Ok(pcm) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(data) {
+                    registry.push_audio(&game_id, pcm);
+                }
+            }
+            Ok(twinpad_core::game_audio::GameAudioMsg::Stop { game_id: id }) if id == game_id => {
+                break;
+            }
+            _ => break,
+        }
+    }
+    registry.stop_audio(&game_id);
 }
 
 /// Ciclo de vida de una conexión de juego: anuncio → registro → espera → baja.
@@ -336,6 +475,33 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].game_id, "alfa"); // §5: orden por game_id
         assert_eq!(registry.len(), 2);
+    }
+
+    // TEST-044 — verifies SPEC-006/CR-005: NDJSON input is forwarded to a live Cemu adapter.
+    #[test]
+    fn cemu_input_is_forwarded_to_live_adapter_only() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into(), "audio".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_input(r#"{"type":"input_report","seq":1}"#));
+        let mut line = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert_eq!(line, "{\"type\":\"input_report\",\"seq\":1}\n");
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_input("{}"));
     }
 
     #[test]

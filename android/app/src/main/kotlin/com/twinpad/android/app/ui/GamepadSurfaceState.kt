@@ -25,6 +25,33 @@ class GamepadSurfaceState {
 
     private var dpad = DpadState.NEUTRAL
     private var buttons = 0
+    private var touchX = 0
+    private var touchY = 0
+    private var touchPressed = false
+    private var gyro: List<Int>? = null
+
+    private companion object {
+        const val GYRO_AXIS_COUNT = 3
+    }
+
+    /** Actualiza las coordenadas normalizadas del touch DRC (0…65535). */
+    fun setTouch(
+        x: Int,
+        y: Int,
+        pressed: Boolean,
+    ) {
+        touchX = x.coerceIn(0, ProtocolRanges.TOUCH_MAX)
+        touchY = y.coerceIn(0, ProtocolRanges.TOUCH_MAX)
+        touchPressed = pressed
+    }
+
+    /** Actualiza orientación absoluta yaw/pitch/roll en vueltas int16. */
+    fun setGyro(orientation: List<Int>?) {
+        gyro =
+            orientation
+                ?.takeIf { it.size == GYRO_AXIS_COUNT }
+                ?.map { it.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()) }
+    }
 
     /** Mueve el stick indicado con ejes normalizados −1…1 (se clampean). */
     fun setStick(
@@ -78,6 +105,10 @@ class GamepadSurfaceState {
             buttons = buttons,
             triggerL2 = (triggerL2 * ProtocolRanges.TRIGGER_MAX).roundToInt(),
             triggerR2 = (triggerR2 * ProtocolRanges.TRIGGER_MAX).roundToInt(),
+            gyro = gyro,
+            touchX = touchX,
+            touchY = touchY,
+            touchPressed = touchPressed,
         )
 }
 
@@ -95,4 +126,5 @@ value class DpadState(
 private object ProtocolRanges {
     const val STICK_MAX = 127
     const val TRIGGER_MAX = 255
+    const val TOUCH_MAX = 65_535
 }

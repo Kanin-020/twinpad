@@ -1,0 +1,3 @@
+[submodule "integrations/cemu"]
+	path = integrations/cemu
+	url = https://github.com/Kanin-020/Cemu.git

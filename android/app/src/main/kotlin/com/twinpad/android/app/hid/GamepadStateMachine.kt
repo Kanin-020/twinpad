@@ -57,6 +57,12 @@ class GamepadStateMachine {
                 buttons = snapshot.buttons and BUTTONS_MASK,
                 triggerL2 = snapshot.triggerL2.coerceIn(0, ProtocolConstants.TRIGGER_MAX),
                 triggerR2 = snapshot.triggerR2.coerceIn(0, ProtocolConstants.TRIGGER_MAX),
+                gyro =
+                    snapshot.gyro?.takeIf { it.size == ProtocolConstants.GYRO_AXES }
+                        ?.map { it.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()) },
+                touchX = snapshot.touchX.coerceIn(0, ProtocolConstants.TOUCH_MAX),
+                touchY = snapshot.touchY.coerceIn(0, ProtocolConstants.TOUCH_MAX),
+                touchPressed = snapshot.touchPressed,
             )
         if (unchanged(updated, previous)) return null // §10: sin cambio no hay reporte
         return buildAndTrack(updated)
@@ -79,6 +85,9 @@ class GamepadStateMachine {
             buttons = 0,
             triggerL2 = 0,
             triggerR2 = 0,
+            touchX = 0,
+            touchY = 0,
+            touchPressed = false,
         )
 
     private fun unchanged(
@@ -88,7 +97,9 @@ class GamepadStateMachine {
         a.stickLx == b.stickLx && a.stickLy == b.stickLy &&
             a.stickRx == b.stickRx && a.stickRy == b.stickRy &&
             a.dpad == b.dpad && a.buttons == b.buttons &&
-            a.triggerL2 == b.triggerL2 && a.triggerR2 == b.triggerR2
+            a.triggerL2 == b.triggerL2 && a.triggerR2 == b.triggerR2 &&
+            a.gyro == b.gyro && a.touchX == b.touchX && a.touchY == b.touchY &&
+            a.touchPressed == b.touchPressed
 
     private companion object {
         /** Máscara de los 12 bits de botones (SPEC-004 §4). */

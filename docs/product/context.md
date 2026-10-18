@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | ID | CTX |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | Draft |
 | Owner | Twinpad team |
 | Last updated | 2026-10-07 |
@@ -47,7 +47,7 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 | iOS / otros sistemas móviles distintos de Android | El stack elegido (Kotlin + Rust, HID nativo) es específico de Android |
 | Modo "segunda pantalla" renderizada como HTML/UI genérica | La decisión de v1 es framebuffers e imágenes (decisión de la entrevista); el contenido HTML queda como evolución futura |
 | Contenido no interactivo (mirroring completo de escritorio) | Twinpad no es una app de screen-mirroring genérica; la segunda pantalla es para contenido de juegos/apps integradas |
-| Soporte para consolas (CEMU u otros emuladores como clientes directos) | Se atiende vía integración por plugin/SDK, no por compatibilidad directa con cada emulador en particular |
+| Soporte general para consolas y emuladores como clientes directos | Se atiende vía integración por Plugin/SDK, no por compatibilidad directa genérica; CR-004 permite únicamente un adaptador experimental puntual de Cemu para prueba semi-real |
 
 ## 5. Users and actors
 
@@ -129,3 +129,4 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft adapted from template with Twinpad decisions |
+| 0.2.0 | 2026-10-17 | Product owner + Twinpad team (CR-004) | Permite adaptador experimental puntual de Cemu; se mantiene excluido el soporte genérico de emuladores |

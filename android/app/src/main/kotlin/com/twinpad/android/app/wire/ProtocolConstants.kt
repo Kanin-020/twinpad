@@ -49,8 +49,17 @@ object ProtocolConstants {
     const val BUTTON_BIT_X: Int = 1 shl 2
     const val BUTTON_BIT_Y: Int = 1 shl 3
 
-    /** Ejes del giroscopio opcional (SPEC-004 §4). */
+    /** Ejes yaw/pitch/roll del giroscopio absoluto (SPEC-004 §4). */
     const val GYRO_AXES: Int = 3
+
+    /** Máximo de las coordenadas táctiles DRC normalizadas. */
+    const val TOUCH_MAX: Int = 65_535
+
+    /** Escala de una vuelta completa al convertir orientación int16. */
+    const val GYRO_TURN_SCALE: Float = 32_767f
+
+    /** Frecuencia de lectura de orientación enviada en input_report. */
+    const val SENSOR_REPORT_INTERVAL_US: Int = 20_000
 
     // Detección de juegos (SPEC-006 §4; transporte ADR-008).
     const val GAME_ID_MAX: Int = 64

@@ -13,14 +13,20 @@
 //! con [`TwinpadGame::push_frame`]; el server los re-empaqueta como
 //! `video_frame` de SPEC-003 hacia la app.
 
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use twinpad_core::game::{GAME_ID_MAX, GAME_NAME_MAX, GameInfo, GameMsg};
 
 /// Puerto IPC del Servidor por defecto (SPEC-006/ADR-008).
 pub const DEFAULT_IPC_PORT: u16 = 8421;
+/// Puerto IPC local dedicado a fuentes PCM (CR-003/SPEC-006).
+pub const DEFAULT_AUDIO_IPC_PORT: u16 = 8422;
+/// Capacidad de cola de audio; los bloques viejos se descartan (CR-003).
+const AUDIO_QUEUE_CAPACITY: usize = 8;
 
 /// Timeout para el anuncio (el server debe aceptarlo al momento).
 const ANNOUNCE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -101,37 +107,97 @@ pub struct TwinpadGame {
     game_id: String,
     /// Número de frame publicado (AC-2): monotónico desde 0 por conexión.
     gfn: u64,
+    audio: Option<AudioSourceHandle>,
+    capability_audio: bool,
+}
+
+#[derive(Default)]
+struct AudioQueue {
+    state: Mutex<AudioQueueState>,
+    ready: Condvar,
+}
+
+#[derive(Default)]
+struct AudioQueueState {
+    chunks: VecDeque<Vec<u8>>,
+    finished: bool,
+}
+
+impl AudioQueue {
+    fn push(&self, chunk: Vec<u8>) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state.finished {
+            return;
+        }
+        if state.chunks.len() == AUDIO_QUEUE_CAPACITY {
+            state.chunks.pop_front();
+        }
+        state.chunks.push_back(chunk);
+        self.ready.notify_one();
+    }
+
+    fn finish(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.finished = true;
+            self.ready.notify_all();
+        }
+    }
+
+    fn pop(&self) -> Option<Vec<u8>> {
+        let mut state = self.state.lock().ok()?;
+        loop {
+            if let Some(chunk) = state.chunks.pop_front() {
+                return Some(chunk);
+            }
+            if state.finished {
+                return None;
+            }
+            state = self.ready.wait(state).ok()?;
+        }
+    }
+}
+
+struct AudioSourceHandle {
+    queue: Arc<AudioQueue>,
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
+    producer: Option<std::thread::JoinHandle<()>>,
+    consumer: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for AudioSourceHandle {
+    fn drop(&mut self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.queue.finish();
+        if let Some(handle) = self.producer.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.consumer.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 impl TwinpadGame {
     /// Anuncia el juego al Servidor PC (SPEC-006 §7 pasos 1–2).
-    ///
-    /// # Errors
-    /// [`SdkError::ServerUnreachable`] si no hay server IPC;
-    /// [`SdkError::AnnouncementRejected`] si el server cerró (anuncio
-    /// inválido o `game_id` duplicado, §9); [`SdkError::InvalidConfig`].
     pub fn announce(config: GameConfig) -> Result<Self, SdkError> {
         Self::announce_on(("127.0.0.1", DEFAULT_IPC_PORT), config)
     }
 
-    /// Igual que [`Self::announce`] pero contra un endpoint explícito
-    /// (útil para pruebas y despliegues con puerto distinto).
-    ///
-    /// # Errors
-    /// Los mismos que [`Self::announce`].
+    /// Anuncia el juego contra un endpoint IPC explícito (útil para pruebas).
     pub fn announce_on(
         endpoint: impl std::net::ToSocketAddrs,
         config: GameConfig,
     ) -> Result<Self, SdkError> {
-        let stream = TcpStream::connect(endpoint).map_err(SdkError::ServerUnreachable)?;
+        let mut stream = TcpStream::connect(endpoint).map_err(SdkError::ServerUnreachable)?;
         stream
             .set_write_timeout(Some(ANNOUNCE_TIMEOUT))
             .map_err(SdkError::ServerUnreachable)?;
         stream
             .set_read_timeout(Some(REJECT_PROBE))
             .map_err(SdkError::ServerUnreachable)?;
-        let mut stream = stream;
-
         let line = GameMsg::GameAnnounce {
             game: config.info(),
         }
@@ -142,35 +208,126 @@ impl TwinpadGame {
             .and_then(|_| stream.write_all(b"\n"))
             .and_then(|_| stream.flush())
             .map_err(SdkError::ServerUnreachable)?;
-
-        // §9: el server cierra el socket si el anuncio es inválido o el
-        // game_id está duplicado; el flujo feliz no tiene respuesta, así que
-        // un sondeo breve sin datos ni cierre confirma el registro.
         let mut probe = [0u8; 1];
         let mut reader = stream.try_clone().map_err(SdkError::ServerUnreachable)?;
         match reader.read(&mut probe) {
             Ok(0) | Ok(_) => Err(SdkError::AnnouncementRejected),
-            Err(e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.kind() == std::io::ErrorKind::TimedOut =>
             {
                 stream
                     .set_read_timeout(None)
                     .map_err(SdkError::ServerUnreachable)?;
+                let capability_audio = config.capabilities.iter().any(|cap| cap == "audio");
                 Ok(Self {
                     stream,
                     game_id: config.game_id,
                     gfn: 0,
+                    audio: None,
+                    capability_audio,
                 })
             }
-            Err(e) => Err(SdkError::ServerUnreachable(e)),
+            Err(error) => Err(SdkError::ServerUnreachable(error)),
         }
     }
 
-    /// Identificación del juego anunciado (vía `game_id`).
+    /// Identificación del juego anunciado.
     #[must_use]
     pub fn game_id(&self) -> &str {
         &self.game_id
+    }
+
+    /// Inicia una fuente PCM por la conexión IPC dedicada (CR-003).
+    /// El callback corre en hilo dedicado y la cola limita la memoria a ocho chunks.
+    pub fn start_audio_source<F>(
+        &mut self,
+        rate: u32,
+        channels: u8,
+        mut source: F,
+    ) -> Result<(), SdkError>
+    where
+        F: FnMut() -> Option<Vec<u8>> + Send + 'static,
+    {
+        if self.audio.is_some()
+            || !self.capability_audio
+            || !(twinpad_core::audio::MIN_RATE..=twinpad_core::audio::MAX_RATE).contains(&rate)
+            || channels == 0
+            || channels > twinpad_core::audio::MAX_CHANNELS
+        {
+            return Err(SdkError::InvalidConfig);
+        }
+        let mut socket = TcpStream::connect(("127.0.0.1", DEFAULT_AUDIO_IPC_PORT))
+            .map_err(SdkError::ServerUnreachable)?;
+        socket
+            .set_write_timeout(Some(ANNOUNCE_TIMEOUT))
+            .map_err(SdkError::ServerUnreachable)?;
+        let start_line = twinpad_core::game_audio::GameAudioMsg::Start {
+            game_id: self.game_id.clone(),
+            rate,
+            channels,
+            sample_fmt: twinpad_core::audio::SAMPLE_FMT_S16LE.into(),
+        }
+        .encode()
+        .map_err(|_| SdkError::InvalidConfig)?;
+        socket
+            .write_all(start_line.as_bytes())
+            .and_then(|_| socket.write_all(b"\n"))
+            .map_err(SdkError::ServerUnreachable)?;
+
+        let queue = Arc::new(AudioQueue::default());
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let producer_queue = Arc::clone(&queue);
+        let producer_cancelled = Arc::clone(&cancelled);
+        let producer = std::thread::spawn(move || {
+            while !producer_cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                let Some(pcm) = source() else { break };
+                if pcm.is_empty()
+                    || pcm.len() > twinpad_core::audio::MAX_CHUNK_BYTES
+                    || pcm.len() % 2 != 0
+                {
+                    break;
+                }
+                producer_queue.push(pcm);
+            }
+            producer_queue.finish();
+        });
+        let consumer_queue = Arc::clone(&queue);
+        let game_id = self.game_id.clone();
+        let consumer = std::thread::spawn(move || {
+            let mut seq = 0u64;
+            let origin = std::time::Instant::now();
+            while let Some(pcm) = consumer_queue.pop() {
+                use base64::Engine as _;
+                let message = twinpad_core::game_audio::GameAudioMsg::Chunk {
+                    game_id: game_id.clone(),
+                    seq,
+                    ts: origin.elapsed().as_millis() as u64,
+                    data: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(pcm),
+                };
+                seq = seq.wrapping_add(1);
+                let Ok(line) = message.encode() else { break };
+                if socket
+                    .write_all(line.as_bytes())
+                    .and_then(|_| socket.write_all(b"\n"))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            if let Ok(line) = (twinpad_core::game_audio::GameAudioMsg::Stop { game_id }).encode() {
+                let _ = socket
+                    .write_all(line.as_bytes())
+                    .and_then(|_| socket.write_all(b"\n"));
+            }
+        });
+        self.audio = Some(AudioSourceHandle {
+            queue,
+            cancelled,
+            producer: Some(producer),
+            consumer: Some(consumer),
+        });
+        Ok(())
     }
 
     /// Publica un Framebuffer de la Segunda pantalla del juego (REQ-006
@@ -245,6 +402,20 @@ mod tests {
             GameConfig::new("ok", "X", vec!["no_existe".into()]),
             Err(SdkError::InvalidConfig)
         ));
+    }
+
+    // TEST-036 — verifies callback queue capacity, drop-old policy, and finish wakeup.
+    #[test]
+    fn audio_queue_drops_oldest_and_drains_before_finish() {
+        let queue = AudioQueue::default();
+        for value in 0..=AUDIO_QUEUE_CAPACITY {
+            queue.push(vec![value as u8]);
+        }
+        queue.finish();
+        for value in 1..=AUDIO_QUEUE_CAPACITY {
+            assert_eq!(queue.pop(), Some(vec![value as u8]));
+        }
+        assert_eq!(queue.pop(), None);
     }
 
     #[test]

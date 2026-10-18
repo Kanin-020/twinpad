@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
-| Realized by | DES-XXX (`-` hasta asignar; ADR-003 define el medio) |
-| Verified by | TEST-018, TEST-019 |
-| Last updated | 2026-10-07 |
+| Realized by | DES-004 (CR-005, Draft) |
+| Verified by | TEST-018, TEST-019, TEST-043 |
+| Last updated | 2026-10-18 |
 
 ## 1. Purpose
 
@@ -38,9 +38,11 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 | `dpad` | integer (uint8) | 0–7 (dirección) o 8 (neutro) | yes |
 | `buttons` | integer (uint16) | máscara de bits de los 12 botones canónicos (bit 0 = `button_a`, … bit 11 = `extra_2`) | yes |
 | `trigger_l2`, `trigger_r2` | integer (uint8) | 0–255 | yes |
-| `gyro` | array de 3 × int16 | opcional; −32768…32767 por eje | no |
+| `gyro` | array de 3 × int16 | opcional; orientación absoluta yaw/pitch/roll, −32768…32767 por eje | no |
+| `touch_x`, `touch_y` | integer (uint16) | posición normalizada sobre la imagen DRC, 0…65535; al soltar se conserva la última coordenada | yes |
+| `touch_pressed` | boolean | true mientras hay contacto con la imagen DRC | yes |
 
-Canal: el transporte HID definido por ADR-003 (Bluetooth HID device role). El framing exacto del reporte es el descriptor HID estándar; este SPEC fija la semántica, no el byte layout (ese vive en DES-004 y en el descriptor).
+Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). En el alcance experimental de CR-005, el Server PC reenvía el reporte válido al adaptador Cemu por su conexión primaria TCP localhost NDJSON (SPEC-006); Cemu lo aplica directamente al GamePad Wii U emulado, no al gamepad del sistema operativo. Bluetooth HID nativo sigue siendo el objetivo posterior de ADR-003. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad, orientación gyro y touch se mapean directamente.
 
 ## 5. Outputs
 
@@ -70,8 +72,8 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 1. El usuario toca un control (o mueve los sensores físicos): la app actualiza el estado del elemento.
 2. La app compone el `input_report` con la instantánea completa y `seq` = último+1.
-3. El reporte viaja por el canal HID y llega al SO de la PC como input del gamepad.
-4. El juego consume el input sin software adicional (REQ-003 AC-2).
+3. El reporte viaja por la sesión autenticada LAN al Server PC; para el adaptador experimental Cemu (CR-005), se reenvía por IPC localhost y se aplica al GamePad Wii U emulado.
+4. En la ruta HID de ADR-003, el reporte llega al SO de la PC como input del gamepad y el juego lo consume sin software adicional (REQ-003 AC-2).
 5. Si el juego emite rumble, la app vibra (AC-3) — reativo al evento, sin bloquear el envío de inputs (ARCH §8: inputs no bloquean por video/audio).
 
 ## 8. Alternative flows
@@ -115,8 +117,8 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 | Contract | Canonical source | Notes |
 |---|---|---|
 | Signature HID (elementos y rangos) | este documento §2/§4 | v1; extensible por CR |
-| Descriptor HID del gamepad | DES-004 (por asignar) | byte layout del reporte |
-| Transporte HID | ADR-003 (Bluetooth HID) | WiFi/USB excluidos en v1 |
+| Transporte de la primera implementación | ADR-007 / SPEC-001 §4.2 | Sesión LAN persistente; Cemu experimental añade reenvío por IPC localhost (CR-005) |
+| Descriptor HID del objetivo final | DES-005 (por asignar) | Bluetooth HID de ADR-003 |
 
 ## 13. Examples (Given / When / Then)
 
@@ -154,6 +156,7 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | Aspect | Verified by |
 |---|---|
 | Flujo táctil → juego (AC-2) y orden por `seq` | TEST-018 |
+| Campos touch normalizados y orientación absoluta extendida | TEST-043 |
 | Rumble (AC-3) y edge cases de §10 | TEST-019 |
 | Latencia NFR-002 (p95 ≤ 15 ms) | pruebas de performance en banco físico con inyección HID sintética |
 
