@@ -21,9 +21,10 @@
             android:id="@+id/pairing_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="348dp"
+            android:layout_marginTop="-50dp"
             android:text="@string/pairing_title"
             android:textAppearance="?attr/textAppearanceHeadlineSmall"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />

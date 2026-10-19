@@ -68,10 +68,12 @@ fn main() {
         addr.clone(),
         port,
     ));
+    let game_registry = Arc::new(twinpad_server::games::GameRegistry::new());
     match bind_qr_ipc_listener(DEFAULT_QR_IPC_PORT) {
         Ok(listener) => {
             let qr_store = Arc::clone(&store);
-            std::thread::spawn(move || run_qr_ipc_listener(listener, qr_store));
+            let qr_games = Arc::clone(&game_registry);
+            std::thread::spawn(move || run_qr_ipc_listener(listener, qr_store, qr_games));
         }
         Err(error) => eprintln!("Twinpad: interfaz local del QR no disponible: {error}"),
     }
@@ -84,7 +86,6 @@ fn main() {
         .nth(2)
         .and_then(|a| a.parse().ok())
         .unwrap_or(DEFAULT_IPC_PORT);
-    let game_registry = Arc::new(twinpad_server::games::GameRegistry::new());
     match TcpListener::bind(("127.0.0.1", ipc_port)) {
         Ok(ipc_listener) => {
             let sessions = Arc::clone(&registry);
@@ -205,16 +206,16 @@ fn main() {
                     }
 
                     if session_alive {
-                        // SPEC-003 §7: fuente temporal sin Plugin (§17 del
-                        // SPEC + decisión del owner): duplicado del escritorio
-                        // capturado con xcap; TWINPAD_SOURCE=demo fuerza el
-                        // patrón animado. Si la captura no está disponible
-                        // (permisos, Wayland), cae al patrón con aviso.
                         // Video y audio comparten el lock de escritura: cada
-                        // línea NDJSON viaja atómica (sin intercalado).
+                        // línea NDJSON viaja atómica (sin intercalado). Sin Plugin
+                        // seleccionado no se emite ningún medio.
                         let write_lock = SessionWriteLock::default();
                         let session_writer = Arc::new(SessionWriter::default());
                         let selected_game = Arc::new(std::sync::Mutex::new(None::<String>));
+                        let session_input_snapshot =
+                            Arc::new(std::sync::Mutex::new(None::<String>));
+                        let pending_snapshot_for_selection = Arc::clone(&session_input_snapshot);
+                        let selection_changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
                         let session_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
                         let writer = match stream.try_clone() {
                             Ok(w) => Some(StreamSink {
@@ -226,8 +227,6 @@ fn main() {
                             }),
                             Err(_) => None,
                         };
-                        let force_demo =
-                            matches!(std::env::var("TWINPAD_SOURCE").as_deref(), Ok("demo"));
                         // CR-001: resolución/fps/calidad por entorno (720p×30
                         // por defecto); la app puede cambiarla en caliente
                         // (menú de ajustes) vía `video_config` de sesión.
@@ -243,111 +242,42 @@ fn main() {
                         // hilo de video (abajo), que corre en paralelo, y el
                         // lector arranca de inmediato.
                         let selected_game_for_video = Arc::clone(&selected_game);
+                        let selection_changed_for_video = Arc::clone(&selection_changed);
+                        let running_for_video = Arc::clone(&session_running);
                         let video_thread = writer.map(|mut sink| {
                             let games = Arc::clone(&games_ref);
                             let selected_game = selected_game_for_video;
                             let video_config_shared = std::sync::Arc::clone(&video_config_shared);
                             std::thread::spawn(move || {
-                                // REQ-006 AC-2: si hay un juego vivo con SDK
-                                // publicando `game_frame`, su contenido alimenta
-                                // el stream (fuente preferente, §8.1 de SPEC-006);
-                                // si no, las fuentes de SPEC-003 §17
-                                // (escritorio/demo). El sondeo es por frame.
-                                let cemu_live = games.has_live_game("cemu");
-                                if cemu_live || games.preferred_source().is_some() {
-                                    if cemu_live {
-                                        println!(
-                                            "Fuente de video: DRC de Cemu; esperando el primer framebuffer si aún no llegó (CR-008)."
-                                        );
-                                        if let Ok(mut selected) = selected_game.lock() {
-                                            *selected = Some("cemu".to_string());
-                                        }
-                                    } else {
-                                        println!(
-                                            "Fuente de video: juego con SDK Twinpad (SPEC-006 AC-2)."
-                                        );
+                                let selection = Arc::clone(&selected_game);
+                                let changed = selection_changed_for_video;
+                                let mut poll = move || {
+                                    let game_id =
+                                        selection.lock().ok().and_then(|slot| slot.clone());
+                                    let Some(game_id) = game_id else {
+                                        return (None, None);
+                                    };
+                                    if changed.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                                        return (None, None);
                                     }
-                                    let selected_game_for_poll = Arc::clone(&selected_game);
-                                    let mut poll = move || {
-                                        let source = if games.has_live_game("cemu") {
-                                            games
-                                                .latest_frame("cemu")
-                                                .map(|frame| ("cemu".to_string(), frame))
-                                        } else {
-                                            games.preferred_source()
-                                        };
-                                        if let Ok(mut selected) = selected_game_for_poll.lock() {
-                                            *selected = source
-                                                .as_ref()
-                                                .map(|(game_id, _)| game_id.clone());
+                                    let frame = games.latest_frame(&game_id);
+                                    if frame.is_none() && !games.has_live_game(&game_id) {
+                                        if let Ok(mut slot) = selection.lock() {
+                                            *slot = None;
                                         }
-                                        source
-                                    };
-                                    let _ = twinpad_server::video::run_game_stream(
-                                        &mut sink,
-                                        u64::MAX, // hasta que la sesión se corte
-                                        twinpad_server::video::DEMO_FPS,
-                                        &mut poll,
-                                        false,
-                                    );
-                                } else {
-                                    // El grabber se crea EN ESTE hilo: el diálogo
-                                    // del portal (si aparece) ya no congela al
-                                    // lector de sesión (ver comentario de arriba).
-                                    let grabber = if force_demo {
-                                        None
-                                    } else {
-                                        match twinpad_capture::DesktopGrabber::new() {
-                                            Ok(g) => {
-                                                let initial = video_config_shared
-                                                    .lock()
-                                                    .map(|c| {
-                                                        format!(
-                                                            "{}×{} @ {} fps JPEG q{}",
-                                                            c.width, c.height, c.fps, c.jpeg_quality
-                                                        )
-                                                    })
-                                                    .unwrap_or_else(|_| "config no legible".into());
-                                                println!(
-                                                    "Fuente de video: escritorio del PC — {initial} (CR-001), modo {:?}.",
-                                                    g.mode()
-                                                );
-                                                Some(g)
-                                            }
-                                            Err(e) => {
-                                                println!(
-                                                    "Captura de escritorio no disponible ({e:?}); usando patrón de demostración."
-                                                );
-                                                None
-                                            }
-                                        }
-                                    };
-                                    let result = match grabber {
-                                        Some(g) => {
-                                            let cfg_shared =
-                                                std::sync::Arc::clone(&video_config_shared);
-                                            twinpad_server::video::run_desktop_stream_dynamic(
-                                                &mut sink,
-                                                u64::MAX, // hasta que la sesión se corte
-                                                cfg_shared,
-                                                g,
-                                            )
-                                        }
-                                        None => twinpad_server::video::run_demo_stream(
-                                            &mut sink,
-                                            u64::MAX, // hasta que la sesión se corte
-                                            twinpad_server::video::DEMO_FPS,
-                                            twinpad_server::video::DEMO_WIDTH,
-                                            twinpad_server::video::DEMO_HEIGHT,
-                                        ),
-                                    };
-                                    match result {
-                                        Ok(()) => println!("Stream terminado."),
-                                        Err(_) => {
-                                            println!("Emisión detenida (receptor fuera de línea).")
-                                        }
+                                        return (None, None);
                                     }
-                                }
+                                    (Some(game_id), frame)
+                                };
+                                let config = Arc::clone(&video_config_shared);
+                                let mut fps =
+                                    move || config.lock().map(|config| config.fps).unwrap_or(30);
+                                let _ = twinpad_server::video::run_selected_game_stream(
+                                    &mut sink,
+                                    &running_for_video,
+                                    &mut fps,
+                                    &mut poll,
+                                );
                             })
                         });
 
@@ -369,6 +299,7 @@ fn main() {
                         // `video_config` del menú de la app.
                         let mut last_seq: Option<u32> = None;
                         let reader_cfg = std::sync::Arc::clone(&video_config_shared);
+                        let session_input_snapshot_for_reader = Arc::clone(&session_input_snapshot);
                         use std::io::{BufRead, BufReader};
                         // §9: el handshake armó SO_RCVTIMEO (prueba 10 s) sobre
                         // este MISMO fd: en sesión v1 no hay tráfico periódico
@@ -402,14 +333,80 @@ fn main() {
                                     // Menú de la app (CR-001): cambio de calidad
                                     // del video en caliente.
                                     if trimmed.starts_with("{\"type\":\"video_config\"") {
-                                        if let Some(cfg) = parse_video_config(trimmed) {
+                                        let current = reader_cfg.lock().map(|slot| *slot).ok();
+                                        if let Some(cfg) = current.and_then(|current| {
+                                            parse_video_config(trimmed, current)
+                                        }) {
                                             if let Ok(mut slot) = reader_cfg.lock() {
                                                 *slot = cfg;
+                                            }
+                                            if selected_game
+                                                .lock()
+                                                .ok()
+                                                .and_then(|selected| selected.clone())
+                                                .as_deref()
+                                                == Some("cemu")
+                                            {
+                                                games_ref.send_cemu_video_fps(cfg.fps);
                                             }
                                             println!(
                                                 "Video config actualizada por la app: {}×{} @ {} fps.",
                                                 cfg.width, cfg.height, cfg.fps
                                             );
+                                        }
+                                        continue;
+                                    }
+                                    if let Ok(twinpad_core::game::GameMsg::GameSelect { game_id }) =
+                                        twinpad_core::game::GameMsg::decode(trimmed)
+                                    {
+                                        let active =
+                                            selected_game.lock().ok().and_then(|slot| slot.clone());
+                                        if games_ref.has_live_game(&game_id) {
+                                            if active.as_deref() != Some(game_id.as_str()) {
+                                                if let Ok(mut selected) = selected_game.lock() {
+                                                    *selected = Some(game_id.clone());
+                                                }
+                                                if game_id == "cemu" {
+                                                    if let Ok(config) = reader_cfg.lock() {
+                                                        games_ref.send_cemu_video_fps(config.fps);
+                                                    }
+                                                }
+                                                if let Some(snapshot) =
+                                                    pending_snapshot_for_selection
+                                                        .lock()
+                                                        .ok()
+                                                        .and_then(|slot| slot.clone())
+                                                {
+                                                    games_ref
+                                                        .send_input_snapshot(&game_id, &snapshot);
+                                                }
+                                                selection_changed.store(
+                                                    true,
+                                                    std::sync::atomic::Ordering::Release,
+                                                );
+                                                let response =
+                                                    twinpad_core::game::GameMsg::GameSelected {
+                                                        game_id,
+                                                    };
+                                                if let Ok(line) = response.encode() {
+                                                    registry_ref.send_line(&session_id, &line);
+                                                }
+                                            } else {
+                                                let response =
+                                                    twinpad_core::game::GameMsg::GameSelected {
+                                                        game_id,
+                                                    };
+                                                if let Ok(line) = response.encode() {
+                                                    registry_ref.send_line(&session_id, &line);
+                                                }
+                                            }
+                                        } else if let Ok(line) =
+                                            (twinpad_core::game::GameMsg::GamesAvailable {
+                                                games: games_ref.list(),
+                                            })
+                                            .encode()
+                                        {
+                                            registry_ref.send_line(&session_id, &line);
                                         }
                                         continue;
                                     }
@@ -422,15 +419,19 @@ fn main() {
                                                     claim_input_owner(&input_owner_ref, session_id);
                                                 if is_owner {
                                                     if let Ok(line) = report.encode() {
-                                                        if games_ref.send_cemu_input(&line) {
-                                                            println!(
-                                                                "input_report aceptado y reenviado a Cemu ({last_seq:?})."
-                                                            );
-                                                        } else {
-                                                            println!(
-                                                                "input_report aceptado ({last_seq:?}); Cemu no está conectado."
-                                                            );
+                                                        if let Ok(mut snapshot) =
+                                                            session_input_snapshot_for_reader.lock()
+                                                        {
+                                                            *snapshot = Some(line.clone());
                                                         }
+                                                        let target = selected_game
+                                                            .lock()
+                                                            .ok()
+                                                            .and_then(|selected| selected.clone());
+                                                        games_ref.retain_and_send_input(
+                                                            target.as_deref(),
+                                                            &line,
+                                                        );
                                                     }
                                                 }
                                             }
@@ -460,7 +461,10 @@ fn main() {
 
 /// Extrae `w`/`h`/`fps` del mensaje `video_config` del menú de la app
 /// (parseo mínimo sin serde; los valores se validan al construir VideoConfig).
-fn parse_video_config(line: &str) -> Option<twinpad_server::video::VideoConfig> {
+fn parse_video_config(
+    line: &str,
+    current: twinpad_server::video::VideoConfig,
+) -> Option<twinpad_server::video::VideoConfig> {
     let extract = |key: &str| -> Option<u32> {
         let marker = format!("\"{key}\":");
         let start = line.find(&marker)? + marker.len();
@@ -468,23 +472,35 @@ fn parse_video_config(line: &str) -> Option<twinpad_server::video::VideoConfig> 
         let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         digits.parse().ok()
     };
-    let current = read_current_session_config();
     Some(twinpad_server::video::VideoConfig {
-        width: extract("w").map(|v| v as u16).unwrap_or(current.width),
-        height: extract("h").map(|v| v as u16).unwrap_or(current.height),
-        fps: extract("fps").map(|v| v as u8).unwrap_or(current.fps),
+        width: extract("w")
+            .map(|v| {
+                v.clamp(
+                    u32::from(twinpad_core::stream::MIN_DIM),
+                    u32::from(twinpad_core::stream::MAX_WIDTH),
+                ) as u16
+            })
+            .unwrap_or(current.width),
+        height: extract("h")
+            .map(|v| {
+                v.clamp(
+                    u32::from(twinpad_core::stream::MIN_DIM),
+                    u32::from(twinpad_core::stream::MAX_HEIGHT),
+                ) as u16
+            })
+            .unwrap_or(current.height),
+        fps: extract("fps")
+            .map(|v| {
+                v.clamp(
+                    u32::from(twinpad_core::stream::MIN_FPS),
+                    u32::from(twinpad_core::stream::MAX_FPS),
+                ) as u8
+            })
+            .unwrap_or(current.fps),
         jpeg_quality: extract("jpeg_quality")
-            .map(|v| v as u8)
+            .map(|v| v.clamp(1, 100) as u8)
             .unwrap_or(current.jpeg_quality),
     })
-}
-
-/// Config vigente de la sesión (no from_env: un jpeg_quality ya ajustado en
-/// caliente se mantendría al enviar solo un campo nuevo).
-fn read_current_session_config() -> twinpad_server::video::VideoConfig {
-    // El caller ya retiene el Arc; esta función se usa para el parse
-    // preliminar antes del lock real (values por omisión coherentes).
-    twinpad_server::video::VideoConfig::from_env()
 }
 
 /// Selecciona el primer dispositivo que envía input hasta que su sesión se desconecta.
@@ -769,17 +785,23 @@ fn bind_qr_ipc_listener(port: u16) -> std::io::Result<TcpListener> {
 }
 
 /// Serves the current pairing URI and QR matrix over a dedicated loopback-only TCP port.
-fn run_qr_ipc_listener(listener: TcpListener, store: Arc<TokenStore<OsRandomBytes, SystemClock>>) {
+fn run_qr_ipc_listener(
+    listener: TcpListener,
+    store: Arc<TokenStore<OsRandomBytes, SystemClock>>,
+    games: Arc<twinpad_server::games::GameRegistry>,
+) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         let store = Arc::clone(&store);
-        std::thread::spawn(move || serve_qr_request(stream, &store));
+        let games = Arc::clone(&games);
+        std::thread::spawn(move || serve_qr_request(stream, &store, &games));
     }
 }
 
 fn serve_qr_request<R: RandomBytes, C: Clock>(
     mut stream: std::net::TcpStream,
     store: &TokenStore<R, C>,
+    games: &twinpad_server::games::GameRegistry,
 ) {
     use std::io::{BufRead, BufReader, Write};
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
@@ -788,20 +810,31 @@ fn serve_qr_request<R: RandomBytes, C: Clock>(
     if BufReader::new(&stream).read_line(&mut request).is_err() || request.trim_end() != "GET_QR" {
         return;
     }
-    let current = store.ensure_fresh_qr();
-    let response = match twinpad_server::qr_render::encode_matrix(&current.qr_uri) {
-        Ok(modules) => serde_json::json!({"uri": current.qr_uri, "modules": modules}).to_string(),
-        Err(_) => serde_json::json!({"error": "qr_unavailable"}).to_string(),
-    };
+    let response = cemu_qr_response(store, games).to_string();
     if response.len() <= QR_IPC_RESPONSE_LIMIT {
         let _ = stream.write_all(response.as_bytes());
         let _ = stream.write_all(b"\n");
     }
 }
 
+fn cemu_qr_response<R: RandomBytes, C: Clock>(
+    store: &TokenStore<R, C>,
+    games: &twinpad_server::games::GameRegistry,
+) -> serde_json::Value {
+    let current = store.ensure_fresh_qr();
+    match twinpad_server::qr_render::encode_matrix(&current.qr_uri) {
+        Ok(modules) => serde_json::json!({
+            "uri": current.qr_uri,
+            "modules": modules,
+            "cemu_live": games.has_live_game("cemu"),
+        }),
+        Err(_) => serde_json::json!({"error": "qr_unavailable"}),
+    }
+}
+
 // ENG §6: unwrap permitido solo en tests.
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::io::BufRead;
@@ -810,8 +843,12 @@ mod tests {
 
     // TEST-018 — verifies SPEC-004 (§9/R2: reporte con `seq` viejo se descarta).
     fn report(seq: u32) -> InputMsg {
+        report_with_buttons(seq, 0)
+    }
+
+    fn report_with_buttons(seq: u32, buttons: u16) -> InputMsg {
         let line = format!(
-            "{{\"type\":\"input_report\",\"seq\":{seq},\"stick_lx\":0,\"stick_ly\":0,\"stick_rx\":0,\"stick_ry\":0,\"dpad\":8,\"buttons\":0,\"trigger_l2\":0,\"trigger_r2\":0,\"touch_x\":0,\"touch_y\":0,\"touch_pressed\":false}}"
+            "{{\"type\":\"input_report\",\"seq\":{seq},\"stick_lx\":0,\"stick_ly\":0,\"stick_rx\":0,\"stick_ry\":0,\"dpad\":8,\"buttons\":{buttons},\"trigger_l2\":0,\"trigger_r2\":0,\"touch_x\":0,\"touch_y\":0,\"touch_pressed\":false}}"
         );
         InputMsg::decode(&line).unwrap()
     }
@@ -920,6 +957,63 @@ mod tests {
         assert_eq!(second.trim_end(), "audio_chunk");
     }
 
+    // TEST-052 — verifies SPEC-004/006: session input is retained and polled through SDK.
+    #[test]
+    fn selected_plugin_receives_initial_and_latest_input_snapshot_via_sdk_polling() {
+        use std::io::{BufRead, BufReader};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let registry = Arc::new(twinpad_server::games::GameRegistry::new());
+        let addr = listener.local_addr().unwrap();
+        let retained_snapshot = Arc::new(std::sync::Mutex::new(Some(report(1).encode().unwrap())));
+        let snapshot_for_server = Arc::clone(&retained_snapshot);
+        let games = Arc::clone(&registry);
+        let server = std::thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut announce = String::new();
+            reader.read_line(&mut announce).unwrap();
+            let twinpad_core::game::GameMsg::GameAnnounce { game } =
+                twinpad_core::game::GameMsg::decode(announce.trim_end()).unwrap()
+            else {
+                panic!("SDK must announce before accepting session input");
+            };
+            games.register(game, socket.try_clone().unwrap()).unwrap();
+            // No reply is sent during the SDK's announcement-rejection probe.
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            let first = snapshot_for_server.lock().unwrap().clone().unwrap();
+            assert!(games.send_input_snapshot("polltest", &first));
+            let second = report_with_buttons(2, 1).encode().unwrap();
+            assert!(games.retain_and_send_input(Some("polltest"), &second));
+        });
+
+        let config = twinpad_sdk::GameConfig::new(
+            "polltest",
+            "Polling test",
+            vec!["input_consumption".into()],
+        )
+        .unwrap();
+        let game = twinpad_sdk::TwinpadGame::announce_on(addr, config).unwrap();
+        server.join().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !matches!(
+            game.poll_input(),
+            Some(InputMsg::InputReport { seq: 2, .. })
+        ) && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(matches!(
+            game.poll_input(),
+            Some(InputMsg::InputReport {
+                seq: 2,
+                buttons: 1,
+                ..
+            })
+        ));
+    }
+
     // TEST-043 — verifies SPEC-004 §4/CR-005 touch and absolute orientation wire fields.
     #[test]
     fn accepted_input_report_roundtrips_for_cemu_ipc() {
@@ -978,13 +1072,15 @@ mod tests {
             "192.168.1.8".into(),
             8420,
         ));
+        let games = Arc::new(twinpad_server::games::GameRegistry::new());
         let listener = bind_qr_ipc_listener(0).unwrap();
         assert!(listener.local_addr().unwrap().ip().is_loopback());
         let address = listener.local_addr().unwrap();
         let server_store = Arc::clone(&store);
+        let server_games = Arc::clone(&games);
         let server = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            serve_qr_request(stream, &server_store);
+            serve_qr_request(stream, &server_store, &server_games);
         });
         let mut client = std::net::TcpStream::connect(address).unwrap();
         client
@@ -1001,11 +1097,49 @@ mod tests {
         let response: serde_json::Value = serde_json::from_str(response.trim_end()).unwrap();
         let current = store.ensure_fresh_qr();
         assert_eq!(response["uri"], current.qr_uri);
+        assert_eq!(response["cemu_live"], false);
         assert_eq!(
             response["modules"],
             serde_json::json!(twinpad_server::qr_render::encode_matrix(&current.qr_uri).unwrap())
         );
         assert!(twinpad_core::qr::parse(response["uri"].as_str().unwrap()).is_ok());
+    }
+
+    // TEST-050 — verifies SPEC-006/CR-009: Cemu registration is reported before QR pairing.
+    #[test]
+    fn cemu_qr_reports_adapter_registration_before_pairing() {
+        struct TestRng;
+        impl RandomBytes for TestRng {
+            fn fill(&self, buf: &mut [u8]) {
+                buf.fill(0x2a);
+            }
+        }
+        struct TestClock;
+        impl Clock for TestClock {
+            fn now_ms(&self) -> u64 {
+                42_000
+            }
+        }
+        let store = TokenStore::new(TestRng, TestClock, "192.168.1.8".into(), 8420);
+        let games = twinpad_server::games::GameRegistry::new();
+        assert_eq!(cemu_qr_response(&store, &games)["cemu_live"], false);
+
+        let game_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let game_client =
+            std::net::TcpStream::connect(game_listener.local_addr().unwrap()).unwrap();
+        let (game_stream, _) = game_listener.accept().unwrap();
+        games
+            .register(
+                twinpad_core::game::GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into(), "audio".into()],
+                },
+                game_stream,
+            )
+            .unwrap();
+        assert_eq!(cemu_qr_response(&store, &games)["cemu_live"], true);
+        drop(game_client);
     }
 
     #[test]

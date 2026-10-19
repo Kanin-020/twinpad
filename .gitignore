@@ -15,3 +15,5 @@
 
 # Cargo config local del equipo (rutas de usuario, p. ej. pipewire-dev)
 /.cargo/
+
+artifacts

@@ -6,8 +6,8 @@
 //! v1 (SPEC-006 `Approved` + ADR-008): anuncio de presencia por el canal IPC
 //! TCP localhost. La conexión viva **es** el anuncio vivo: al soltar
 //! [`TwinpadGame`] (o al crashear el proceso) el juego deja de estar
-//! disponible automáticamente. AC-3 (inputs) entra en una iteración
-//! posterior sobre este mismo canal.
+//! disponible automáticamente. Las actualizaciones de inputs recibidas por
+//! el mismo canal se conservan como snapshot consultable por polling.
 //!
 //! AC-2 (REQ-006): el juego publica los Framebuffers de su Segunda pantalla
 //! con [`TwinpadGame::push_frame`]; el server los re-empaqueta como
@@ -20,6 +20,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use twinpad_core::game::{GAME_ID_MAX, GAME_NAME_MAX, GameInfo, GameMsg};
+use twinpad_core::input::InputMsg;
 
 /// Puerto IPC del Servidor por defecto (SPEC-006/ADR-008).
 pub const DEFAULT_IPC_PORT: u16 = 8421;
@@ -109,6 +110,8 @@ pub struct TwinpadGame {
     gfn: u64,
     audio: Option<AudioSourceHandle>,
     capability_audio: bool,
+    input_snapshot: Arc<Mutex<Option<InputMsg>>>,
+    input_reader: TcpStream,
 }
 
 #[derive(Default)]
@@ -180,6 +183,12 @@ impl Drop for AudioSourceHandle {
     }
 }
 
+impl Drop for TwinpadGame {
+    fn drop(&mut self) {
+        let _ = self.input_reader.shutdown(std::net::Shutdown::Both);
+    }
+}
+
 impl TwinpadGame {
     /// Anuncia el juego al Servidor PC (SPEC-006 §7 pasos 1–2).
     pub fn announce(config: GameConfig) -> Result<Self, SdkError> {
@@ -219,6 +228,13 @@ impl TwinpadGame {
                 stream
                     .set_read_timeout(None)
                     .map_err(SdkError::ServerUnreachable)?;
+                let input_snapshot = Arc::new(Mutex::new(None));
+                let input_reader = reader.try_clone().map_err(SdkError::ServerUnreachable)?;
+                let thread_reader = input_reader
+                    .try_clone()
+                    .map_err(SdkError::ServerUnreachable)?;
+                let shared_snapshot = Arc::clone(&input_snapshot);
+                std::thread::spawn(move || read_input_snapshots(thread_reader, shared_snapshot));
                 let capability_audio = config.capabilities.iter().any(|cap| cap == "audio");
                 Ok(Self {
                     stream,
@@ -226,6 +242,8 @@ impl TwinpadGame {
                     gfn: 0,
                     audio: None,
                     capability_audio,
+                    input_snapshot,
+                    input_reader,
                 })
             }
             Err(error) => Err(SdkError::ServerUnreachable(error)),
@@ -236,6 +254,16 @@ impl TwinpadGame {
     #[must_use]
     pub fn game_id(&self) -> &str {
         &self.game_id
+    }
+
+    /// Snapshot completo más reciente de input, o `None` antes del primer reporte.
+    /// El sondeo no bloquea y no conserva una cola de estados históricos.
+    #[must_use]
+    pub fn poll_input(&self) -> Option<InputMsg> {
+        self.input_snapshot
+            .lock()
+            .ok()
+            .and_then(|snapshot| snapshot.clone())
     }
 
     /// Inicia una fuente PCM por la conexión IPC dedicada (CR-003).
@@ -373,6 +401,24 @@ impl TwinpadGame {
             .and_then(|_| self.stream.write_all(b"\n"))
             .and_then(|_| self.stream.flush())
             .map_err(|_| SdkError::AnnouncementRejected)
+    }
+}
+
+fn read_input_snapshots(stream: TcpStream, snapshot: Arc<Mutex<Option<InputMsg>>>) {
+    let mut reader = std::io::BufReader::new(stream);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match std::io::BufRead::read_line(&mut reader, &mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {
+                if let Ok(message) = InputMsg::decode(line.trim_end()) {
+                    if let Ok(mut current) = snapshot.lock() {
+                        *current = Some(message);
+                    }
+                }
+            }
+        }
     }
 }
 

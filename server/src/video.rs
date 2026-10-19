@@ -594,6 +594,86 @@ pub fn run_game_stream(
     )
 }
 
+/// Emite frames de la fuente seleccionada por sesión hasta que la sesión termine.
+/// Al cambiar o perder la fuente, cierra el stream previo y reinicia fn/base.
+pub fn run_selected_game_stream(
+    sink: &mut dyn FrameSink,
+    running: &std::sync::atomic::AtomicBool,
+    fps: &mut dyn FnMut() -> u8,
+    source: &mut dyn FnMut() -> (Option<String>, Option<crate::games::GameFrame>),
+) -> Result<(), VideoSourceError> {
+    let mut active_game = None::<String>;
+    let mut announced = None::<(u16, u16, u8)>;
+    let mut next_deadline = Instant::now();
+    let mut image_sender = TileImageSender::default();
+    let stream_started = Instant::now();
+    while running.load(std::sync::atomic::Ordering::Acquire) {
+        let (game_id, frame) = source();
+        if game_id != active_game {
+            if active_game.is_some() {
+                send(
+                    sink,
+                    &StreamMsg::StreamStop {
+                        reason: twinpad_core::stream::StreamStopReason::PluginStopped,
+                    },
+                )?;
+            }
+            active_game = game_id;
+            announced = None;
+            image_sender = TileImageSender::default();
+            next_deadline = Instant::now();
+        }
+        let Some(frame) = frame else {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            continue;
+        };
+        let Some(rgb) = game_frame_rgb(&frame) else {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            continue;
+        };
+        let current_fps = fps().clamp(1, 60);
+        if announced != Some((frame.w, frame.h, current_fps)) {
+            announced = Some((frame.w, frame.h, current_fps));
+            image_sender.reset_image();
+            send(
+                sink,
+                &StreamMsg::StreamStart {
+                    w: frame.w,
+                    h: frame.h,
+                    fmt: FrameFormat::JpegTiles,
+                    fps: current_fps,
+                },
+            )?;
+        }
+        image_sender.emit_rgb(
+            sink,
+            crate::tile_video::RgbFrame {
+                width: frame.w,
+                height: frame.h,
+                pixels: rgb,
+            },
+            DEFAULT_JPEG_QUALITY,
+            stream_started.elapsed().as_millis() as u64,
+        )?;
+        next_deadline += std::time::Duration::from_millis(1_000 / u64::from(current_fps));
+        let now = Instant::now();
+        if next_deadline > now {
+            std::thread::sleep(next_deadline - now);
+        } else {
+            next_deadline = now;
+        }
+    }
+    if active_game.is_some() {
+        send(
+            sink,
+            &StreamMsg::StreamStop {
+                reason: twinpad_core::stream::StreamStopReason::PluginStopped,
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// Convierte el formato de un frame SDK a RGB8 para diff y composición de tiles.
 fn game_frame_rgb(frame: &crate::games::GameFrame) -> Option<Arc<[u8]>> {
     match frame.fmt {
@@ -989,6 +1069,47 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    // TEST-051 — verifies SPEC-003/006: media stops and its tile base resets on selected-source changes.
+    #[test]
+    fn selected_game_stream_relays_only_across_confirmed_source_boundaries() {
+        let running = std::sync::atomic::AtomicBool::new(true);
+        let polls = std::cell::Cell::new(0usize);
+        let mut source = || {
+            let poll = polls.get();
+            polls.set(poll + 1);
+            if poll == 4 {
+                running.store(false, std::sync::atomic::Ordering::Release);
+            }
+            match poll {
+                0 => (None, None), // no selection: no generated frame or stream_start
+                1 | 2 => (Some("alpha".to_string()), Some(game_frame(0, 64, 64))),
+                3 | 4 => (Some("beta".to_string()), Some(game_frame(1, 64, 64))),
+                _ => (None, None),
+            }
+        };
+        let mut fps = || 60;
+        let mut sink = SinkSpy(RefCell::new(Vec::new()));
+        run_selected_game_stream(&mut sink, &running, &mut fps, &mut source).unwrap();
+        let messages: Vec<StreamMsg> = sink
+            .0
+            .borrow()
+            .iter()
+            .map(|line| StreamMsg::decode(line).unwrap())
+            .collect();
+        assert!(matches!(
+            messages[0],
+            StreamMsg::StreamStart { fps: 60, .. }
+        ));
+        assert!(matches!(messages[1], StreamMsg::VideoFrame { fn_: 0, .. }));
+        assert!(matches!(messages[2], StreamMsg::StreamStop { .. }));
+        assert!(matches!(
+            messages[3],
+            StreamMsg::StreamStart { fps: 60, .. }
+        ));
+        assert!(matches!(messages[4], StreamMsg::VideoFrame { fn_: 0, .. }));
+        assert!(matches!(messages[5], StreamMsg::StreamStop { .. }));
     }
 
     #[test]

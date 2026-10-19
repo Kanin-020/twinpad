@@ -1,19 +1,21 @@
-# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008)
+# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010)
 
 | | |
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 0.4.0 |
+| Version | 0.6.0 |
 | Status | `Draft` |
 | Owner | Eng |
-| Realizes | SPEC-004 §4/§7/§12; SPEC-006 §3/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008) |
+| Realizes | SPEC-004 §4/§7/§12; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010) |
 | Depends on | DES-003, ADR-007, ADR-008 |
 | Last updated | 2026-10-18 |
 
 ## 1. Overview
 
-El cliente C++ del adaptador se inicia al solicitarlo con “Iniciar conexión” (solo con título activo) o cuando la preferencia persistente “Conexión automática” está activada al arrancar el título. Con el adaptador conectado, Cemu lee internamente el render target DRC en el callback de framebuffer, con el límite de 5 fps y sin requerir ni abrir “Separate GamePad View”; la presentación visual normal de Cemu permanece intacta. El PCM DRC continúa por el canal de audio ya existente. No se solicita elegir pantalla. En el inicio manual, Cemu consulta primero el QR vigente por TCP `127.0.0.1:8423`; si no responde una instancia, lanza `twinpad-server` desde PATH y reintenta la consulta por hasta 3 s. El endpoint devuelve el URI canónico y una matriz de módulos 0/1, ambos obtenidos de la misma entrada vigente del TokenStore. Cemu muestra la matriz en diálogo modal con zona silenciosa de cuatro módulos; al aceptar el diálogo solicita el adaptador y al cancelar no conecta. El listener usa un puerto dedicado enlazado exclusivamente a loopback, tiene timeout de lectura/escritura y responde a `GET_QR` con NDJSON `{uri, modules}`. La preferencia se guarda en la configuración de Cemu, false por defecto. Activarla mientras un título está activo inicia el cliente inmediatamente si no estaba solicitado; desactivarla no cierra una conexión o solicitud existente, y solo cambia el inicio automático de títulos posteriores. El proceso iniciado por Cemu permanece vivo al cerrar título; al cerrar Cemu se pregunta si detenerlo. Al terminar el título se detiene el cliente y se cierra la conexión. Su worker mantiene las dos conexiones localhost existentes, anuncia Cemu y reintenta la conexión primaria/audio cada 2 s cuando fue iniciado. La conexión primaria NDJSON recibe frames del server y reportes completos `input_report`; el Server PC escribe los reportes autorizados en el mismo socket del anuncio con framing línea por línea. El controlador VPAD aplica el estado Twinpad como fuente exclusiva mientras el cliente está conectado.
+Cemu es la primera integración host del Plugin SDK. El host Cemu inicia `twinpad-server` desde PATH si no existe una instancia activa, o reutiliza la que responde; consulta el QR vigente en `127.0.0.1:8423`, inicia el anuncio `cemu` y espera `cemu_live=true` antes de presentar el QR. El SDK/Plugin es headless. Al cancelar el diálogo, Cemu cancela la solicitud manual y cierra sus conexiones; auto-connect opt-in existente permanece según CR-006.
+
+Con sesión activa, Android selecciona el Plugin por `game_id`. Cemu publica el framebuffer DRC internamente, sin ventana separada ni selector, a la tasa configurada hasta 60 fps, junto con PCM DRC. Consume snapshots `input_report` enviados por el Servidor al seleccionar y al actualizarse. El Servidor solo adapta/retransmite fuentes de Plugin; nunca captura escritorio, genera demo ni sintetiza audio.
 
 ## 2. Fit with the architecture
 
@@ -23,21 +25,22 @@ El cliente C++ del adaptador se inicia al solicitarlo con “Iniciar conexión�
 
 ## 3. Domain model
 
-- `TwinpadInputState`: última instantánea validada por secuencia recibida desde el server; se reinicia al abrir/cerrar una conexión.
-- `Cemu adapter lifecycle`: título activo sin solicitud (espera, no conecta); iniciado manualmente o por preferencia auto-connect (conecta/reintenta, máximo 2 s); detenido al finalizar el título. Desactivar auto-connect no cancela una solicitud en curso.
-- `twinpad_auto_connect`: preferencia persistente Cemu, inicial false.
-- `VPADStatus_t`: recibe exclusivamente el estado Twinpad en player 0 mientras la conexión esté activa; controles locales no se combinan.
-- `DRC capture`: readback del render target DRC cuando el adaptador pide captura, incluso con la vista separada cerrada; se limita a 5 fps y solo alimenta el stream Twinpad. La opción “Separate GamePad View” mantiene su comportamiento estándar independiente para pruebas/depuración.
+- `TwinpadInputState`: último snapshot válido y secuencia recibido del Servidor; se reinicia al terminar la conexión del título.
+- `Cemu host lifecycle`: inicia/reutiliza el Servidor PC, anuncia `cemu` y presenta QR; la conexión SDK se mantiene por título bajo las preferencias Cemu existentes.
+- `twinpad_auto_connect`: preferencia persistente Cemu, false por defecto.
+- `VPADStatus_t`: recibe el estado Twinpad más reciente mientras el Plugin Cemu es el destino seleccionado; controles locales no se combinan.
+- `DRC source`: textura GamePad publicada por el adaptador a la tasa configurada del stream, máximo 60 fps; Separate GamePad View permanece independiente.
 
 ## 4. Interfaces
 
 | Interface | Contract | Notes |
 |---|---|---|
-| Sesión → Server PC | SPEC-004 §4, `input_report` | valida rangos y orden por `seq` |
-| Server PC → Cemu | SPEC-006 §7, NDJSON `input_report` terminado en LF | socket primary `127.0.0.1:8421` compartido con salida `game_frame`; escritura de línea atómica |
-| Cemu → VPAD | SPEC-004 §4 / CR-005 §6 | botones homónimos, extras ignorados, triggers binarios, sticks/D-pad/touch/gyro directos |
-| Cemu audio | SPEC-005 / CR-003 | socket `127.0.0.1:8422`, sin cambios de formato |
-| Cemu consulta QR | SPEC-006 §12 / CR-007 | `GET_QR\n` a `127.0.0.1:8423`; respuesta NDJSON `{uri, modules}`; filas de igual ancho, caracteres `0`/`1`; solo loopback |
+| Host Cemu → Servidor PC | Inicio/reutilización del proceso y consulta QR, CR-010 / SPEC-006 | QR loopback `127.0.0.1:8423`; espera `cemu_live=true` antes de mostrar |
+| Android session → Servidor PC | SPEC-004 `input_report`; SPEC-006 `game_select` | sesión autenticada, selección por `game_id` |
+| Servidor PC → Cemu Plugin | SPEC-006 `input_report` snapshot por NDJSON/LF | conexión primaria IPC; snapshot inicial + cada actualización aceptada |
+| Cemu → Servidor PC | SPEC-006 `game_announce`, `game_frame` | TCP localhost NDJSON; fuente DRC, fps configurado ≤60 |
+| Cemu audio → Servidor PC | SPEC-005 / SPEC-006 `game_audio_*` | PCM DRC por canal IPC de audio existente |
+| Servidor PC → Android | SPEC-003 / SPEC-005 | únicamente si el Plugin Cemu está confirmado para la sesión |
 
 ## 5. Data model and persistence
 
@@ -50,52 +53,39 @@ El cliente C++ del adaptador se inicia al solicitarlo con “Iniciar conexión�
 
 ```mermaid
 sequenceDiagram
-  participant UI as MainWindow
-  participant C as TwinpadClient
-  participant S as Server PC / GameRegistry
+  participant H as Cemu host
+  participant Q as QR loopback
+  participant S as Servidor PC
   participant A as Android session
+  participant C as Cemu Plugin
   participant V as VPADController
-  participant Q as QR IPC 127.0.0.1:8423
-  alt usuario elige “Iniciar conexión”
-    UI->>Q: GET_QR\n (inicia twinpad-server desde PATH si no responde)
-    Q-->>UI: {uri, modules} del TokenStore vigente
-    UI->>UI: mostrar QR en diálogo Cemu; cancelar aborta conexión
-  else auto-connect habilitado al cargar título o usuario confirma QR
-    UI->>C: RequestConnection / Start(capture=true)
-  else preferencia deshabilitada
-    UI->>C: SetTitleActive(true, false), permanece sin conexión
-  end
-  opt usuario habilita auto-connect con título activo y conexión no iniciada
-    UI->>C: RequestConnection / Start(capture=true)
-  end
-  loop mientras título activo y conexión solicitada
-    LatteRenderTarget->>C: callback DRC interno, incluso sin pad window
-    C->>S: game_frame DRC ≤ 5 fps; audio PCM DRC por socket dedicado
-    C->>S: game_announce por TCP localhost
-    S->>C: líneas input_report con LF
-    A->>S: input_report autenticado y seq creciente
-    S->>C: misma línea NDJSON por socket primary
-    C->>C: parsear línea completa y aplicar filtro seq
-    V->>C: snapshot de estado Twinpad
-    C-->>V: controles DRC
-  end
-  UI->>C: Stop al salir del título
-  Note over UI,C: Desactivar auto-connect no desconecta ni cancela una conexión existente
+  H->>S: iniciar o reutilizar twinpad-server
+  H->>Q: GET_QR
+  Q-->>H: URI, matriz, cemu_live
+  H->>C: iniciar SDK/Plugin y esperar anuncio vivo
+  C->>S: game_announce + game_frame + game_audio_*
+  H->>H: presentar QR vigente
+  A->>S: game_select(game_id=cemu)
+  S-->>A: game_selected(game_id=cemu)
+  A->>S: input_report(seq creciente)
+  S->>C: snapshot inicial y actualizaciones input_report
+  C->>C: poll_input() consulta el snapshot más reciente
+  C->>S: DRC GameFrame hasta 60 fps + PCM DRC
+  S->>A: video/audio adaptados solo de Cemu
+  S->>V: aplica snapshot al VPAD emulado
 ```
 
-- Transaction boundaries: cada mensaje NDJSON se escribe completo bajo el lock del registro y el receptor solo procesa líneas terminadas en LF.
-- Consistency model: estado de control de último `seq` aceptado; la primera sesión que aporta input controla hasta que se desconecta.
+Cada frame/audio/input mantiene el framing NDJSON documentado en SPEC-006. Si se elige otra fuente o Cemu deja de estar vivo, el Servidor termina los streams Cemu y la app procesa la lista vigente.
 
 ## 7. Concurrency
 
 | Concern | Approach |
 |---|---|
-| Lectura y escritura primary simultáneas | TCP full-duplex; el hilo InputLoop recibe y FrameLoop escribe bajo el mutex de socket |
-| Inicio y parada | MainWindow posee auto/manual start y stop al salir del título; al desactivar auto-connect con cliente ya solicitado, no hay stop |
-| Retry y parada del título | sockets se despiertan con shutdown al salir del título y el worker no bloquea el hilo UI |
-| Captura DRC | render target DRC dispara captura Twinpad con rate limit aunque no exista swapchain/window de Pad; no abre una UI adicional |
-| Acceso del VPAD al estado | snapshot por mutex corto, aplicado en el hilo de emulación |
-| Frame/video y audio | mantienen colas/threads existentes y límite de 5 fps |
+| Inicio/reutilización del servidor y presentación QR | El host Cemu reutiliza el proceso local o lo inicia; consulta loopback y espera el anuncio Cemu antes de presentar QR |
+| Lectura/escritura IPC primary | TCP full-duplex; líneas NDJSON atómicas con LF |
+| Captura DRC, inputs y polling | La publicación DRC y el polling SDK no esperan por el socket Android; el snapshot input se protege con lock corto |
+| Audio/video/input sobre LAN | El Servidor serializa cada línea de sesión y mantiene prioridad input > video > audio |
+| Cambio de fuente | el estado de selección por sesión controla video/audio y el Plugin destino de input |
 
 ## 8. Error handling
 
@@ -134,27 +124,27 @@ sequenceDiagram
 
 | SPEC aspect | Where realized | Test |
 |---|---|---|
-| SPEC-004 §4 touch/orientación y serialización | `core::input`, Kotlin `InputCodec` | TEST-043 |
-| SPEC-006 forwarding de input_report a Cemu vivo por NDJSON/LF | `GameRegistry::send_cemu_input` | TEST-044 |
-| SPEC-006 title lifecycle, reconexión, parseo y VPAD exclusivo | `TwinpadClient`, `VPADController` | TEST-045 (build Cemu; validación E2E física pendiente) |
-| CR-006 auto-connect opt-in persistente, inicio manual y menú | `wxCemuConfig`, `MainWindow`, `TwinpadClient` | TEST-046 (build y verificación de código; UI/config manual pendiente) |
-| CR-007 consulta loopback del URI/matriz QR vigente y presentación antes de conectar | `run_qr_ipc_listener`, `TwinpadClient::GetCurrentQr`, diálogo de `MainWindow` | TEST-047 (loopback Rust y build Cemu; smoke de ventana QR pendiente título de prueba) |
-| CR-008 captura DRC automática con ventana separada cerrada, sin UI de selección y a ≤5 fps | `LatteRenderTarget_itHLECopyColorBufferToScanBuffer`, readback de backend y `TwinpadClient` | TEST-048 (build Cemu; E2E con juego pendiente) |
-| CR-008 evita seleccionar desktop/demo para una conexión Cemu viva antes del primer framebuffer y habilita PCM DRC desde el inicio | `GameRegistry::has_live_game`, fuente de video de sesión y `selected_game` | TEST-049 |
+| SPEC-004 touch/orientación y serialización | `core::input`, Kotlin `InputCodec` | TEST-043 |
+| SPEC-006 selección por sesión y relay A/V | `GameRegistry`, handler de sesión, escritor de streams | TEST-051 |
+| SPEC-004/006 snapshot inicial, retención y polling SDK | sesión PC, IPC primary, `TwinpadGame::poll_input` | TEST-052 |
+| SPEC-002 selección Android única/múltiple y liveness | `PairingViewModel`, `PairingActivity` | TEST-053 |
+| Cemu host inicia/reutiliza Server, presenta QR, DRC ≤60 fps y PCM | `TwinpadClient`, renderer Cemu y server relay | TEST-054; build/E2E físico pendiente |
+| Ciclo Cemu anterior, configuración y QR loopback | `MainWindow`, `TwinpadClient`, listener QR | TEST-046, TEST-047, TEST-050 |
 
 ## 13. Related decisions
 
-- CR-004 — integración experimental Cemu y límite de captura 5 fps.
-- CR-005 — retry 2 s tras inicio, fallback de video existente y mapeo directo.
+- CR-004 — integración experimental Cemu; sus límites iniciales de 5 fps fueron reemplazados por CR-010.
+- CR-005 — retry 2 s tras inicio y mapeo directo; el fallback de video fue supersedido por CR-010.
 - CR-006 — preferencia persistente opt-in, start manual y menú de dos opciones.
 - CR-007 — inicio/reutilización del Servidor PC desde Cemu, consulta QR solo loopback y pregunta por detener el proceso propio al cerrar.
-- CR-008 — captura interna automática del DRC, sin ventana separada ni selección de pantalla, con máximo 5 fps.
+- CR-008 — captura interna automática del DRC, sin ventana separada ni selección de pantalla; su máximo histórico de 5 fps fue supersedido por CR-010 (hasta 60 fps configurados).
+- CR-009 — Cemu se anuncia antes de presentar QR; cancelación limpia y captura desktop limitada a pruebas explícitas.
 - ADR-007 — primera ruta de inputs por sesión LAN autenticada.
 - ADR-008 — IPC localhost TCP NDJSON.
 
 ## 14. Open questions
 
-- Ninguna para el alcance aprobado por CR-005; validación física del adaptador permanece como gate de build/end-to-end.
+- Ninguna para el alcance aprobado por CR-010. La validación física Cemu/Android, medición de hasta 60 fps y sincronía A/V dentro de ±150 ms permanecen como gates de banco.
 
 ## Definition of Done
 
@@ -164,8 +154,10 @@ sequenceDiagram
 - [x] Auto-connect persistente opt-in y conexión manual descritos (CR-006).
 - [x] Menú Twinpad descrito con “Iniciar conexión” y “Configuraciones”.
 - [ ] Probar visualmente ventana de ajustes, persistencia y conexión en vivo en Cemu.
-- [x] TEST-043/044 y TEST-046/047 registrados en trazabilidad.
-- [ ] Build Cemu y prueba end-to-end en Cemu + app.
+- [x] TEST-043/044, TEST-046/047 y TEST-051…054 registrados en trazabilidad.
+- [x] Rust tests/Clippy, Android unit tests y build Cemu (`CemuBin`) verificados.
+- [ ] Banco físico Cemu + Android: confirmar hasta 60 fps efectivos y desfase A/V ≤ ±150 ms.
+
 
 ## Changelog
 
@@ -175,3 +167,5 @@ sequenceDiagram
 | 0.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-006) | Preferencia auto-connect opt-in, inicio manual, actualización en vivo y menú Twinpad |
 | 0.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-007) | Inicio/reutilización del Servidor PC, QR vigente presentado en Cemu y gestión de ciclo del proceso propio |
 | 0.4.0 | 2026-10-18 | Product owner + Twinpad team (CR-008) | Readback DRC interno y automático independiente de la ventana separada; límite 5 fps, sin selección de pantalla |
+| 0.5.0 | 2026-10-18 | Product owner + Twinpad team (CR-009) | Anunciar Cemu y confirmar su disponibilidad antes de mostrar QR; cancelar conexión manual y dejar desktop solo para pruebas |
+| 0.6.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Host Cemu inicia/reutiliza servidor y presenta QR; DRC hasta 60 fps; relay de fuente seleccionada y polling del snapshot input |

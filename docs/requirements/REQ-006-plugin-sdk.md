@@ -4,13 +4,13 @@
 |---|---|
 | ID | REQ-006 |
 | Title | Integración vía SDK Twinpad (modelo B) |
-| Version | 0.1.0 |
+| Version | 0.3.0 |
 | Status | `Draft` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Integración por plugin (SDK Twinpad)" y CTX-C7 |
 | Implemented by | `-` |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 ## 1. Objective
 
@@ -18,35 +18,38 @@ La visión de la entrevista es que "cualquier app puede integrarse vía plugin".
 
 ## 2. Description
 
-Twinpad debe proveer un SDK Twinpad que un Juego / Aplicación huesped pueda integrar para: anunciar su presencia al Servidor PC (detección de juego compatible), publicar el contenido de su Segunda pantalla y recibir/consumir inputs del Gamepad HID según la Signature HID acordada. Con el SDK, el juego obtiene el flujo completo: Pairing → detección → Segunda pantalla → inputs.
+Twinpad provee un SDK headless que un Juego / Aplicación huesped integra para anunciar un Plugin, publicar audio y Framebuffers de la Segunda pantalla, y consultar mediante polling el último estado de inputs de la sesión que Android vinculó con ese Plugin. La integración host del Plugin inicia o reutiliza el Servidor PC y presenta el QR de Pairing. El Servidor PC retransmite/adapta medios e inputs; no captura ni genera contenido audiovisual. Android elige el Plugin destino de su sesión.
 
 ## 3. Actors
 
 | Actor | Role in this requirement |
 |---|---|
-| Juego / Aplicación huesped | Integra el SDK y publica contenido/declaraciones |
-| Plugin | El SDK mismo, en su rol de integración (modelo B) |
+| Juego / Aplicación huesped | Integra el SDK y aloja la integración host del Plugin |
+| Plugin | Anuncia su presencia, publica medios y consume inputs usando SDK Twinpad |
+| Integración host del Plugin | Inicia/reutiliza el Servidor PC y presenta el QR de vinculación |
 | Twinpad Core | Detecta el juego compatible y coordina el flujo |
 | PC Host | Ejecuta Core y el juego integrado |
 
 ## 4. Preconditions
 
-- Servidor Twinpad activo (REQ-001).
-- Juego con SDK integrado, en ejecución en el PC.
+- La integración host del Plugin SDK solicita iniciar o reutilizar el Servidor PC y presenta el QR.
+- Juego con SDK integrado, en ejecución en el PC; el SDK anuncia el Plugin tras conectarse.
 
 ## 5. Behavior expected (summary)
 
-- Un juego con SDK integrado es detectado automáticamente por Twinpad Core al ejecutarse.
+- La integración host inicia/reutiliza el Servidor PC y presenta el QR; el SDK conectado anuncia automáticamente su Plugin y Twinpad lo lista como vivo.
 - El juego puede publicar contenido de Segunda pantalla a través del SDK.
 - Si declara capacidad `audio`, el juego puede entregar PCM real mediante una fuente callback del SDK y Twinpad lo reproduce en Android sin que la fuente retrase la publicación de frames.
-- El juego recibe los inputs del gamepad a través del canal acordado con el SDK.
+- Android elige a qué Plugin vivo vincular su sesión; el Plugin recibe el estado más reciente de inputs del teléfono mediante polling del SDK.
 
 ## 6. Acceptance criteria
 
-- [ ] AC-1: Dado un juego con SDK integrado, cuando se ejecuta con el servidor activo, entonces Twinpad Core lo detecta y la app Android lo muestra como juego compatible disponible.
-- [ ] AC-2: Dado un juego detectado y sesión activa, cuando el juego publica un frame de segunda pantalla vía SDK, entonces llega al celular (sujeto a REQ-004).
-- [ ] AC-3: Dado un juego detectado, cuando el juego consulta el estado de controles vía SDK, entonces obtiene la Signature HID declarada y los eventos de input correspondientes.
-- [ ] AC-4: Dado un juego vivo con capacidad `audio`, cuando su fuente callback publica PCM `s16le`, entonces el Android reproduce ese audio; ante congestión se descartan chunks PCM antiguos sin bloquear la publicación de frames, y sin fuente PCM el teléfono permanece en silencio.
+- [ ] AC-1: Dado la integración host de un Plugin SDK, cuando solicita iniciar/reutilizar el Servidor PC y presenta el QR, entonces tras Pairing el SDK conectado anuncia el Plugin y la app Android recibe su identidad en la lista de Plugins vivos.
+- [ ] AC-2: Dado una sesión Android y uno o más Plugins vivos, cuando Android elige uno (automáticamente si solo hay uno), entonces el Servidor confirma la selección y retransmite únicamente los medios de ese Plugin.
+- [ ] AC-3: Dado un Plugin seleccionado y un `input_report` válido recibido desde Android, cuando el juego consulta el SDK, entonces obtiene el estado completo más reciente de la Signature HID; los estados intermedios pueden coalescerse.
+- [ ] AC-4: Dado un Plugin vivo con capacidad `audio`, cuando publica PCM `s16le`, entonces el Android de la sesión que lo seleccionó reproduce ese audio; ante congestión se descartan chunks PCM antiguos sin bloquear la publicación de frames, y sin fuente PCM permanece en silencio.
+- [ ] AC-5: Dado un Plugin seleccionado que deja de estar vivo, cuando el Servidor publica la lista vigente, entonces Android deja de presentar medios de esa fuente y actualiza la selección según SPEC-002/SPEC-006.
+- [ ] AC-6: Dado un host que inicia el Servidor PC para su Plugin, cuando el proceso no existe, entonces se inicia; si ya está activo, se reutiliza y el host presenta el QR vigente sin duplicar procesos.
 
 ## 7. Non-functional concerns
 
@@ -67,7 +70,8 @@ Twinpad debe proveer un SDK Twinpad que un Juego / Aplicación huesped pueda int
 
 ## 10. Related specifications
 
-- `-` until assigned
+- SPEC-006 — detección, ciclo de inicio host, selección y SDK.
+- SPEC-002 — Pairing y selección Android.
 
 ## 11. Notes and open questions
 
@@ -89,3 +93,4 @@ Twinpad debe proveer un SDK Twinpad que un Juego / Aplicación huesped pueda int
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
 | 0.2.0 | 2026-10-17 | Owner + Twinpad team (CR-003) | Añade AC-4 para publicación de PCM desde SDK y silencio si no existe fuente |
+| 0.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Plugin origina A/V; el host inicia/reutiliza Server y presenta QR; Android elige destino y SDK consulta por polling input; Servidor solo retransmite/adapta |

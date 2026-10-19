@@ -43,6 +43,9 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val pendingVideoLines = Channel<PendingVideoLine>(Channel.UNLIMITED)
     private val audioMachine = com.twinpad.android.app.audio.AudioStateMachine()
     private val gamepad = com.twinpad.android.app.hid.GamepadStateMachine()
+    private var selectionPending = false
+    private var requestedGameId: String? = null
+    private var automaticSelectionId: String? = null
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para
      * preservar la cadena base_fn de los patches (SPEC-003/CR-002). */
@@ -63,6 +66,14 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val _availableGames =
         MutableStateFlow<List<com.twinpad.android.app.wire.GameInfo>>(emptyList())
     val availableGames: StateFlow<List<com.twinpad.android.app.wire.GameInfo>> = _availableGames
+
+    /** Plugin confirmado para esta sesión (SPEC-006). */
+    private val _selectedGameId = MutableStateFlow<String?>(null)
+    val selectedGameId: StateFlow<String?> = _selectedGameId
+
+    private val _selectionRequest =
+        MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
+    val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
 
     /** Estado del stream de audio (SPEC-005 §5) para la vista. */
     private val _audioState =
@@ -133,6 +144,10 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             _lastFrame.value = null
             streamStats.reset()
             _availableGames.value = emptyList()
+            _selectedGameId.value = null
+            selectionPending = false
+            requestedGameId = null
+            automaticSelectionId = null
             feed(PairingEvent.WireMessage(null))
             return
         }
@@ -141,9 +156,10 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         // video— con kotlinx.serialization costaba el doble de CPU).
         when (lineType(line)) {
             "games_available" -> {
-                com.twinpad.android.app.wire.GameListCodec.decode(line)?.let {
-                    _availableGames.value = it
-                }
+                GameListCodec.decode(line)?.let(::handleGamesAvailable)
+            }
+            "game_selected" -> {
+                GameListCodec.selectedGameId(line)?.let(::confirmGameSelection)
             }
             "audio_start", "audio_chunk", "audio_stop" -> {
                 // R3 de ARCH §8: el audio no espera al video — se procesa
@@ -300,6 +316,68 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             )
     }
 
+    /** Solicita la fuente seleccionada; medios previos se limpian al confirmarse. */
+    fun selectGame(gameId: String) {
+        if (_availableGames.value.none { it.gameId == gameId }) return
+        sendGameSelection(gameId)
+    }
+
+    private fun handleGamesAvailable(games: List<com.twinpad.android.app.wire.GameInfo>) {
+        _availableGames.value = games
+        val pendingId = requestedGameId
+        if (pendingId != null && GameListCodec.retainedSelection(pendingId, games) == null) {
+            selectionPending = false
+            requestedGameId = null
+        }
+        val selected = _selectedGameId.value
+        val retained = GameListCodec.retainedSelection(selected, games)
+        if (selected != null && retained == null) {
+            _selectedGameId.value = null
+            clearMediaForSelectionChange()
+        }
+
+        when {
+            games.isEmpty() -> automaticSelectionId = null
+            games.size == 1 -> {
+                automaticSelectionId = games.single().gameId
+                if (selected != automaticSelectionId && requestedGameId != automaticSelectionId) {
+                    sendGameSelection(automaticSelectionId!!)
+                }
+            }
+            else -> {
+                automaticSelectionId = null
+                if (GameListCodec.needsExplicitSelection(games, requestedGameId)) {
+                    _selectionRequest.tryEmit(games)
+                }
+            }
+        }
+    }
+
+    private fun sendGameSelection(gameId: String) {
+        requestedGameId = gameId
+        selectionPending = true
+        network.send(GameListCodec.selectionLine(gameId))
+    }
+
+    private fun confirmGameSelection(gameId: String) {
+        if (!selectionPending || requestedGameId != gameId) return
+        val previous = _selectedGameId.value
+        if (previous != gameId) clearMediaForSelectionChange()
+        _selectedGameId.value = gameId
+        selectionPending = false
+        requestedGameId = null
+    }
+
+    private fun clearMediaForSelectionChange() {
+        tileComposer.reset()
+        streamMachine.reset()
+        _lastFrame.value = null
+        _streamState.value = com.twinpad.android.app.stream.StreamUiState()
+        audioMachine.reset()
+        playback.stop()
+        _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
+    }
+
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
     fun onEvent(event: PairingEvent) = feed(event)
 
@@ -332,7 +410,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Resultado del diálogo de permiso de cámara del SO (SPEC-002 §8.1). */
+    /** Resultado del permiso de cámara confirmado por el SO (SPEC-002 §8.1). */
     fun onCameraPermissionResult(granted: Boolean) {
         val event = if (granted) PairingEvent.CameraGranted else PairingEvent.CameraDenied
         feed(event)
@@ -359,7 +437,12 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         for (effect in effects) {
             when (effect) {
                 is Effect.RequestCamera ->
-                    if (hasCameraPermission()) {
+                    if (
+                        ContextCompat.checkSelfPermission(
+                            getApplication(),
+                            android.Manifest.permission.CAMERA,
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
                         feed(PairingEvent.CameraGranted) // R2: solo pide si falta
                     } else {
                         _cameraEffects.tryEmit(effect) // Activity lanza el diálogo del SO
@@ -373,12 +456,6 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
-    private fun hasCameraPermission(): Boolean =
-        ContextCompat.checkSelfPermission(
-            getApplication(),
-            android.Manifest.permission.CAMERA,
-        ) == PackageManager.PERMISSION_GRANTED
 
     override fun onCleared() {
         pendingVideoLines.close()

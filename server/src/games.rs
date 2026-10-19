@@ -130,8 +130,7 @@ impl GameRegistry {
         }
     }
 
-    /// Último frame del juego vivo indicado (AC-2), o `None` si no hay juego
-    /// vivo con ese id o aún no publicó frames (§10).
+    /// Último frame del Plugin vivo indicado (AC-2), o `None` si no ha publicado.
     pub fn latest_frame(&self, game_id: &str) -> Option<GameFrame> {
         lock_or_reset(&self.games)
             .get(game_id)
@@ -208,22 +207,51 @@ impl GameRegistry {
             .is_some_and(|entry| entry.audio_start.is_some())
     }
 
-    /// Fuente preferente del stream de SPEC-003: el primer juego vivo (por
-    /// `game_id`, determinista) que haya publicado frames. `None` si ninguno
-    /// (el server usa su fuente de escritorio/demo, SPEC-003 §17).
+    /// Fuente preferente heredada para pruebas/compatibilidad interna.
     pub fn preferred_source(&self) -> Option<(String, GameFrame)> {
         lock_or_reset(&self.games)
             .iter()
             .find_map(|(id, entry)| entry.last_frame.clone().map(|frame| (id.clone(), frame)))
     }
 
-    /// Reenvía un `input_report` de la sesión autorizada al adaptador Cemu vivo.
-    pub fn send_cemu_input(&self, line: &str) -> bool {
-        use std::io::Write;
+    /// Conserva el último `input_report` aceptado para la sesión y lo reenvía
+    /// únicamente al Plugin seleccionado. Devuelve false si no hay destino vivo.
+    pub fn retain_and_send_input(&self, game_id: Option<&str>, line: &str) -> bool {
+        let Some(game_id) = game_id else { return false };
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        Self::write_input(entry, line)
+    }
+
+    /// Envía al adaptador Cemu los fps configurados en la sesión Android.
+    pub fn send_cemu_video_fps(&self, fps: u8) -> bool {
         let mut games = lock_or_reset(&self.games);
         let Some(entry) = games.get_mut("cemu") else {
             return false;
         };
+        let line = format!("{{\"type\":\"video_config\",\"fps\":{}}}", fps.clamp(1, 60));
+        Self::write_input(entry, &line)
+    }
+
+    /// Entrega el snapshot inicial a un Plugin recién seleccionado.
+    pub fn send_input_snapshot(&self, game_id: &str, snapshot: &str) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        Self::write_input(entry, snapshot)
+    }
+
+    /// Mantiene el test de forwarding legacy centrado en Cemu.
+    #[cfg(test)]
+    pub fn send_cemu_input(&self, line: &str) -> bool {
+        self.retain_and_send_input(Some("cemu"), line)
+    }
+
+    fn write_input(entry: &mut GameEntry, line: &str) -> bool {
+        use std::io::Write;
         entry
             ._stream
             .write_all(line.as_bytes())

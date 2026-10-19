@@ -7,17 +7,17 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.0.0 |
+| Version | 1.2.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
-| Implements | REQ-002 |
+| Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014 (registrados en `testing/traceability.md`, aún sin código) |
-| Last updated | 2026-10-07 |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059 (registrados en `testing/traceability.md`) |
+| Last updated | 2026-10-18 |
 
 ## 1. Purpose
 
-Define el comportamiento observable de la app Twinpad en el Android device para la vinculación: pantalla de escaneo del QR de vinculación, ejecución del Handshake del lado cliente y mensajes al usuario. Implementa el lado dispositivo de REQ-002 reutilizando sin modificar el contrato de SPEC-001 (§4.1, §4.2, §7, §9). No define wire format nuevo ni interfaz con el Motor HID.
+Define el comportamiento observable de la app Twinpad en Android para vinculación y selección de Plugin por sesión. El Handshake de Pairing sigue reutilizando sin cambios SPEC-001; tras U4, la app presenta la lista de Plugins vivos conforme a SPEC-006 y selecciona automáticamente la única fuente disponible.
 
 ## 2. Definitions
 
@@ -29,7 +29,7 @@ Define el comportamiento observable de la app Twinpad en el Android device para 
 ## 3. Preconditions
 
 - App instalada en Android 12+ (CTX-C1) con cámara operativa.
-- PC y celular en la misma LAN (CTX-C2); Servidor PC activo para el flujo exitoso (REQ-001).
+- PC y celular en la misma LAN (CTX-C2); la integración host del Plugin inició/reutilizó el Servidor PC y presenta un QR vigente (REQ-006/CR-010).
 - Ningún permiso concedido previamente: la cámara se solicita según §11-R2.
 
 ## 4. Inputs
@@ -42,17 +42,23 @@ Define el comportamiento observable de la app Twinpad en el Android device para 
 | Acción "reintentar" | evento de usuario | solo tras error E1–E5 | Pantalla de Pairing |
 | Permiso de cámara | evento del sistema | concedido / denegado | Android SO |
 | App pasa a segundo plano | evento del sistema | durante Escaneando o Handshake | Android SO |
-| Mensajes del servidor | SPEC-001 §4.2 (`pair_challenge`, `pair_ack`, `pair_error`) | sin campos nuevos | TCP |
+| Mensajes del servidor | SPEC-001 §4.2 (`pair_challenge`, `pair_ack`, `pair_error`) y SPEC-006 (`games_available`, `game_selected`) | NDJSON en sesión | TCP |
+| Plugins vivos | lista completa de SPEC-006 §4 | actualizada al cambiar liveness | sesión |
+| Acción seleccionar Plugin | evento de usuario | solo si hay más de un Plugin vivo | pantalla de sesión |
 
 ## 5. Outputs
 
 | Result | Value / shape | Condition |
 |---|---|---|
 | Estado de pantalla | uno de §6 (Inicio, Escaneando, Handshake, Vinculado, Error) | siempre visible en la Pantalla de Pairing |
+| Orientación de la app | landscape habitual fijo | la app está visible; no se permite verticalidad ni rotación automática |
+| Barras del sistema | estado y navegación ocultos en modo inmersivo | PairingActivity tiene foco; Android puede mostrarlas transitoriamente por gesto del usuario |
 | Solicitud de permiso de cámara | diálogo del SO | al entrar a Escaneando sin permiso (§11-R2) |
 | Conexión TCP + Handshake cliente | mensajes exactos de SPEC-001 §4.2 lado app | tras escaneo válido (§7) |
 | Mensaje de error | tabla exacta de §9 | según código del error |
 | Estado Vinculado | sesión activa en memoria con `session_id` y clave de sesión (SPEC-001 §5, §8.2) | tras `pair_ack` |
+| Fuente de sesión | Plugin confirmado por `game_selected`, o sin selección | tras selección única automática o confirmación del servidor |
+| Solicitud elegir Plugin | `game_select {type, game_id}` | al recibirse lista con más de un Plugin, por acción de usuario |
 
 ## 6. States
 
@@ -69,10 +75,15 @@ Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Esca
 | U3 | `pair_error` E1–E4 o fallo de conexión | U5 | mensaje según §9 |
 | U3 | "cancelar" | U1 | cierra la conexión |
 | U4 | corte de conexión (SPEC-001 §8.2 aplica) | U1 | mensaje "Sesión terminada" |
+| U4 | `games_available` con exactamente un Plugin | U4 | envía `game_select` automáticamente |
+| U4 | `games_available` con varios Plugins | U4 | muestra lista; envía `game_select` al elegir |
+| U4 | `game_selected` | U4 | marca el Plugin confirmado como fuente activa |
+| U4 | la fuente activa desaparece | U4 | borra el frame/audio de esa fuente y procesa lista vigente |
+| U4 | selección solicitada ya no disponible | U4 | conserva la fuente previamente confirmada si sigue viva; procesa la lista vigente |
 | U5 | "reintentar" | U1 | limpia el error; el usuario re-escanea |
 | U2/U3 | app a segundo plano | U1 | cancela el intento y libera recursos (§10) |
 
-Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 y de ahí a U1/U2 por acción del usuario.
+Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 y de ahí a U1/U2 por acción del usuario. En U4 se envía automáticamente `game_select` si hay un único Plugin vivo; si hay varios se muestra una lista. Solo se considera activa una fuente tras `game_selected`.
 
 ## 7. Main flow
 
@@ -82,7 +93,9 @@ Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 
 4. La app envía `pair_request` (SPEC-001 §7 paso 5) y espera `pair_challenge`.
 5. La app deriva la clave de sesión y computa el proof exactamente según SPEC-001 §7 paso 8 (HKDF-SHA256 + HMAC-SHA256, transcript idéntico) y envía `pair_proof`.
 6. La app recibe `pair_ack` con `session_id` → U4 "Vinculado", sesión activa en memoria (SPEC-001 §5).
-7. La app muestra "Vinculado".
+7. La app muestra "Vinculado" y recibe `games_available`.
+8. Si la lista contiene exactamente un Plugin, envía `game_select` para ese `game_id`; si contiene más de uno, muestra los nombres para que el usuario elija. La app considera activa una fuente solo al recibir `game_selected`.
+9. Al cambiar la lista elimina opciones desaparecidas; una fuente única se selecciona automáticamente, una lista de varias se presenta para selección, y lista vacía significa sin fuente audiovisual.
 
 ## 8. Alternative flows
 
@@ -111,7 +124,7 @@ Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 
 | E1 | conexión TCP rechazada o sin respuesta en 5 s (SPEC-001 §9, lado app) | "Servidor no disponible" |
 | E2 | `pair_error` con código E2 (SPEC-001 §9) | "QR expirado, generar uno nuevo" (REQ-002 AC-3) |
 | E3 | `pair_error` con código E3 | "Vinculación rechazada" |
-| E4 | mensaje del servidor no parseable o fuera de constraints (SPEC-001 §4.2) | "Respuesta no válida" |
+| E4 | mensaje del servidor no parseable o fuera de constraints (SPEC-001 §4.2/SPEC-006) | "Respuesta no válida" |
 | E5 | payload del QR no conforme a SPEC-001 §4.1 | "QR no válido" |
 | PERMISO | permiso de cámara denegado (§8.1) | "Se necesita la cámara para escanear el QR" |
 | SESIÓN | corte de conexión estando en U4 | "Sesión terminada" |
@@ -138,6 +151,10 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R4:** Las cadenas de §9 viven en recursos de Android (i18n-ready, ENG §13 P13); no hay strings de UI hardcodeadas.
 - **R5:** Un intento de vinculación = un escaneo; no hay reintentos automáticos silenciosos. Reintentar es siempre acción explícita del usuario.
 - **R6:** La clave de sesión y `session_id` residen solo en memoria del proceso (SPEC-001 §8.2/§8.3); morir el proceso, muere la sesión.
+- **R7 (CR-010):** la integración host del Plugin inicia/reutiliza el Servidor PC y presenta el QR; la app no arranca el servidor.
+- **R8 (CR-010):** solo se aceptan medios tras `game_selected`; selección única automática y lista seleccionable para múltiples Plugins vivos.
+- **R9 (CR-011):** PairingActivity permanece en landscape habitual fijo, sin verticalidad ni autorrotación.
+- **R10 (CR-011):** las barras de estado y navegación se ocultan con immersive mode; Android puede revelarlas temporalmente mediante gesto y se vuelven a ocultar al recuperar foco.
 
 ## 12. Contracts
 
@@ -146,6 +163,7 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 | Payload del QR | SPEC-001 §4.1 | referencia; ninguna copia local |
 | Mensajes del Handshake | SPEC-001 §4.2 | referencia; el cliente es interoperable con cualquier implementación conforme |
 | Tabla de mensajes de UI | este SPEC §9 | canónica para la app; cambio de texto → CR |
+| Selección y lista de Plugins | SPEC-006 §4/§12 | `game_select`/`game_selected`; la app no trata una fuente como activa hasta su confirmación |
 
 ## 13. Examples (Given / When / Then)
 
@@ -192,10 +210,14 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Aspect | Verified by |
 |---|---|
 | Main flow (escaneo → Vinculado) | TEST-010 |
+| Selección y estado de fuente tras Pairing | TEST-053 |
 | E1 Servidor no disponible | TEST-011 |
 | E5 QR inválido + PERMISO denegado | TEST-012 |
 | E2/E3 mensajes desde `pair_error` | TEST-013 |
 | Edge cases: cancelar, segundo plano, código desconocido, rotación | TEST-014 |
+| Auto-selección con una fuente, lista con varias y fuente confirmada | TEST-053 |
+| Selección obsoleta eliminada ante cambio de liveness | TEST-055 |
+| Landscape habitual fijo, barras del sistema inmersivas | TEST-059 |
 
 ## 17. Open questions
 
@@ -218,3 +240,5 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
+| 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |
+| 1.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Landscape habitual fijo y modo inmersivo sin barras de estado/navegación |

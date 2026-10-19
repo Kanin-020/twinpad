@@ -7,16 +7,16 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
 | Depends on | DES-001, ADR-001 (stack), ADR-002 (transporte), ADR-004 (QR + challenge) |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-10-18 |
 
 ## 1. Overview
 
-La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Compose con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4).
+La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El sensor de orientación absoluta remapea su matriz al sistema de coordenadas de la pantalla antes de calcular yaw/pitch/roll (CR-011).
 
 ## 2. Fit with the architecture
 
@@ -144,6 +144,7 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | §9 E2/E3 desde `pair_error` | máquina + codec | TEST-013 |
 | §10 edge cases (cancelar, fondo, código desconocido, rotación de mensajes) | máquina | TEST-014 |
 | §11 R4 strings en recursos | `res/values/strings.xml` | revisión + TEST-013 (afirma resId/texto) |
+| CR-011: landscape inmersivo y marco gyro | Manifest + `PairingActivity` | TEST-059 (instrumentado en dispositivo Android) |
 
 ## 13. Related decisions
 
@@ -170,3 +171,4 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Diseño inicial: máquina de estados pura + adaptadores; handshake en Kotlin puro sin JNI |
+| 0.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Documenta orientación landscape fija, modo inmersivo y remapeo gyro de pantalla |

@@ -4,17 +4,17 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (framebuffers) |
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
-| Realized by | DES-003 (CR-002; Draft) |
-| Verified by | TEST-015, TEST-016, TEST-017, TEST-027, TEST-028 |
-| Last updated | 2026-10-16 |
+| Realized by | DES-003 (CR-002; Draft), DES-004 (CR-010; Draft) |
+| Verified by | TEST-015, TEST-016, TEST-017, TEST-027, TEST-028, TEST-051, TEST-054 |
+| Last updated | 2026-10-18 |
 
 ## 1. Purpose
 
-Define el comportamiento observable del transporte y la presentación del Stream de video de la Segunda pantalla: cómo los framebuffers que el PC Host captura (ADR-005) llegan al Android device por la sesión de SPEC-001, con qué orden, qué muestra el teléfono y cómo se comporta ante cortes y degradación de la red. Implementa REQ-004 (AC-1, AC-3) y la parte de video de REQ-005 (AC-2); la sincronía con audio (REQ-005 AC-3) es de un SPEC posterior.
+Define el transporte y presentación del Stream de video de la Segunda pantalla: cómo los Framebuffers que publica el Plugin seleccionado llegan al Android device por la sesión autenticada, cómo se adaptan y se ordenan, y su comportamiento ante cortes/degradación. El Servidor no captura ni genera la fuente; implementa REQ-004 y la parte de video de REQ-005.
 
 ## 2. Definitions
 
@@ -28,7 +28,7 @@ Define el comportamiento observable del transporte y la presentación del Stream
 ## 3. Preconditions
 
 - Sesión autenticada establecida según SPEC-001 (estado U4/`Established`); el transporte de SPEC-003 no acepta conexiones fuera de sesión (NFR-004).
-- El Server PC tiene un Framebuffer disponible o razonablemente reciente que transmitir (el origen del contenido es un Plugin, REQ-006/007; fuera de alcance aquí).
+- La sesión ha confirmado un Plugin vivo con `game_selected` (SPEC-006); solo los Framebuffers publicados por esa fuente pueden alimentar el stream.
 
 ## 4. Inputs
 
@@ -84,11 +84,12 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 
 ## 7. Main flow
 
-1. Con la sesión establecida (SPEC-001), el Server PC envía `stream_start` con `w`, `h`, `fmt:"jpeg_tiles"` y `fps` acordados.
-2. Antes de cualquier patch, el Server envía un keyframe `video_frame` JPEG completo con `fn=0`. Para cada frame fuente nuevo compara tiles RGB de 64×64 con la fuente anterior: si ninguno cambia, no envía imagen; si cambian, envía un `video_patch` con `base_fn` del último mensaje de imagen emitido y todos los tiles modificados. `fn` aumenta solo para mensajes de imagen emitidos.
-3. El Server envía un keyframe completo al inicio, tras cambio de resolución y en intervalos ≤1 s. Si el tamaño wire del mensaje de patch no es menor que el keyframe JPEG completo del mismo frame, reemplaza el patch por keyframe.
-4. El Android acepta keyframes completos y aplica patches solo si `base_fn` coincide y todos los JPEG/rectángulos son válidos; compone primero en una imagen de trabajo y publica el resultado entero de forma atómica. Si falla base o validación, conserva el Frame activo, ignora patches hasta keyframe y recupera sincronía en ≤1 s.
-5. La vista de Segunda pantalla presenta el Frame activo escalado a la orientación del teléfono, sin intervención del usuario (REQ-004 AC-1). Al terminar, el Server envía `stream_stop` y la vista vuelve a "sin segunda pantalla activa".
+1. Android selecciona un Plugin conforme a SPEC-006. Sin selección confirmada no existe Stream de video y la vista indica “sin segunda pantalla activa”.
+2. El Servidor consume solo los Framebuffers publicados por el Plugin confirmado, los adapta al formato/tasa configurados y envía `stream_start` antes de la primera imagen. Nunca captura escritorio ni genera frames de relleno.
+3. Antes de cualquier patch, el Servidor envía un keyframe JPEG completo con `fn=0`. Para cada framebuffer nuevo compara tiles RGB de 64×64 con la fuente anterior y envía los tiles modificados o keyframe si el patch no reduce tamaño; keyframes completos llegan al inicio/cambio de resolución y cada ≤1 s.
+4. Android aplica keyframes y patches solo si sus bases y geometrías son válidas; compone los patches atómicamente y descarta los inválidos sin cambiar el Frame activo.
+5. Al cambiar de Plugin, el Servidor envía `stream_stop` de la fuente anterior antes de iniciar la nueva, y el stream nuevo comienza con `fn=0`. Si la fuente desaparece, termina el stream y la selección/UI se actualiza según SPEC-006.
+6. La vista presenta el Frame activo escalado a la orientación del teléfono (REQ-004 AC-1).
 
 ## 8. Alternative flows
 
@@ -104,11 +105,17 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 - **Flow:** el Android entra en `V2`; al restablecerse la red reabre la conexión TCP a `server_addr:server_port` y envía `pair_request` con el **token de sesión retenido** (mismo mecanismo de autenticación de SPEC-001; sin QR). El server valida la sesión registrada y reanuda.
 - **Result:** `V1` de nuevo; frames con `fn` mayor al último recibido; nunca se re-escanea el QR.
 
-### 8.3 Degradación por red saturada
+### 8.3 Cambio de Plugin seleccionado
 
-- **Trigger:** el server observa pérdida/acumulación que excede el ancho de banda negociado (señal: frames no confirmados o cola de envío creciente).
-- **Flow:** el server reduce `fps` a la mitad (hasta un mínimo de 10) y, si persiste, reduce resolución a la mitad por eje, anunciándolo con `stream_start` nuevo (§8.1).
-- **Result:** el stream continúa con calidad menor en lugar de congelarse o cortarse.
+- **Trigger:** Android selecciona otro Plugin y recibe `game_selected`.
+- **Flow:** el Servidor termina el stream anterior con `stream_stop`, descarta su base de tiles y comienza el stream de la nueva fuente desde `fn=0`.
+- **Result:** Android no mezcla ni muestra frames de la fuente anterior con la nueva.
+
+### 8.4 Degradación por red saturada
+
+- **Trigger:** el Servidor observa pérdida/acumulación que excede el ancho de banda negociado (señal: frames no confirmados o cola de envío creciente).
+- **Flow:** el Servidor adapta `fps`/resolución dentro de los límites vigentes y anuncia los parámetros con `stream_start` nuevo (§8.1).
+- **Result:** el stream continúa con calidad adaptada; el Plugin sigue siendo el origen de los medios.
 
 ## 9. Errors
 
@@ -147,7 +154,7 @@ Invariant: en `V1` y `V2` la sesión sigue autenticada; salir de la sesión (SPE
 
 | Contract | Canonical source | Notes |
 |---|---|---|
-| Mensajes de stream (`stream_start`/`video_frame`/`video_patch`/`stream_stop`/`stream_gap`) | este documento §4; NDJSON según SPEC-001 §4.2 (misma conexión y framing) | v1.2.0; CR-002 requiere actualización conjunta Android/servidor, sin compatibilidad anterior |
+| Mensajes de stream (`stream_start`/`video_frame`/`video_patch`/`stream_stop`/`stream_gap`) | este documento §4; NDJSON según SPEC-001 §4.2 | v1.3.0; solo medios del Plugin seleccionado (SPEC-006); cambio de fuente reinicia el stream |
 | Autenticación de la sesión | SPEC-001 §7/§8 | sin duplicación: se referencia |
 | Formato de Framebuffer | ADR-005 + §4 `fmt` de este SPEC | `gray8` (1 B/px), `rgb8` (3 B/px), fila mayor |
 
@@ -204,6 +211,8 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 | Aspect | Verified by |
 |---|---|
 | Flujo principal (§7) y AC-1 de REQ-004 | TEST-015 |
+| Cambio de fuente confirmada y relay exclusivo | TEST-051 |
+| Ausencia de medios generados/capturados por Server | TEST-054 |
 | Frame corrupto/tardío y edge cases de §10 | TEST-016 |
 | Reanudación tras corte breve (§8.2, REQ-005 AC-2) | TEST-017 |
 | Codec, diff por tiles, base mismatch, composición atómica y keyframe periódico | TEST-027, TEST-028 |
@@ -214,7 +223,7 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 - ¿Formato v1 sin compresión o con compresión desde el día 1? — owner: Eng lead — 2026-10-07 — **resuelta: sin compresión en v1; `rgb8` es el único formato requerido en la primera implementación (`gray8` queda definido pero no exigido). Si la medición de NFR-001 fallara, la compresión entra por CR.**
 - **Ampliada por CR-001 (2026-10-08, owner): la medición de ancho de banda demuestra que rgb8 crudo no alcanza 720p/1080p a 30/60 fps en WiFi LAN (663 Mbps–3 Gbps teóricos), por lo que v1.1 añade `fmt=jpeg` como formato requerido para esos objetivos; `rgb8`/`gray8` siguen definidos. H.264 queda como evolución si el banco físico demuestra que JPEG no alcanza NFR-001.**
 - ¿Umbral de degradación (§8.3): qué métrica exacta dispara la reducción (cola de envío en frames, % de pérdida)? — owner: Eng lead — 2026-10-07 — abierta (la implementación puede dejarla parametrizada; no bloquea AC-1/AC-3)
-- ¿Qué transmite el stream mientras no existe el Plugin (SPEC-006)? — owner: usuario — 2026-10-08 — **resuelta: duplicado del escritorio del PC capturado con `xcap` (`twinpad-capture::DesktopGrabber`, escalado a 640×360 rgb8); si la captura no está disponible, fallback al patrón de demostración animado. El contenido real del juego entra con SPEC-006.**
+- ¿Qué transmite el stream mientras no existe un Plugin seleccionado? — owner: usuario — 2026-10-18 — **resuelta por CR-010: no transmite video; no se captura escritorio ni se genera demo.**
 
 ## Definition of Done
 
@@ -235,3 +244,4 @@ Una implementación cumple este SPEC si y solo si: honra las precondiciones (§3
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |
 | 1.2.0 | 2026-10-16 | Owner (usuario, CR-002) | `jpeg_tiles`, patches JPEG de 64×64, base_fn y keyframes ≤1 s; despliegue coordinado sin compatibilidad hacia atrás |
+| 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Fuente exclusiva Plugin seleccionado; sin captura/demo Server y reinicio limpio al cambiar fuente |

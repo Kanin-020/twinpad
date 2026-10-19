@@ -7,6 +7,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
 import android.view.Gravity
+import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -19,6 +20,9 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.LifecycleOwner
@@ -35,10 +39,8 @@ import com.twinpad.android.app.stream.StreamState
 import com.twinpad.android.app.wire.ProtocolConstants
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 private const val MICROSECONDS_PER_MILLISECOND = 1_000.0
-private const val RADIANS_PER_TURN = 2f * Math.PI.toFloat()
 
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
@@ -80,13 +82,12 @@ class PairingActivity : AppCompatActivity() {
         object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
                 SensorManager.getRotationMatrixFromVector(orientationMatrix, event.values)
+                remapOrientationMatrix(orientationMatrix, display.rotation)
                 SensorManager.getOrientation(orientationMatrix, orientationAngles)
-                val scale = ProtocolConstants.GYRO_TURN_SCALE
                 surfaceRef?.updateGyro(
-                    listOf(
-                        radiansToTurns(orientationAngles[0], scale),
-                        radiansToTurns(orientationAngles[1], scale),
-                        radiansToTurns(orientationAngles[2], scale),
+                    GyroOrientationMapper.toScreenTurns(
+                        orientationAngles,
+                        ProtocolConstants.GYRO_TURN_SCALE,
                     ),
                 )
             }
@@ -104,6 +105,8 @@ class PairingActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemBars()
         setContentView(R.layout.activity_pairing)
         viewModel = ViewModelProvider(this)[PairingViewModel::class.java]
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
@@ -174,6 +177,16 @@ class PairingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             viewModel.availableGames.collectLatest { games ->
                 findViewById<TextView>(R.id.txt_games).text = gamesText(games)
+            }
+        }
+        lifecycleScope.launch {
+            viewModel.selectionRequest.collectLatest { games ->
+                val options = games.map { it.gameName }.toTypedArray()
+                androidx.appcompat.app.AlertDialog.Builder(this@PairingActivity)
+                    .setTitle(R.string.game_select_title)
+                    .setItems(options) { _, index -> viewModel.selectGame(games[index].gameId) }
+                    .setOnCancelListener { }
+                    .show()
             }
         }
         // HUD: 1 tick por segundo actualiza el chip con fps/kbps.
@@ -395,8 +408,21 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        hideSystemBars()
         rotationVector?.let {
             sensorManager.registerListener(
                 sensorListener,
@@ -420,14 +446,23 @@ class PairingActivity : AppCompatActivity() {
     }
 }
 
-/** Convierte radianes absolutos a vueltas int16 según el contrato de input. */
-private fun radiansToTurns(
-    radians: Float,
-    scale: Float,
-): Int =
-    (radians / RADIANS_PER_TURN * scale)
-        .roundToInt()
-        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+/** Reorienta la referencia de ejes del sensor para que siga las coordenadas visibles de la pantalla. */
+internal fun remapOrientationMatrix(
+    matrix: FloatArray,
+    displayRotation: Int,
+) {
+    val (xAxis, yAxis) =
+        when (displayRotation) {
+            Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
+            Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
+            Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
+            else -> SensorManager.AXIS_X to SensorManager.AXIS_Y
+        }
+    val remapped = FloatArray(matrix.size)
+    if (SensorManager.remapCoordinateSystem(matrix, xAxis, yAxis, remapped)) {
+        remapped.copyInto(matrix)
+    }
+}
 
 /** Mapeo error → string canónico (SPEC-002 §9, R4). */
 fun com.twinpad.android.app.core.PairingError.resId(): Int =

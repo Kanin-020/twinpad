@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | ID | ARCH |
-| Version | 0.6.0 |
+| Version | 0.8.0 |
 | Status | Draft |
 | Owner | Twinpad team |
 | Last updated | 2026-10-18 |
@@ -40,14 +40,15 @@ C4Context
 
 | Component | Responsibility | Type | Specs served |
 |---|---|---|---|
-| `Servidor PC` | Gestionar sesiones, exponer el QR de vinculación y coordinar los streams | service (persistente) | REQ-001, REQ-002 |
-| `Twinpad Core (PC)` | Ejecutar transporte LAN/Bluetooth, captura de framebuffer/audio y coordinar el forwarding autenticado de inputs | module (Rust) | REQ-003, REQ-004, REQ-005 |
-| `SDK Twinpad` | Permitir a un juego anunciar contenido de segunda pantalla y recibir inputs | lib | REQ-006 |
-| `Adaptador experimental Cemu` | Capturar automáticamente textura y PCM DRC sin abrir la vista separada, aplicar inputs autenticados al GamePad Wii U emulado por IPC local durante pruebas semi-reales, e iniciar/reutilizar Servidor PC y mostrar su QR vigente al solicitar conexión | module (C++) | CR-004..CR-008, SPEC-004, SPEC-006 |
+| `Servidor PC` | Gestionar sesiones y retransmitir/adaptar medios e inputs entre Android y el Plugin seleccionado | service (persistente) | REQ-001, REQ-002, REQ-004, REQ-005, REQ-006 |
+| `Twinpad Core (PC)` | Ejecutar transporte LAN/Bluetooth y coordinar el relay autenticado de medios publicados por Plugins e inputs del Android | module (Rust) | REQ-003, REQ-004, REQ-005 |
+| `SDK Twinpad` | Permitir al Plugin anunciarse, publicar medios y consultar por polling el último snapshot de input | lib | REQ-006 |
+| `Integración host del Plugin` | Iniciar/reutilizar el Servidor PC y presentar el QR para Pairing | responsabilidad del host/integración | CR-010, REQ-006 |
+| `Adaptador experimental Cemu` | Publicar DRC/PCM y aplicar snapshots de input al GamePad Wii U emulado; implementar el ciclo host para la primera integración | module (C++) | CR-004..CR-010, SPEC-004, SPEC-006 |
 | `Cargador de Config externa` | Cargar y validar configuraciones de juegos no integrados | module (Rust) | REQ-007 |
 | `App Twinpad (Android)` | Mostrar la Segunda pantalla y capturar inputs táctiles/físicos | app (Kotlin) | REQ-004, REQ-008 |
 | `Motor HID (Android)` | Presentar el celular como Gamepad HID vía Bluetooth y codificar inputs al descriptor | module (Kotlin+Rust) | REQ-003 |
-| `Captura (PC)` | Capturar framebuffers y audio del juego integrado | module (Rust) | REQ-004, REQ-005 |
+| `Relay de medios (PC)` | Adaptar y retransmitir framebuffers/PCM publicados por el Plugin seleccionado | module (Rust) | REQ-004, REQ-005, REQ-006 |
 
 ## 3. Boundaries and dependencies
 
@@ -55,13 +56,15 @@ C4Context
 
 | From | To | Allowed via | Forbidden |
 |---|---|---|---|
-| `App Twinpad (Android)` | `Twinpad Core (PC)` | Protocolo de sesión (transporte) | Acceso directo a captura del PC |
+| `App Twinpad (Android)` | `Twinpad Core (PC)` | Protocolo de sesión (transporte) | Acceso directo al IPC local del Plugin o al proceso host |
 | `Motor HID (Android)` | `App Twinpad (Android)` | Interfaz interna de inputs | Conocer el juego o su contenido |
-| `SDK Twinpad` | `Servidor PC` | API de anuncio/registro del juego | Escribir directo en la red/transporte |
-| `Adaptador experimental Cemu` | `Servidor PC` | TCP 127.0.0.1:8423 para consultar URI/matriz QR vigente antes del inicio manual; IPC de juego de SPEC-006; auto-connect persistente opt-in solo con título activo; captura interna DRC limitada a 5 fps, independiente de la vista separada | Acceso a la sesión Android directa o exposición del endpoint QR fuera de loopback |
+| `Integración host del Plugin` | `Servidor PC` | iniciar/reutilizar proceso y presentar QR de Pairing | el SDK headless inicia procesos o presenta UI |
+| `SDK Twinpad` | `Servidor PC` | IPC local de anuncio/publicación y consumo de inputs | escribir directamente a la sesión LAN Android |
+
+| `Adaptador experimental Cemu` | `Servidor PC` | Inicio del proceso, consulta QR loopback e IPC de plugin conforme a SPEC-006; publicación DRC hasta 60 fps configurados | Acceso directo a la sesión Android; captura por Servidor PC |
 | `Cargador de Config externa` | `Twinpad Core (PC)` | Modelo de configuración validado | Ejecutar código del juego |
 | `Twinpad Core (PC)` | `Servidor PC` | Eventos internos de sesión | Depender del juego concreto |
-| `Captura (PC)` | `Twinpad Core (PC)` | Stream de frames/audio | Renderizado o lógica de UI |
+| `Servidor PC` | `Android device` | sesión autenticada; selección de fuente por sesión | Publicar medios no originados por el Plugin seleccionado |
 
 Regla transversal: ningún componente del lado PC importa código de Android y viceversa; la única frontera es el protocolo de sesión (ver §4).
 
@@ -72,12 +75,13 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | Interaction | Style | Contract | Failure semantics |
 |---|---|---|---|
 | `Android → Servidor PC` (pairing) | sync handshake | Payload del QR + challenge (SPEC del pairing) | QR expirado → rechazo; reintentos con backoff |
-| `PC → Android` (Segunda pantalla) | stream continuo | Contrato de Framebuffer (SPEC del stream) | Corte de red → recuperar stream sin re-pairing (REQ-005 AC-2) |
-| `PC → Android` (audio) | stream continuo | Contrato de audio (SPEC del stream) | Jitter buffer; pérdida tolerada |
-| `Android → PC` (inputs HID) | stream de eventos | Signature HID (CTX-C5), sesión LAN autenticada; Cemu experimental los recibe mediante forwarding del Server PC (CR-005) | Eventos idempotentes por secuencia; descarte de duplicados |
+| `Plugin → Servidor → Android` (Segunda pantalla) | stream continuo | Framebuffer del Plugin seleccionado (SPEC-003) | Sin selección/fuente viva → sin video; sin captura/demo Server |
+| `Plugin → Servidor → Android` (audio) | stream continuo | PCM del Plugin seleccionado (SPEC-005) | Sin fuente PCM → silencio; sin captura/síntesis Server |
+| `Android → Servidor → Plugin` (inputs) | snapshots de sesión | Signature HID (SPEC-004), selección SPEC-006, SDK polling | Secuencia antigua descartada; último snapshot retenido por sesión |
 | `PC → Android` (vibración) | evento | Contrato de rumble (SPEC HID) | Fire-and-forget con mejor esfuerzo |
-| `Juego → Servidor PC` (SDK) | API local in-process | API del SDK (SPEC del SDK) | Juego crashea → sesión sigue activa |
-| `Cemu → Servidor PC` (QR) | consulta local síncrona | TCP de loopback exclusivo; contrato en SPEC-006 §12/DES-004 | servidor o QR inaccesible → Cemu muestra error y no inicia el adaptador |
+| `Plugin → Servidor PC` (SDK) | IPC local bidireccional | Anuncio, medios e input conforme a SPEC-006 | Plugin cae → streams de esa fuente terminan sin romper Pairing |
+| `Host de Plugin SDK → Servidor PC` (inicio/QR) | start/reuse + consulta local síncrona | host gestiona proceso y presentación; QR loopback de Cemu en DES-004 | servidor/QR inaccesible → host informa error y no inicia Pairing |
+| `Servidor PC → Android` (lista/selección) | mensajes de sesión | SPEC-006 `games_available`, `game_select`, `game_selected` | selección obsoleta devuelve lista vigente; conserva selección viva previa |
 
 ## 5. Persistence
 
@@ -87,7 +91,7 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 |---|---|---|---|
 | Perfiles de controles táctiles | `App Twinpad (Android)` | almacenamiento local Android | PII: ninguna; exportables |
 | Configs externas de juegos | `Cargador de Config externa` | archivos locales en PC | Comunidad/usuario |
-| Preferencia de auto-connect Cemu | `Adaptador experimental Cemu` | configuración persistente local de Cemu | `false` por defecto; no afecta una conexión en curso al desactivarse |
+| Preferencia de inicio automático Cemu | `Adaptador experimental Cemu` | configuración persistente local de Cemu | `false` por defecto; implementación del primer host SDK, no política del SDK headless |
 | Tokens/sesiones de pairing | `Servidor PC` | almacén local cifrado | Retención corta; revocable |
 
 ## 6. Integrations
@@ -96,8 +100,9 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 
 | External system | Purpose | Direction | Contract | Failure behavior |
 |---|---|---|---|---|
-| Juego / Aplicación huesped (con SDK) | Contenido de segunda pantalla + inputs | inbound/outbound | API del SDK Twinpad | Juego cae → sesión continúa sin segunda pantalla |
-| Cemu (adaptador experimental CR-004..CR-008) | Captura interna de textura/PCM DRC sin activar la vista separada, inputs al VPAD y QR al iniciar conexión | bidirectional vía Servidor PC | TCP `127.0.0.1:8423` para QR y TCP localhost NDJSON para el adaptador; Cemu localiza `twinpad-server` en PATH si no existe instancia activa | no se obtiene QR → error y no conecta; IPC de juego ausente → retry cada 2 s tras solicitud; al cerrar se pregunta solo por la instancia iniciada por Cemu |
+| Integración host del Plugin SDK | Iniciar/reutilizar Servidor PC y presentar QR | inbound | contrato host de REQ-006/SPEC-006 | Error del servidor/QR → host informa y no presenta Pairing |
+| Juego / Aplicación huesped (con SDK) | Publicar A/V y consumir inputs | bidirectional vía Plugin/Servidor PC | API SDK headless (SPEC-006) | Sin Plugin seleccionado no hay A/V; fallo Plugin detiene sus streams sin romper Pairing |
+| Cemu (adaptador experimental CR-004..CR-010) | Inicia/reutiliza Servidor, presenta QR, publica DRC/PCM y consume snapshots de input | bidirectional vía Servidor PC | QR local y SDK/IPC de SPEC-006; DRC hasta 60 fps configurados | Fallo local → Cemu informa; el servidor no captura escritorio ni genera demo |
 | Juego sin integración (vía Config externa) | Solo inputs (gamepad estándar) | inbound | Signature HID | Sin captura de pantalla garantizada |
 | SO Windows (HID) | Registrar el Gamepad HID | outbound | Driver/HID del sistema | Sin registro → juego no ve el control |
 | Router WiFi LAN / Bluetooth | Transporte | — | CTX-C2 | Degradación por señal; reconexión automática |
@@ -171,3 +176,5 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | 0.4.0 | 2026-10-18 | Product owner + Twinpad team (CR-006) | Control manual y preferencia opt-in persistente para iniciar la conexión Cemu |
 | 0.5.0 | 2026-10-18 | Product owner + Twinpad team (CR-007) | Cemu inicia/reutiliza twinpad-server desde PATH y solicita QR vigente por endpoint limitado a loopback |
 | 0.6.0 | 2026-10-18 | Product owner + Twinpad team (CR-008) | Cemu captura internamente el DRC a 5 fps sin activar la vista separada |
+| 0.7.0 | 2026-10-18 | Product owner + Twinpad team (CR-009) | Registro Cemu confirmado antes del QR; captura desktop queda para pruebas explícitas |
+| 0.8.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Host de cada Plugin inicia/reutiliza server y presenta QR; relay de medios, selección Android y polling input sin captura/generación A/V en Server |

@@ -61,6 +61,12 @@ pub enum GameMsg {
         /// Juegos vivos ordenados por `game_id`.
         games: Vec<GameInfo>,
     },
+    /// Android → server (sesión autenticada): selección por sesión.
+    #[serde(rename = "game_select")]
+    GameSelect { game_id: String },
+    /// server → Android (sesión autenticada): confirmación de selección.
+    #[serde(rename = "game_selected")]
+    GameSelected { game_id: String },
     /// juego → server (canal IPC, ADR-008): Framebuffer del juego para la
     /// Segunda pantalla (REQ-006 AC-2). El server lo re-empaqueta como
     /// `video_frame` de SPEC-003 hacia la app con `fn` propio.
@@ -103,6 +109,9 @@ impl GameMsg {
                 }
                 Ok(())
             }
+            GameMsg::GameSelect { game_id } | GameMsg::GameSelected { game_id } => {
+                validate_game_id(game_id)
+            }
             GameMsg::GameFrame {
                 w, h, fmt, data, ..
             } => crate::stream::validate_frame_params(*w, *h, *fmt, data),
@@ -111,16 +120,21 @@ impl GameMsg {
 }
 
 /// Valida un [`GameInfo`] según SPEC-006 §4.
-fn validate_game(game: &GameInfo) -> PairResult<()> {
-    let id_ok = !game.game_id.is_empty()
-        && game.game_id.len() <= GAME_ID_MAX
-        && game
-            .game_id
+fn validate_game_id(game_id: &str) -> PairResult<()> {
+    let id_ok = !game_id.is_empty()
+        && game_id.len() <= GAME_ID_MAX
+        && game_id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '-'));
     if !id_ok {
         return Err(PairError::MalformedMessage);
     }
+    Ok(())
+}
+
+/// Valida un [`GameInfo`] según SPEC-006 §4.
+fn validate_game(game: &GameInfo) -> PairResult<()> {
+    validate_game_id(&game.game_id)?;
     if game.game_name.is_empty() || game.game_name.len() > GAME_NAME_MAX {
         return Err(PairError::MalformedMessage);
     }
@@ -154,6 +168,30 @@ mod tests {
         let line = announce("pacdemo").encode().unwrap();
         assert!(!line.contains('\n'));
         assert_eq!(GameMsg::decode(&line).unwrap(), announce("pacdemo"));
+    }
+
+    // TEST-051 — verifies SPEC-006: session source selection is strict NDJSON.
+    #[test]
+    fn game_selection_messages_roundtrip_and_validate_id() {
+        let select = GameMsg::GameSelect {
+            game_id: "cemu".into(),
+        };
+        assert_eq!(GameMsg::decode(&select.encode().unwrap()).unwrap(), select);
+        let selected = GameMsg::GameSelected {
+            game_id: "cemu".into(),
+        };
+        assert_eq!(
+            GameMsg::decode(&selected.encode().unwrap()).unwrap(),
+            selected
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"game_select","game_id":"Bad ID"}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"game_selected","game_id":"cemu","extra":true}"#),
+            Err(PairError::MalformedMessage)
+        );
     }
 
     #[test]

@@ -8,10 +8,10 @@
 | | |
 |---|---|
 | ID | CTX |
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Status | Draft |
 | Owner | Twinpad team |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-10-18 |
 
 ## 1. Problem
 
@@ -30,11 +30,11 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 > 💡 Capabilities the system WILL provide at capability level (no behavior detail — that belongs in requirements/specs).
 
 - Vinculación PC ↔ celular (pairing mediante QR, descubierto por WiFi LAN / Bluetooth).
-- Transmisión de una segunda pantalla desde la PC al celular (framebuffers / imágenes).
+- Transmisión de una segunda pantalla publicada por el Plugin al celular (framebuffers / imágenes), adaptada y retransmitida por el Servidor PC.
 - Recepción de inputs del celular en la PC (táctiles, físicos, sensores, vibración inversa).
 - Emulación del celular como gamepad HID para que el sistema operativo de la PC lo reconozca como control estándar.
 - Integración por plugin para cualquier juego o aplicación (SDK Twinpad + configuración externa).
-- Captura y transmisión de audio y video desde la PC al celular (v1).
+- Retransmisión de audio y video publicados por el Plugin seleccionado desde la PC al celular (v1); el Servidor PC no captura ni genera medios.
 - Servidor residente en la PC que coordina conexión, streams e inputs.
 
 ## 4. Out of scope
@@ -57,9 +57,9 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 |---|---|---|---|
 | Jugador / Usuario PC | human | Persona que juega o usa apps en su PC Windows | Es quien experimenta la segunda pantalla y usa el gamepad virtual; configura la sesión y aparea el celular |
 | Android device (celular del usuario) | system | Smartphone Android 12+ que corre la app Twinpad | Muestra la segunda pantalla, captura inputs (táctiles, físicos, sensores) y emite HID gamepad |
-| PC Host / Servidor Twinpad | system | Computadora Windows/Linux con el servidor Twinpad instalado | Captura framebuffer/audio, recibe inputs, expone QR de vinculación, ejecuta los streams |
+| PC Host / Servidor Twinpad | system | Computadora Windows/Linux con el servidor Twinpad instalado | Aloja el Servidor PC y la integración host; presenta el QR y retransmite medios e inputs entre Plugin y Android device |
 | Juego / Aplicación huesped (integrada) | external system | Juego o app que ya integró el SDK Twinpad, o que está descrita por configuración externa | Consume inputs del gamepad virtual y publica contenido de segunda pantalla |
-| Plugin Twinpad (integración) | internal service | Módulo (SDK o config externa) que conecta un juego específico con el Core | Declara qué se muestra en la segunda pantalla y qué controles se activan |
+| Plugin Twinpad (integración) | internal service | Módulo (SDK o config externa) que conecta un juego específico con Twinpad | Inicia o solicita el Servidor PC, publica medios de la Segunda pantalla y consume los inputs recibidos |
 | Twinpad Core | internal service | Núcleo común: transporte (LAN/Bluetooth), pairing, HID, streams | Coordina los actores anteriores |
 
 ## 6. Constraints
@@ -95,20 +95,20 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 | Term | Definition |
 |---|---|
 | Twinpad | Sistema completo: app Android + servidor PC + SDK, que provee segunda pantalla y gamepad para PC vía Android |
-| Segunda pantalla | Vista que la PC renderiza, transmite como framebuffers al celular, y el celular muestra en pantalla |
+| Segunda pantalla | Vista que el Plugin publica como Framebuffers, el Servidor PC adapta/retransmite y el Android device muestra en pantalla |
 | Gamepad HID | Dispositivo de control estándar que el celular emula vía Bluetooth HID, reconocido por el SO de la PC como control físico |
 | Pairing | Proceso de vincular el celular con la PC escaneando el QR que muestra el servidor |
 | QR de vinculación | Imagen con la información necesaria para conectar (dirección, protocolo, tokens de sesión) mostrada por el PC |
-| Framebuffer | Imagen completa de un frame que la PC captura y transmite al celular |
+| Framebuffer | Imagen completa de un frame que el Plugin publica y Twinpad retransmite al celular |
 | Stream | Flujo continuo de datos directo entre PC y celular: video (segunda pantalla), audio o inputs |
 | Input físico | Entrada del teléfono: gyro, acelerómetro, botones de hardware, vibración inversa (feedback) |
 | Input táctil | Botones y joysticks virtuales en pantalla del celular, configurables |
 | Signature HID | Descriptor HID que declara los controles del gamepad (2 joysticks, 10–12 botones, triggers L/R, gyro) |
-| SDK Twinpad | Librería que un juego/app integra para publicar contenido de segunda pantalla y consumir inputs (plugin modelo B) |
+| SDK Twinpad | Librería headless que un juego/app integra para anunciar el Plugin, publicar audio/video y consultar por polling el último estado de input; no inicia procesos ni presenta UI (plugin modelo B) |
 | Config externa | Archivo (JSON/DSL) que describe segunda pantalla y controles sin modificar el código del juego (plugin modelo C) |
-| Plugin | Cualquiera de los dos modelos de integración: SDK Twinpad o config externa |
+| Plugin | Integración que publica medios y consume inputs; puede usar SDK Twinpad o Config externa |
 | Twinpad Core | Núcleo común: transporte, pairing, HID, streams; todo lo demás se apoya en él |
-| Servidor PC | Proceso residente en la PC que coordina streams, inputs, y la exposición del QR de vinculación |
+| Servidor PC | Proceso en la PC iniciado/reutilizado por la integración host; coordina Pairing y retransmite/adapta medios e inputs entre Android device y Plugin, sin capturar ni generar medios |
 
 ## 9. Related documents
 
@@ -130,3 +130,4 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft adapted from template with Twinpad decisions |
 | 0.2.0 | 2026-10-17 | Product owner + Twinpad team (CR-004) | Permite adaptador experimental puntual de Cemu; se mantiene excluido el soporte genérico de emuladores |
+| 0.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Plugin origen de medios; host gestiona Servidor/QR; selección Android y relay sin captura/generación del Server |

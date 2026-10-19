@@ -4,13 +4,21 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-009 |
+| CR | CR-012 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
 | — | — | — | — | — | — |
+
+> CR-009 y CR-010 fueron aprobados por el Product owner; CR-009 se aplicó en su iteración. CR-010 está implementado en código y contratos; permanece abierto únicamente el gate físico Cemu/Android de ±150 ms A/V y hasta 60 fps.
+
+## Approved / in execution
+
+| ID | Title | Targets | Decided | File |
+|---|---|---|---|---|
+| CR-011 | Landscape habitual inmersivo y ejes gyro relativos a pantalla | SPEC-002, SPEC-004, DES-002 | 2026-10-18 | [CR-011-android-landscape-immersive-gyro.md](CR-011-android-landscape-immersive-gyro.md) |
 
 ## Applied
 
@@ -24,6 +32,8 @@
 | CR-006 | Conexión Twinpad de Cemu configurable | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-006-configurable-cemu-connection.md](CR-006-configurable-cemu-connection.md) |
 | CR-007 | Iniciar servidor Twinpad y mostrar QR en Cemu | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-007-cemu-start-server-and-show-qr.md](CR-007-cemu-start-server-and-show-qr.md) |
 | CR-008 | Captura automática y oculta del DRC para Twinpad | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-008-automatic-hidden-drc-capture.md](CR-008-automatic-hidden-drc-capture.md) |
+| CR-009 | Registrar Cemu antes de mostrar el QR de pairing | SPEC-006, ARCH, DES-004 | 2026-10-18 | [CR-009-register-cemu-before-qr.md](CR-009-register-cemu-before-qr.md) |
+| CR-010 | Relay de plugins y selección de fuente desde Android | CTX, REQ-004/005/006, SPEC-002/003/004/005/006, ARCH, DES-004 | 2026-10-18 | [CR-010-plugin-relay-source-selection.md](CR-010-plugin-relay-source-selection.md) |
 
 ## Rejected / Withdrawn
 

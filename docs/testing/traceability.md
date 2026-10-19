@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-050 |
+| TEST | TEST-061 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -29,7 +29,7 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-012 | Approved | E5 QR inválido + permiso de cámara denegado (§8.1/§9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-013 | Approved | E2/E3 mensajes exactos desde `pair_error` (REQ-002 AC-3, §9) — implementado |
 | REQ-002 | SPEC-002 | DES-002 | TEST-014 | Approved | Edge cases de UI: cancelar, segundo plano, código desconocido, reintento (§10) — implementado |
-| REQ-004 | SPEC-003 | `-` | TEST-015 | Approved | Flujo principal del stream de video (SPEC-003 §7, REQ-004 AC-1) — implementado: codec en `core::stream` (10 tests, incluye `fmt=jpeg` de CR-001) + fuentes en `server::video` (escritorio con `twinpad-capture::DesktopGrabber` y patrón demo) + encode JPEG q80 medido: 40 KB/frame 720p (9.6 Mbps @30, 19.2 @60) y 76 KB 1080p (18.1 Mbps @30), muy bajo el presupuesto de WiFi LAN |
+| REQ-004 | SPEC-003 | DES-003 | TEST-015 | Approved | Codec y relay de video; JPEG q80 medido en fixtures de 720p/1080p. CR-010 elimina captura/demo como fuente de producción; ver TEST-051/054 |
 | REQ-004 | SPEC-003 | `-` | TEST-016 | Approved | Frame corrupto/tardío y edge cases de §10 — codec estricto E4 en `core::stream` + descarte en `StreamStateMachine` (app) |
 | REQ-005 | SPEC-003 | `-` | TEST-017 | Approved | Reanudación tras corte breve < 10 s sin re-pairing (§8.2, REQ-005 AC-2) — implementada en el server (sesión persistente); caso de red en banco físico |
 | REQ-003 | SPEC-004 | `-` | TEST-018 | Approved | Flujo táctil → juego y orden por `seq` (SPEC-004 §7, REQ-003 AC-2) — transporte inicial: sesión LAN de SPEC-001 (OQ §17); superficie táctil completa con sticks analógicos (−127…127, centro al soltar §10) y triggers analógicos (0…255) en `GamepadView` + máquina pura `GamepadSurfaceState` (6 tests JVM) |
@@ -40,7 +40,7 @@
 | REQ-005 | SPEC-005 | `-` | TEST-035 | Approved | Fuente PCM ausente: el servidor no crea emisor ni anuncia audio, por lo que Android permanece en silencio (§3/§5) |
 | REQ-006 | SPEC-006 | `-` | TEST-036 | Draft | Protocolo/SDK PCM: callback en hilo dedicado, segunda conexión localhost `game_audio_*`, validación y cola drop-old de ocho chunks; `sdk::tests::audio_queue_drops_oldest_and_drains_before_finish` y `core::game_audio` codec |
 | REQ-005 | SPEC-005 | `-` | TEST-037 | Draft | Forwarding del juego seleccionado a `audio_start/chunk` (`server` binario test `selected_game_audio_is_forwarded_to_the_session`) |
-| REQ-006 | SPEC-006 | `-` | TEST-038 | Draft | Adaptador Cemu CR-004: anuncio IPC, frames GamePad limitados a 5 fps y audio PCM DRC |
+| REQ-006 | SPEC-006 | `-` | TEST-038 | Draft | Adaptador Cemu CR-004 histórico; supersedido por CR-010: DRC configurable hasta 60 fps y relay seleccionado |
 | REQ-005 | SPEC-005 | `-` | TEST-039 | Draft | Rechazo de PCM sin juego/capability, fuente duplicada y forwarding PCM por TCP loopback (`server/tests/sdk_audio_integration.rs`) |
 | REQ-005 | SPEC-005 | `-` | TEST-040 | Draft | Writer de sesión: cada mensaje de video precede audio pendiente en el límite de mensaje (CR-003), `server` binario test `session_writer_sends_video_before_queued_audio` |
 | REQ-003 | SPEC-004 | `-` | TEST-043 | Draft | Campos touch DRC normalizados y orientación absoluta en `input_report` (CR-005), `core::input::tests::touch_and_absolute_orientation_roundtrip` |
@@ -48,8 +48,14 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-045 | Draft | Adaptador Cemu: ciclo por título, reconexión, parser y mapeo/manejo exclusivo al VPAD (CR-005) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-046 | Draft | Aceptación Cemu: preferencia opt-in persistente/false por defecto, auto-connect inmediato al activarlo, no desconexión al desactivarlo, inicio manual solo con título y menú exacto “Iniciar conexión”, “Configuraciones” (CR-006); build verificado, prueba UI/config en Cemu pendiente |
 | REQ-006 | SPEC-006 | DES-004 | TEST-047 | Draft | `server/src/main.rs::tests::cemu_qr_ipc_returns_current_uri_and_matrix_only_on_loopback`: listener exclusivo `127.0.0.1`, consulta `GET_QR` y respuesta con URI canónico/matriz del TokenStore vigente; Cemu inicia/reutiliza twinpad-server desde PATH, presenta la imagen antes de conectar y pregunta al cerrar solo por el proceso que lanzó (CR-007; Cemu build verificado, smoke de ventana requiere título de prueba) |
-| REQ-006 | SPEC-006 | DES-004 | TEST-048 | Draft | Aceptación CR-008: DRC capturado internamente aunque “Separate GamePad View” esté cerrada; sin selección/pregunta ni cambio visual, límite máximo 5 fps; build verificado y E2E con título real pendiente |
+| REQ-006 | SPEC-006 | DES-004 | TEST-048 | Draft | Aceptación CR-008 histórica: DRC publicado internamente sin ventana separada; el límite de 5 fps fue supersedido por CR-010 (hasta 60 fps); build verificado, E2E con título real pendiente |
 | REQ-006 | SPEC-006 | DES-004 | TEST-049 | Draft | El server identifica un adaptador Cemu vivo antes del primer frame para esperar el DRC sin elegir desktop/demo y habilitar desde el inicio la fuente de audio Cemu (`server::games::tests::live_cemu_is_detected_before_first_frame`) |
+| REQ-006 | SPEC-006 | DES-004 | TEST-050 | Draft | La respuesta loopback del QR informa `cemu_live`; Cemu se registra y espera confirmación antes de presentar QR y revoca la solicitud manual al cancelar (CR-009) |
+| REQ-004/005/006 | SPEC-003/005/006 | DES-004 | TEST-051 | Draft | `core::game::GameMsg` valida NDJSON estricto `game_select`/`game_selected`; `server::video::tests::selected_game_stream_relays_only_across_confirmed_source_boundaries` verifica silencio sin selección, límites stream_stop/stream_start y fn reiniciado al cambiar fuente. Audio seleccionado: TEST-037; E2E físico pendiente (CR-010) |
+| REQ-003/006 | SPEC-004/006 | DES-004 | TEST-052 | Draft | `server::tests::selected_plugin_receives_initial_and_latest_input_snapshot_via_sdk_polling`: entrega de snapshot inicial + cambio posterior por TCP localhost y coalescing observable con `TwinpadGame::poll_input()` (CR-010) |
+| REQ-004/005/006 | SPEC-002/003/005/006 | DES-004 | TEST-053 | Draft | Codec estricto, autoelección única y lista para varias fuentes (`GameListCodecTest`) (CR-010) |
+| REQ-004/005/006 | SPEC-002/006 | DES-004 | TEST-055 | Draft | La lista de liveness nueva elimina selección/pedido obsoleto y solicita elección explícita entre fuentes sin selección vigente; conserva una selección todavía viva (`GameListCodecTest.removed_selection_is_cleared_before_choosing_from_the_updated_list`) (CR-010) |
+| REQ-004/005/006 | SPEC-003/005/006 | DES-004 | TEST-054 | Draft | Cemu publica DRC/GamePad internamente al ritmo configurado hasta 60 fps y PCM DRC; Server no captura escritorio ni genera demo (CR-010) |
 | REQ-006 | SPEC-006 | `-` | TEST-026 | Approved | Frames `rgb8` del SDK se codifican como JPEG q80 por el servidor antes de emitirse con `fmt=jpeg`; caso JPEG preexistente permanece JPEG, wire contract SPEC-003 sin cambios |
 | REQ-004 | SPEC-003 | DES-003 | TEST-027 | Approved | Codec Rust/Kotlin para `video_patch`: `fn` wire, validación de base y geometría de tiles (CR-002) |
 | REQ-004 | SPEC-003 | DES-003 | TEST-028 | Approved | Diff RGB server y composición atómica Android; keyframe periódico/fallback CR-002; ruta Android compone sobre una sola copia del Bitmap y rechaza base inválida antes del trabajo de imagen; el server omite encode/base64 cuando los RGB no cambian (test de frame estático) |
@@ -60,9 +66,14 @@
 | REQ-004 | SPEC-003 | DES-003 | TEST-030 | Draft | FPS de render separado de FPS recibido; keyframes periódicos estáticos se contabilizan como presentación, no 0 FPS |
 | REQ-004 | SPEC-003 | DES-003 | TEST-034 | Draft | Diagnósticos del stream: gaps de `fn`, rechazos y promedios de duración por etapa |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
+| REQ-002 | SPEC-001/002 | DES-002 | TEST-056 | Passed (2026-10-19, Android físico; intermittent retry failure) | Corrida final `artifacts/test-results/device-e2e/20261019T054326Z-577198`: Pairing autenticado, U4 y selección Cemu en 268 ms. El intento `20261019T053912Z-570870` falló con `SessionEnded` antes de confirmar Linked+selección; causa no determinada |
+| REQ-004/006 | SPEC-003/006 | DES-004 | TEST-057 | Functional passed; performance pending | Corrida final: Cemu Framebuffer decodificado y drawable visible, 1920×1080; 7 frames progresivos/2 s (~3.77 fps recibido, ~3.73 presentado), 3748 kbps, 0 gaps/rechazos. Otra corrida observó ~0.98 fps a 854×480. Ambas quedan por debajo de 30/60 fps; latencia y reproducción PCM sincronizada no medidas |
+| REQ-003/006 | SPEC-004/006 | DES-004 | TEST-058 | Transport passed (2026-10-19; intermittent retry failure) | Corrida final: proxy observó 567 `input_report` en orden, 2 estados pressed y 1 transición pressed→released; guardó solo metadatos touch. Verifica transporte, no efecto dentro del juego. El reintento fallido no confirmó Pairing; evidencia en run `artifacts/test-results/device-e2e/20261019T054326Z-577198` |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | AC-2: el juego publica frames de Segunda pantalla vía SDK (`TwinpadGame::push_frame` → `game_frame`) y el server los retiene como fuente del Stream de SPEC-003 (se emiten como `video_frame`); liveness del contenido (invariante §14: el frame muere con el juego) — `core::game::GameMsg::GameFrame` + `server::games::GameRegistry::store_frame/preferred_source` + `server::video::run_game_stream` + 4 tests de integración loopback en `server/tests/sdk_frames_integration.rs` |
 | REQ-007 | SPEC-007 | `-` | TEST-022 | Draft | Carga/activación/rechazo de Config externa (REQ-007 AC-1..3) — modelo y normalización implementados en `android surface/ControlProfileCodec.decodeExternalConfig` (validación §4/§9); activación desde la app pendiente de DES |
 | REQ-008 | SPEC-008 | `-` | TEST-023 | Draft | Edición, carga automática y conflicto de superficie (REQ-008 AC-1..3) — modelo puro + validación + persistencia por juego (`surface/ControlProfile*`, 9 tests JVM) y superficie editable `ui/ProfileSurface` (drag/mover/perfiles XML-editables); UI migrada a Views XML (layouts/drawables editables en Android Studio, pedido del owner) |
+| REQ-002/003 | SPEC-002/004 | DES-002 | TEST-059 | Draft | CR-011: PairingActivity en landscape habitual fijo y fullscreen inmersivo, y remapeo de ejes de orientación al marco de pantalla; instrumentación Android `ScreenOrientationTest` |
+| REQ-003 | SPEC-004 | DES-002 | TEST-060 | Draft | Test JVM `GyroOrientationMapperTest.screen_relative_angles_preserve_the_wire_yaw_pitch_roll_order`: Android azimuth/pitch/roll ya remapeados al marco de pantalla se conservan en el orden wire yaw/pitch/roll; el giro de azimuth no se convierte en roll |
 
 ## NFR verification
 
@@ -111,6 +122,9 @@
 | CR-006 | Auto-connect Cemu opt-in persistente, conexión manual y menú de dos opciones | 2026-10-18 | Approved |
 | CR-007 | Cemu inicia/reutiliza Servidor PC desde PATH y presenta el QR vigente por interfaz exclusiva loopback | 2026-10-18 | Approved |
 | CR-008 | Captura automática y oculta del DRC, independiente de Separate GamePad View, con límite de 5 fps | 2026-10-18 | Approved |
+| CR-009 | Registrar Cemu y confirmar su presencia antes de mostrar QR; captura desktop solo en modo de pruebas | 2026-10-18 | Applied |
+| CR-010 | Plugin como fuente A/V; selección Android por sesión, Server relay/adaptación, polling input y host gestiona servidor/QR. Dos corridas E2E Android+Cemu pasaron; un intento intermedio terminó en `SessionEnded`. Tasa medida 0.98–3.77 fps (según resolución 854×480/1920×1080), bajo 30/60 fps; PCM/A-V ±150 ms no medidos | 2026-10-18 | Applied; functional E2E passed, intermittent retry failure observed, performance/audio gates pending |
+| CR-011 | Landscape habitual inmersivo y remapeo gyro al marco de pantalla; esquema wire sin cambios | 2026-10-18 | Applied |
 
 ## Invariants of this matrix
 

@@ -171,10 +171,15 @@ class ProfileSurface(
         return true
     }
 
-    private fun findContentRoot(): ViewGroup? {
+    private fun findVideoView(): ImageView? {
         var current: ViewParent? = parent
-        while (current != null && current !is ViewGroup) current = current.parent
-        return current as? ViewGroup
+        while (current != null) {
+            if (current is ViewGroup) {
+                current.findViewById<ImageView>(com.twinpad.android.app.R.id.video_view)?.let { return it }
+            }
+            current = current.parent
+        }
+        return null
     }
 
     /** Actualiza el toque DRC en coordenadas normalizadas de la imagen visible. */
@@ -183,7 +188,7 @@ class ProfileSurface(
         ny: Float,
         pressed: Boolean,
     ) {
-        val image = findContentRoot()?.findViewById<ImageView>(com.twinpad.android.app.R.id.video_view) ?: return
+        val image = findVideoView() ?: return
         val drawable = image.drawable ?: return
         val bitmapWidth = drawable.intrinsicWidth.toFloat().coerceAtLeast(1f)
         val bitmapHeight = drawable.intrinsicHeight.toFloat().coerceAtLeast(1f)

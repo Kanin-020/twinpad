@@ -4,13 +4,13 @@
 |---|---|
 | ID | REQ-004 |
 | Title | Segunda pantalla con framebuffer hacia Android |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Draft` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Transmisión de una segunda pantalla desde la PC al celular" |
 | Implemented by | `-` |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-10-18 |
 
 ## 1. Objective
 
@@ -18,33 +18,34 @@ La información secundaria del juego (mapas, inventario, estadísticas) debe pod
 
 ## 2. Description
 
-El PC Host debe poder transmitir a la app Twinpad una Segunda pantalla en forma de Framebuffers, y el celular debe mostrarla en su pantalla como vista dedicada de la sesión. El contenido proviene del Juego / Aplicación huesped a través de un Plugin (REQ-006/REQ-007); Twinpad transporta y muestra, no define el contenido.
+El Plugin del Juego / Aplicación huesped origina y publica la Segunda pantalla como Framebuffers. Twinpad los transporta y adapta al stream Android, pero no captura escritorio, genera contenido ni renderiza la fuente; el Android device muestra la imagen como vista dedicada de la sesión.
 
 ## 3. Actors
 
 | Actor | Role in this requirement |
 |---|---|
-| PC Host | Captura/transmite los framebuffers de la Segunda pantalla |
+| Plugin | Publica los framebuffers de la Segunda pantalla |
+| Servidor PC | Adapta y retransmite los framebuffers del Plugin |
+| PC Host | Ejecuta el Servidor PC y el Plugin |
 | Android device | Muestra la Segunda pantalla en la app Twinpad |
-| Juego / Aplicación huesped | Origina el contenido mostrado |
-| Plugin | Define qué se muestra (vía SDK o config externa) |
+| Juego / Aplicación huesped | Origina el contenido mostrado vía Plugin |
 
 ## 4. Preconditions
 
-- Sesión establecida (REQ-002).
-- Un juego compatible en ejecución (detectado vía su Plugin).
+- El host del Plugin ha iniciado o reutilizado el Servidor PC y presenta el QR de vinculación.
+- Sesión establecida (REQ-002) y un Plugin vivo con capacidad de publicar video.
 
 ## 5. Behavior expected (summary)
 
-- El celular muestra la Segunda pantalla del juego integrado en ejecución.
-- La imagen se actualiza de forma continua y fluida durante la sesión.
-- Si no hay juego compatible corriendo, no hay Segunda pantalla activa (la app lo indica).
+- El celular muestra la Segunda pantalla del Plugin que haya seleccionado para esa sesión.
+- La imagen se actualiza de forma continua y fluida durante la sesión; el Servidor PC no captura ni genera imágenes.
+- Si no hay Plugin seleccionado con video vivo, no hay Segunda pantalla activa (la app lo indica).
 
 ## 6. Acceptance criteria
 
-- [ ] AC-1: Dado un juego integrado en ejecución y sesión activa, cuando el juego actualiza su contenido de segunda pantalla, entonces el celular lo refleja sin intervención del usuario.
-- [ ] AC-2: Dado sesión activa y flujo de video en curso, cuando se mide la latencia de visualización, entonces cumple NFR-001.
-- [ ] AC-3: Dado sesión activa sin juego compatible corriendo, cuando el usuario abre la app, entonces ve el estado "sin segunda pantalla activa" en lugar de una pantalla congelada.
+- [ ] AC-1: Dado un Plugin seleccionado y una sesión activa, cuando el Plugin publica un Framebuffer, entonces el Android device presenta ese Framebuffer sin captura de escritorio ni contenido generado por el Servidor PC.
+- [ ] AC-2: Dado una sesión activa y un flujo de video publicado por el Plugin, cuando se mide la latencia de visualización, entonces cumple NFR-001.
+- [ ] AC-3: Dado una sesión activa sin Plugin seleccionado con video vivo, cuando la app muestra la vista de Segunda pantalla, entonces indica "sin segunda pantalla activa" y no presenta un Frame congelado ni contenido generado por el Servidor PC.
 
 ## 7. Non-functional concerns
 
@@ -68,7 +69,9 @@ El PC Host debe poder transmitir a la app Twinpad una Segunda pantalla en forma 
 
 ## 10. Related specifications
 
-- `-` until assigned
+- SPEC-002 — selección de Plugin desde Android.
+- SPEC-003 — transporte y presentación de video.
+- SPEC-006 — anuncio, liveness y selección de Plugin.
 
 ## 11. Notes and open questions
 
@@ -89,3 +92,4 @@ El PC Host debe poder transmitir a la app Twinpad una Segunda pantalla en forma 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
+| 0.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Plugin origina la fuente; Server adapta/retransmite y no captura escritorio ni genera demo |
