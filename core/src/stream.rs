@@ -27,6 +27,9 @@ pub enum FrameFormat {
     /// Modalidad del stream con keyframes JPEG y parches JPEG por tiles (CR-002).
     #[serde(rename = "jpeg_tiles")]
     JpegTiles,
+    /// Access units H.264/AVC Annex B (CR-014).
+    #[serde(rename = "h264")]
+    H264,
 }
 
 impl FrameFormat {
@@ -36,7 +39,7 @@ impl FrameFormat {
         match self {
             FrameFormat::Gray8 => Some(1),
             FrameFormat::Rgb8 => Some(3),
-            FrameFormat::Jpeg | FrameFormat::JpegTiles => None,
+            FrameFormat::Jpeg | FrameFormat::JpegTiles | FrameFormat::H264 => None,
         }
     }
 }
@@ -49,11 +52,13 @@ pub enum StreamMsg {
     /// §8.1 re-negociación con `fn` continuo).
     #[serde(rename = "stream_start")]
     StreamStart {
+        /// Puerto TCP del canal media (8425 en SPEC-003 v1.4.0).
+        media_port: u16,
         /// Ancho del Framebuffer en píxeles (16–3840).
         w: u16,
         /// Alto del Framebuffer en píxeles (16–2160).
         h: u16,
-        /// Formato del Framebuffer.
+        /// Formato del Stream; v1.4.0 exige H.264.
         fmt: FrameFormat,
         /// Frames por segundo objetivo (1–60).
         fps: u8,
@@ -161,8 +166,17 @@ impl StreamMsg {
     /// Valida rangos y coherencia del mensaje (§4/§9/§10).
     fn validate(&self) -> PairResult<()> {
         match self {
-            StreamMsg::StreamStart { w, h, fps, .. } => {
+            StreamMsg::StreamStart {
+                media_port,
+                fmt,
+                w,
+                h,
+                fps,
+            } => {
                 validate_dims(*w, *h)?;
+                if *fmt != FrameFormat::H264 || *media_port != crate::media_crypto::MEDIA_PORT {
+                    return Err(PairError::MalformedMessage);
+                }
                 if !(MIN_FPS..=MAX_FPS).contains(fps) {
                     return Err(PairError::MalformedMessage);
                 }
@@ -237,7 +251,7 @@ impl StreamMsg {
     }
 }
 
-fn validate_dims(w: u16, h: u16) -> PairResult<()> {
+pub(crate) fn validate_dims(w: u16, h: u16) -> PairResult<()> {
     if w < MIN_DIM || h < MIN_DIM || w > MAX_WIDTH || h > MAX_HEIGHT {
         return Err(PairError::MalformedMessage);
     }
@@ -253,7 +267,7 @@ fn validate_frame_size(w: u16, h: u16, fmt: FrameFormat, data: &str) -> PairResu
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(data)
         .map_err(|_| PairError::MalformedMessage)?;
-    if fmt == FrameFormat::JpegTiles {
+    if matches!(fmt, FrameFormat::JpegTiles | FrameFormat::H264) {
         return Err(PairError::MalformedMessage);
     }
     match fmt.bytes_per_pixel() {
@@ -304,9 +318,10 @@ mod tests {
     fn stream_messages_roundtrip() {
         let msgs = [
             StreamMsg::StreamStart {
+                media_port: crate::media_crypto::MEDIA_PORT,
                 w: 1280,
                 h: 720,
-                fmt: FrameFormat::Rgb8,
+                fmt: FrameFormat::H264,
                 fps: 30,
             },
             StreamMsg::VideoFrame {
@@ -335,15 +350,16 @@ mod tests {
     #[test]
     fn wire_type_names_match_spec() {
         let line = StreamMsg::StreamStart {
+            media_port: crate::media_crypto::MEDIA_PORT,
             w: 640,
             h: 480,
-            fmt: FrameFormat::Gray8,
+            fmt: FrameFormat::H264,
             fps: 15,
         }
         .encode()
         .unwrap();
         assert!(line.starts_with("{\"type\":\"stream_start\""));
-        assert!(line.contains("\"fmt\":\"gray8\""));
+        assert!(line.contains("\"fmt\":\"h264\""));
     }
 
     #[test]
@@ -375,6 +391,7 @@ mod tests {
     fn out_of_range_params_are_e4() {
         // Dimensiones por debajo del mínimo (16).
         let tiny = StreamMsg::StreamStart {
+            media_port: crate::media_crypto::MEDIA_PORT,
             w: 15,
             h: 480,
             fmt: FrameFormat::Rgb8,
@@ -383,6 +400,7 @@ mod tests {
         assert_eq!(tiny.validate(), Err(PairError::MalformedMessage));
         // fps fuera de 1..=60.
         let fast = StreamMsg::StreamStart {
+            media_port: crate::media_crypto::MEDIA_PORT,
             w: 640,
             h: 480,
             fmt: FrameFormat::Rgb8,

@@ -16,6 +16,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::media::{AccessUnit, MediaHub, MediaSource};
 use twinpad_core::game::{GameInfo, GameMsg};
 
 /// Timeout para recibir el anuncio tras conectar (§9: el SDK anuncia al
@@ -32,7 +33,9 @@ pub struct GameFrame {
     pub w: u16,
     pub h: u16,
     pub fmt: twinpad_core::stream::FrameFormat,
-    /// Framebuffer crudo (sin base64), `w×h×bpp` bytes.
+    pub ts_capture_us: Option<u64>,
+    pub idr: Option<bool>,
+    /// Framebuffer crudo o access unit (sin base64).
     pub data: Arc<[u8]>,
 }
 
@@ -128,6 +131,17 @@ impl GameRegistry {
             }
             None => false,
         }
+    }
+
+    pub fn store_access_unit(&self, game_id: &str, frame: GameFrame) -> bool {
+        if frame.fmt != twinpad_core::stream::FrameFormat::H264
+            || frame.data.is_empty()
+            || frame.ts_capture_us.is_none()
+            || frame.idr.is_none()
+        {
+            return false;
+        }
+        self.store_frame(game_id, frame)
     }
 
     /// Último frame del Plugin vivo indicado (AC-2), o `None` si no ha publicado.
@@ -231,7 +245,9 @@ impl GameRegistry {
         let Some(entry) = games.get_mut("cemu") else {
             return false;
         };
-        let line = format!("{{\"type\":\"video_config\",\"fps\":{}}}", fps.clamp(1, 60));
+        let fps = fps.clamp(1, 60);
+        set_cemu_capture_fps(fps);
+        let line = format!("{{\"type\":\"video_config\",\"fps\":{fps}}}");
         Self::write_input(entry, &line)
     }
 
@@ -275,6 +291,16 @@ fn lock_or_reset<'a>(
 /// registro cambia (§7 paso 3: el server publica a las sesiones activas).
 pub type Publisher = dyn Fn(&[GameInfo]) + Send + Sync;
 
+static CEMU_CAPTURE_FPS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(30);
+
+pub fn set_cemu_capture_fps(fps: u8) {
+    CEMU_CAPTURE_FPS.store(fps.clamp(1, 60), std::sync::atomic::Ordering::Release);
+}
+
+fn cemu_fps() -> u8 {
+    CEMU_CAPTURE_FPS.load(std::sync::atomic::Ordering::Acquire)
+}
+
 /// Bucle del listener IPC (ADR-008): un hilo por conexión de juego; al caer,
 /// retira el juego y publica la lista nueva. Bloquea el hilo caller.
 pub fn run_ipc_listener(
@@ -282,11 +308,23 @@ pub fn run_ipc_listener(
     registry: std::sync::Arc<GameRegistry>,
     publish: std::sync::Arc<Publisher>,
 ) {
+    run_ipc_listener_with_media(listener, registry, publish, None);
+}
+
+pub fn run_ipc_listener_with_media(
+    listener: TcpListener,
+    registry: std::sync::Arc<GameRegistry>,
+    publish: std::sync::Arc<Publisher>,
+    media_hub: Option<Arc<MediaHub>>,
+) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         let registry = std::sync::Arc::clone(&registry);
         let publish = std::sync::Arc::clone(&publish);
-        std::thread::spawn(move || handle_game_connection(stream, &registry, publish.as_ref()));
+        let media_hub = media_hub.clone();
+        std::thread::spawn(move || {
+            handle_game_connection(stream, &registry, publish.as_ref(), media_hub.as_deref())
+        });
     }
 }
 
@@ -339,7 +377,12 @@ fn handle_audio_connection(stream: TcpStream, registry: &GameRegistry) {
 }
 
 /// Ciclo de vida de una conexión de juego: anuncio → registro → espera → baja.
-fn handle_game_connection(stream: TcpStream, registry: &GameRegistry, publish: &Publisher) {
+fn handle_game_connection(
+    stream: TcpStream,
+    registry: &GameRegistry,
+    publish: &Publisher,
+    media_hub: Option<&MediaHub>,
+) {
     let Ok(reader_stream) = stream.try_clone() else {
         return;
     };
@@ -384,6 +427,9 @@ fn handle_game_connection(stream: TcpStream, registry: &GameRegistry, publish: &
                 );
                 publish(&registry.list());
             }
+            if let Some(hub) = media_hub {
+                hub.clear_game(&game.game_id);
+            }
             return;
         };
         if line.is_empty() {
@@ -395,19 +441,42 @@ fn handle_game_connection(stream: TcpStream, registry: &GameRegistry, publish: &
                 w,
                 h,
                 fmt,
+                ts_capture_us,
+                idr,
                 data,
             }) => match decode_frame_data(&data, w, h, fmt) {
-                Ok(pixels) => {
-                    registry.store_frame(
-                        &game.game_id,
-                        GameFrame {
-                            gfn,
-                            w,
-                            h,
-                            fmt,
-                            data: pixels.into(),
-                        },
-                    );
+                Ok(bytes) => {
+                    let frame = GameFrame {
+                        gfn,
+                        w,
+                        h,
+                        fmt,
+                        ts_capture_us,
+                        idr,
+                        data: bytes.into(),
+                    };
+                    if fmt == twinpad_core::stream::FrameFormat::H264 {
+                        if registry.store_access_unit(&game.game_id, frame.clone()) {
+                            if let (Some(hub), Some(timestamp_us), Some(is_idr)) =
+                                (media_hub, ts_capture_us, idr)
+                            {
+                                hub.publish(MediaSource {
+                                    game_id: game.game_id.clone(),
+                                    width: w,
+                                    height: h,
+                                    fps: cemu_fps(),
+                                    latest: AccessUnit {
+                                        fn_: gfn,
+                                        timestamp_us,
+                                        idr: is_idr,
+                                        annex_b: frame.data,
+                                    },
+                                });
+                            }
+                        }
+                    } else {
+                        registry.store_frame(&game.game_id, frame);
+                    }
                 }
                 Err(_) => println!("game_frame inválido de '{}' descartado.", game.game_id),
             },
@@ -489,6 +558,8 @@ mod tests {
                 w: 16,
                 h: 16,
                 fmt: twinpad_core::stream::FrameFormat::Rgb8,
+                ts_capture_us: None,
+                idr: None,
                 data: Arc::clone(&pixels),
             },
         ));

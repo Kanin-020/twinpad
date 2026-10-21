@@ -34,14 +34,17 @@ class StreamCodecTest {
         assertInvalid(valid.replace("\"base_fn\":1", "\"base_fn\":2"))
     }
 
-    // TEST-027 — verifies SPEC-003/CR-002: incomplete and unknown payloads fail closed.
+    // TEST-074 — verifies SPEC-003/CR-014: H.264 start contract and fail-closed parsing.
     @Test
-    fun stream_start_accepts_jpeg_tiles_but_not_unknown_format() {
+    fun stream_start_accepts_h264_media_contract_and_rejects_legacy_or_unknown_formats() {
         val startLine =
-            """{"type":"stream_start","w":1280,"h":720,"fmt":"jpeg_tiles","fps":30}"""
-        val start = StreamCodec.decode(startLine)
-        assertEquals("jpeg_tiles", (start as StreamMessage.Start).fmt)
-        assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"future","fps":30}""")
+            """{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":30,"media_port":8425}"""
+        val start = StreamCodec.decode(startLine) as StreamMessage.Start
+        assertEquals("h264", start.fmt)
+        assertEquals(8425, start.mediaPort)
+        assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"jpeg_tiles","fps":30,"media_port":8425}""")
+        assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"future","fps":30,"media_port":8425}""")
+        assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":30}""")
         assertInvalid("""{"type":"video_patch","fn":3,"base_fn":2,"w":64,"h":64,"tile_size":64,"patches":[]}""")
     }
 

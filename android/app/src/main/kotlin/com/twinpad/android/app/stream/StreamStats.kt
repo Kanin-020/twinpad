@@ -24,10 +24,13 @@ class StreamStats(
     private val presentedAt = java.util.ArrayDeque<Long>()
     private var bytesWindow = 0L
     private var audioBytesWindow = 0L
+    private var audioKbps = 0.0
+    private var audioChunksSeen = 0L
     private var bitrateWindowStartMs: Long? = null
     private var frameNumberGaps = 0L
     private var rejectedFrames = 0L
     private var lastReceivedFrameNumber: Long? = null
+    private var lastPresentedFrameNumber: Long? = null
 
     /** Decode/composition etapa acumulada desde la última observación. */
     private val stageNanos = LongArray(VideoStage.entries.size)
@@ -36,6 +39,7 @@ class StreamStats(
     enum class VideoStage {
         LINE_TO_DECODE,
         CODEC,
+        MEDIA_CODEC,
         JPEG_DECODE,
         TILE_COMPOSE,
         UI_PUBLISH_TO_DRAW,
@@ -47,6 +51,9 @@ class StreamStats(
         val kbps: Double,
         val frameNumberGaps: Long,
         val rejectedFrames: Long,
+        val lastPresentedFrameNumber: Long?,
+        val audioKbps: Double,
+        val audioChunksSeen: Long,
         val stageAverageMs: Map<VideoStage, Double>,
     )
 
@@ -62,7 +69,17 @@ class StreamStats(
     var kbps: Double = 0.0
         private set
 
+    fun onMediaAccessUnitReceived(
+        frameNumber: Long,
+        wireBytes: Int,
+    ) = recordAccessUnit(frameNumber, wireBytes)
+
     fun onImageReceived(
+        frameNumber: Long,
+        wireBytes: Int,
+    ) = recordAccessUnit(frameNumber, wireBytes)
+
+    private fun recordAccessUnit(
         frameNumber: Long,
         wireBytes: Int,
     ) {
@@ -109,6 +126,9 @@ class StreamStats(
                 kbps = kbps,
                 frameNumberGaps = frameNumberGaps,
                 rejectedFrames = rejectedFrames,
+                lastPresentedFrameNumber = lastPresentedFrameNumber,
+                audioKbps = audioKbps,
+                audioChunksSeen = audioChunksSeen,
                 stageAverageMs =
                     VideoStage.entries.associateWith { stage ->
                         val samples = stageSamples[stage.ordinal]
@@ -120,6 +140,18 @@ class StreamStats(
                         }
                     },
             )
+        }
+
+    fun onFramePresented(frameNumber: Long): Boolean =
+        synchronized(lock) {
+            if (lastPresentedFrameNumber?.let { frameNumber <= it } == true) return@synchronized false
+            lastPresentedFrameNumber = frameNumber
+            val now = clockMs()
+            presentedAt.addLast(now)
+            tickLocked(now)
+            traceCounter("video.receive_fps_milli", (receiveFps * MILLI_FPS_SCALE).toLong())
+            traceCounter("video.presented_fps_milli", (fps * MILLI_FPS_SCALE).toLong())
+            true
         }
 
     fun onFramePresented(): Long {
@@ -152,28 +184,51 @@ class StreamStats(
         }
     }
 
+    fun onAudioChunkReceived(wireBytes: Int) {
+        synchronized(lock) {
+            val now = clockMs()
+            audioBytesWindow += wireBytes
+            audioChunksSeen++
+            tickLocked(now)
+        }
+    }
+
     fun refresh() {
         synchronized(lock) {
             tickLocked(clockMs())
         }
     }
 
+    /** Resets per-video sequence tracking when a stream starts with a new frame-number epoch. */
+    fun resetVideoStream() {
+        synchronized(lock) {
+            resetVideoStreamLocked()
+        }
+    }
+
     fun reset() {
         synchronized(lock) {
-            receivedAt.clear()
-            presentedAt.clear()
+            resetVideoStreamLocked()
             bytesWindow = 0
             audioBytesWindow = 0
+            audioKbps = 0.0
+            audioChunksSeen = 0
             bitrateWindowStartMs = null
-            fps = 0.0
-            receiveFps = 0.0
             kbps = 0.0
-            frameNumberGaps = 0
-            rejectedFrames = 0
-            lastReceivedFrameNumber = null
-            stageNanos.fill(0)
-            stageSamples.fill(0)
         }
+    }
+
+    private fun resetVideoStreamLocked() {
+        receivedAt.clear()
+        presentedAt.clear()
+        fps = 0.0
+        receiveFps = 0.0
+        frameNumberGaps = 0
+        rejectedFrames = 0
+        lastReceivedFrameNumber = null
+        lastPresentedFrameNumber = null
+        stageNanos.fill(0)
+        stageSamples.fill(0)
     }
 
     private fun tickLocked(now: Long) {
@@ -189,6 +244,7 @@ class StreamStats(
         if (elapsed >= STAT_WINDOW_MS) {
             val seconds = elapsed / STAT_WINDOW_MS.toDouble()
             kbps = ((bytesWindow + audioBytesWindow) * BITS_PER_BYTE) / seconds / KILO
+            audioKbps = (audioBytesWindow * BITS_PER_BYTE) / seconds / KILO
             bytesWindow = 0
             audioBytesWindow = 0
             bitrateWindowStartMs = now

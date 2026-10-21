@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.8.0 |
+| Version | 1.11.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
-| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010, Draft; adaptador Cemu) |
-| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055 |
-| Last updated | 2026-10-18 |
+| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015, Draft; adaptador Cemu) |
+| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064 |
+| Last updated | 2026-10-20 |
 
 ## 1. Purpose
 
@@ -39,7 +39,7 @@ Define el registro de Plugins vivos, su selección por sesión Android y el rela
 | `games_available` | mensaje Servidor→Android de sesión | lista completa ordenada de Plugins vivos | al conectar sesión y al cambiar liveness |
 | Input Plugin→SDK | mensaje NDJSON por IPC primary | `InputMsg::InputReport` de SPEC-004 §4 | cuando existe snapshot retenido para el Plugin seleccionado |
 
-Los mensajes de selección de §12 viajan en la conexión autenticada de sesión Android y el SDK consulta el último `input_report` recibido por su conexión primaria. Canal Plugin→Servidor: TCP localhost NDJSON. `game_announce`, `game_frame` e inputs encaminados por el Servidor usan la conexión primaria SDK al listener `127.0.0.1:8421` (ADR-008). La fuente PCM abre una segunda conexión a `127.0.0.1:8422`, independiente de los frames, que envía `game_audio_start`, `game_audio_chunk` y `game_audio_stop`, con `game_id` y PCM decodificado máximo 16 KiB por chunk. Solo se acepta audio de un `game_id` vivo anunciado y con capability `audio`; una segunda conexión de audio del mismo juego o juego desconocido se cierra. El SDK consume la fuente callback en hilo dedicado y usa una cola acotada de 8 chunks: al llenarse descarta el chunk más antiguo, sin bloquear `push_frame`.
+Los mensajes de selección de §12 viajan en la conexión autenticada de sesión Android y el SDK consulta el último `input_report` recibido por su conexión primaria. Canal Plugin→Servidor: TCP localhost NDJSON. `game_announce`, `game_frame` e inputs encaminados por el Servidor usan la conexión primaria SDK al listener `127.0.0.1:8421` (ADR-008). Un `game_frame` H.264 añade obligatoriamente `ts_capture_us:u64` (monotónico desde el inicio del encoder) e `idr:boolean` (true si la AU contiene un IDR), según CR-015; otros formatos no incluyen estos campos. `gfn` sigue siendo el contador del Plugin, independiente del contador de presentación del stream SPEC-003. La fuente PCM abre una segunda conexión a `127.0.0.1:8422`, independiente de los frames, que envía `game_audio_start`, `game_audio_chunk` y `game_audio_stop`, con `game_id` y PCM decodificado máximo 16 KiB por chunk. Solo se acepta audio de un `game_id` vivo anunciado y con capability `audio`; una segunda conexión de audio del mismo juego o juego desconocido se cierra. El SDK consume la fuente callback en hilo dedicado y usa una cola acotada de 8 chunks: al llenarse descarta el chunk más antiguo, sin bloquear `push_frame`.
 
 El Servidor acepta `input_report` solo por una sesión autenticada; conserva su último snapshot válido por sesión incluso antes de elegir Plugin. Al aceptar una selección, entrega ese snapshot inicial a la conexión primary del Plugin seleccionado y enruta allí cada actualización posterior aceptada. `poll_input()` del SDK devuelve una copia del snapshot más reciente disponible, o `None` si aún no se recibió input; no bloquea ni devuelve una cola histórica de eventos. Estados intermedios pueden coalescerse.
 
@@ -70,10 +70,10 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 1. La integración host de cada Plugin SDK solicita iniciar o reutilizar el Servidor PC y presenta el QR vigente. El SDK Rust es headless y no administra procesos ni UI. Cemu es la primera integración host y ejecuta este paso mediante su adaptador.
 2. Tras el Pairing, el SDK envía `game_announce` con `game_id`, `game_name` y `capabilities`. El Servidor registra liveness y publica `games_available` al conectar una sesión y ante cambios.
 3. Android autoelige el Plugin único o presenta una lista si hay varios; envía `game_select`. El Servidor valida liveness y confirma el id con `game_selected`. Si el id ya no está vivo, envía `games_available` vigente y conserva la fuente previamente confirmada si aún vive.
-4. El Plugin seleccionado publica `game_frame` y PCM. El Servidor adapta/retransmite únicamente esos medios. Sin fuente seleccionada no transmite video ni audio, no captura escritorio ni genera demo/PCM sintético.
+4. El Plugin seleccionado publica `game_frame` y PCM. Para `fmt:"h264"`, `game_frame` incluye además `ts_capture_us` e `idr`; el Servidor retransmite la AU y esta metadata conforme a SPEC-003 sin sustituir el reloj del encoder. El Servidor adapta/retransmite únicamente esos medios. Sin fuente seleccionada no transmite video ni audio, no captura escritorio ni genera demo/PCM sintético.
 5. Android envía `input_report`. El Servidor conserva el último snapshot válido por sesión incluso antes de una selección, envía el snapshot inicial al Plugin al seleccionarlo y reenvía cada actualización posterior aceptada. `poll_input()` devuelve ese snapshot o `None`; los estados intermedios pueden coalescerse y el polling no bloquea la publicación A/V.
 6. Al cambiar de Plugin, el Servidor detiene los streams previos antes de iniciar los nuevos. Si la fuente seleccionada desaparece, detiene sus streams y Android procesa la nueva lista.
-7. Cemu publica el framebuffer DRC/GamePad internamente hasta 60 fps según la configuración vigente y PCM DRC, sin ventana separada ni selector, y consume los snapshots de input enviados por el Servidor.
+7. Cemu publica el framebuffer DRC/GamePad internamente hasta 60 fps según la configuración vigente y PCM DRC, sin ventana separada ni selector, y consume los snapshots de input enviados por el Servidor. Si Twinpad se conecta y Jugador 1 no tiene VPAD emulado, Cemu crea uno temporal en memoria; si ya hay VPAD, lo reutiliza. El temporal no se persiste y se retira al desconectar sin alterar un perfil/asignación configurados. Conforme a CR-012, la salida TV del juego continúa local en Cemu/PC; la única fuente PCM de Cemu que se publica al Plugin SDK y se retransmite a Android es GamePad/DRC. La ausencia o fallo del stream Android no silencia TV y las rutas no se mezclan. El wire de SPEC-005 no cambia.
 
 El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su política de auto/manual start se mantiene salvo donde contradiga este flujo.
 
@@ -123,13 +123,15 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 - **R8 (CR-010):** el snapshot válido más reciente de input se retiene por sesión, se entrega al Plugin seleccionado y se consulta con polling no bloqueante en el SDK; los estados intermedios pueden coalescerse.
 - **R9 (CR-010):** una selección obsoleta no interrumpe la fuente actual si aún sigue viva; el Servidor devuelve la lista vigente.
 - **R10 (CR-010):** el host de cada Plugin SDK inicia/reutiliza el Servidor PC y presenta el QR; la librería SDK permanece headless.
+- **R11 (CR-012):** en el adaptador Cemu, TV solo usa la salida local PC y PCM Android procede solo de DRC/GamePad. Las salidas y volúmenes son independientes; no se mezclan ni se altera TV cuando el transporte Android se detiene. No se añade un segundo stream de sesión.
+- **R12 (CR-013):** al conectar Cemu/Twinpad, crear un VPAD temporal en memoria para Jugador 1 solo si no existe uno; reutilizar sin modificar el VPAD existente; nunca persistir el temporal; retirarlo al desconectar y preservar cualquier controlador configurado que haya reemplazado ese temporal.
 
 ## 12. Contracts
 
 | Contract | Canonical source | Notes |
 |---|---|---|
 | Campos del anuncio y selección (`game_select`/`game_selected`/`games_available`) | este documento §4/§12 | NDJSON estricto; selección obsoleta conserva fuente viva y retorna lista |
-| Canal IPC SDK ↔ Servidor | este documento §4/§12; ADR-008 | local al PC; medios Plugin→Servidor y snapshot input Servidor→Plugin |
+| Canal IPC SDK ↔ Servidor | este documento §4/§12; ADR-008; CR-015 para metadata H.264 | local al PC; medios Plugin→Servidor y snapshot input Servidor→Plugin |
 | Consulta de QR Cemu ↔ Servidor | DES-004 (CR-007/CR-009) | TCP 127.0.0.1:8423; petición `GET_QR\n`, respuesta NDJSON `{uri, modules, cemu_live}` |
 | Streams que el juego alimenta | SPEC-003 (video), SPEC-005 (audio) | referenciados |
 
@@ -201,7 +203,10 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Preferencia Cemu persistente, estado inicial false, activación/desactivación en vivo y opciones del menú | TEST-046 |
 | QR vigente consultado por loopback y errores locales observables | TEST-047 |
 | Relay Cemu del DRC hasta 60 fps configurados, sin selección de pantalla ni captura/demo Server | TEST-054 |
+| Cemu TV→PC y DRC/GamePad→Android independientes, sin mezcla y con volúmenes/rutas separados (CR-012) | TEST-062 (gate de banco físico) |
 | Anuncio Cemu confirmado antes de mostrar QR; cancelación manual limpia | TEST-050 |
+| IPC H.264 conserva timestamp monotónico del encoder e indicador IDR (CR-015) | TEST-073 |
+| VPAD temporal de Jugador 1 solo cuando falta, sin sobreescribir ni persistir perfil local (CR-013) | TEST-064 |
 
 ## 17. Open questions
 
@@ -222,3 +227,6 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.6.0 | 2026-10-18 | Product owner + Twinpad team (CR-008) | Cemu publica la imagen DRC automáticamente sin abrir Separate GamePad View ni pedir seleccionar pantalla; el límite inicial de 5 fps fue supersedido por CR-010 |
 | 1.7.0 | 2026-10-18 | Product owner + Twinpad team (CR-009) | Cemu se registra antes del QR para que el primer Pairing seleccione DRC; captura desktop se limita a pruebas explícitas |
 | 1.8.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | El host inicia/reutiliza servidor y presenta QR; selección de Plugin Android, relay exclusivo, polling de input y DRC hasta 60 fps |
+| 1.9.0 | 2026-10-19 | Product owner + Twinpad team (CR-012) | Audio TV permanece local; PCM DRC/GamePad Cemu es la única fuente de Android; no cambia el contrato wire |
+| 1.10.0 | 2026-10-19 | Product owner + Twinpad team (CR-013) | Cemu crea temporalmente el VPAD de Jugador 1 si falta; conserva configuraciones existentes y no persiste el temporal |
+| 1.11.0 | 2026-10-20 | Product owner (CR-015) | Define `ts_capture_us` e `idr` obligatorios en `game_frame(fmt=h264)` para preservar metadata del encoder en el relay |

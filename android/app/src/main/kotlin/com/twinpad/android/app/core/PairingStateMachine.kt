@@ -95,6 +95,8 @@ class PairingStateMachine {
     /** Error previo recordado para "reintentar" desde U1 (SPEC-002 §6). */
     private var priorError: PairingError? = null
 
+    fun sessionKeyOrNull(): ByteArray? = client?.sessionKeyOrNull()
+
     /** Avanza la máquina y devuelve los comandos a ejecutar en orden. */
     fun onEvent(event: PairingEvent): List<Effect> {
         val current = state
@@ -204,6 +206,7 @@ class PairingStateMachine {
                 if (event.line == null) {
                     // SESIÓN: corte de conexión estando vinculado (SPEC-002 §9).
                     state = PairingUiState.Failure(PairingError.SessionEnded)
+                    client = null
                     listOf(Effect.ShowError(PairingError.SessionEnded))
                 } else {
                     // Tráfico de sesión posterior: fuera del alcance de SPEC-002.

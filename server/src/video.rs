@@ -5,10 +5,8 @@
 //! (start → frames consecutivos → stop) sobre la conexión persistente.
 //! La captura real del juego entra con el Plugin.
 
-use std::sync::Arc;
 use std::time::Instant;
 
-use crate::tile_video::TileImageSender;
 use twinpad_core::stream::{FrameFormat, StreamMsg};
 
 /// Un canal de emisión por sesión activa. `send` serializa y entrega la
@@ -96,62 +94,12 @@ impl OutputFormat {
 /// `Disconnected` si el receptor deja de estar disponible a mitad del stream.
 pub fn run_frame_stream(
     sink: &mut dyn FrameSink,
-    frames: u64,
-    fps: u8,
-    output: OutputFormat,
-    source: FrameSource,
+    _frames: u64,
+    _fps: u8,
+    _output: OutputFormat,
+    _source: FrameSource,
 ) -> Result<(), VideoSourceError> {
-    let Some((w, h, _)) = source(0) else {
-        // Sin primer frame no hay stream que anunciar: fin limpio.
-        return send(
-            sink,
-            &StreamMsg::StreamStop {
-                reason: twinpad_core::stream::StreamStopReason::PluginStopped,
-            },
-        );
-    };
-    let (mut w, mut h) = (w, h);
-    let fmt = FrameFormat::JpegTiles;
-    send(sink, &StreamMsg::StreamStart { w, h, fmt, fps })?;
-    let stream_started = Instant::now();
-    let mut image_sender = TileImageSender::default();
-
-    let frame_period = std::time::Duration::from_millis(1_000 / u64::from(fps));
-    let mut next_deadline = Instant::now();
-    for fn_ in 0..frames {
-        let Some((fw, fh, data)) = source(fn_) else {
-            break; // la fuente se detuvo: §7 paso 5
-        };
-        // §8.1: si la resolución cambió a mitad de sesión, se anuncia un
-        // `stream_start` nuevo con los parámetros vigentes; `fn` continúa.
-        if fw != w || fh != h {
-            w = fw;
-            h = fh;
-            send(sink, &StreamMsg::StreamStart { w, h, fmt, fps })?;
-        }
-        // Las fuentes de este método entregan RGB8; el modo de salida selecciona
-        // calidad JPEG, pero el wire de CR-002 siempre es `jpeg_tiles`.
-        let quality = match output {
-            OutputFormat::Rgb8 => DEFAULT_JPEG_QUALITY,
-            OutputFormat::Jpeg(value) => value,
-        };
-        image_sender.emit_rgb(
-            sink,
-            crate::tile_video::RgbFrame {
-                width: fw,
-                height: fh,
-                pixels: data.into(),
-            },
-            quality,
-            stream_started.elapsed().as_millis() as u64,
-        )?;
-        next_deadline += frame_period;
-        let now = Instant::now();
-        if next_deadline > now {
-            std::thread::sleep(next_deadline - now);
-        }
-    }
-
+    // CR-014: RGB/JPEG sources are not a valid fallback for the H.264 stream.
     send(
         sink,
         &StreamMsg::StreamStop {
@@ -176,9 +124,6 @@ pub const CAPTURE_HEIGHT: u16 = 360;
 /// Calidad JPEG por defecto (CR-001): 0–100; 80 ofrece ~20-40× de reducción
 /// con pérdida visual imperceptible para contenido de juego.
 pub const DEFAULT_JPEG_QUALITY: u8 = 80;
-
-/// fps de respaldo si el lock envenenó (no debe ocurrir).
-const DEFAULT_FPS_FALLBACK: u8 = 30;
 
 /// Objetivos de calidad del stream que el owner puede ajustar por variable
 /// de entorno (720p/1080p, 30/60 fps; CR-001). Los valores caen a lo que la
@@ -286,233 +231,17 @@ pub fn run_desktop_stream(
 /// `Disconnected` si el receptor deja de estar disponible.
 pub fn run_desktop_stream_dynamic(
     sink: &mut dyn FrameSink,
-    frames: u64,
-    cfg: std::sync::Arc<std::sync::Mutex<VideoConfig>>,
-    mut grabber: twinpad_capture::DesktopGrabber,
+    _frames: u64,
+    _cfg: std::sync::Arc<std::sync::Mutex<VideoConfig>>,
+    _grabber: twinpad_capture::DesktopGrabber,
 ) -> Result<(), VideoSourceError> {
-    let share: ArcFrameShare = Arc::default();
-    let stop = Arc::new(AtomicBool::new(false));
-    let capture_thread = {
-        let cfg = Arc::clone(&cfg);
-        let share = Arc::clone(&share);
-        let stop = Arc::clone(&stop);
-        std::thread::spawn(move || {
-            capture_loop(&cfg, &mut grabber, &share, &stop);
-        })
-    };
-    let result = run_dynamic_emitter(sink, frames, &cfg, &share);
-    stop.store(true, Ordering::Relaxed);
-    let _ = capture_thread.join();
-    result
-}
-
-/// Frame JPEG listo compartido entre el hilo de captura/encode y el emisor:
-/// `(w, h, jpeg)`. Codificar en el HILO DE CAPTURA (por qué: el encode de
-/// 720p son ~2-8 ms y, junto al write TCP en el mismo hilo, competía contra
-/// el pacing; separado, la captura+encode va a su propio ritmo y el emisor
-/// solo pacea y escribe — el cuello ya no compromete el ciclo).
-type ArcFrameShare = std::sync::Arc<std::sync::Mutex<Option<SharedFrame>>>;
-
-/// Slot compartido entre captura y emisor: el JPEG más reciente + el número
-/// de publicación. POR QUÉ la `pub_seq`: con ambos hilos pacseando a la
-/// misma tasa, el emisor puede despertar ANTES de que la captura publique
-/// el siguiente JPEG y (sin seq) reenviaría el frame anterior — duplicado
-/// que el ojo percibe como judder (dos veces el mismo instante, una vez
-/// nuevo). Con la seq, el emisor solo emite cuado hay frame NUEVO.
-#[derive(Clone)]
-struct SharedFrame {
-    pub_seq: u64,
-    w: u16,
-    h: u16,
-    rgb: Arc<[u8]>,
-    jpeg: Arc<[u8]>,
-}
-
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Bucle de captura dedicado: toma el escritorio, escala a `cfg.width×height`
-/// y codifica JPEG con `cfg.jpeg_quality`; publica el más reciente
-/// (sobreescritura sin esperar al emisor). Cada iteración relee la config:
-/// los cambios en caliente afectan al frame siguiente. Corre hasta `stop`.
-fn capture_loop(
-    cfg: &std::sync::Arc<std::sync::Mutex<VideoConfig>>,
-    grabber: &mut twinpad_capture::DesktopGrabber,
-    share: &ArcFrameShare,
-    stop: &AtomicBool,
-) {
-    // POR QUÉ el pacing aquí (además del del emisor): en modo PipeWire el
-    // grabber entrega a la tasa del panel (60–144 fps); capturar+escalar+
-    // codificar JPEG a esa tasa quema CPU para frames que el emisor a
-    // cfg.fps jamás envía. Cadencia objetivo = cfg.fps; el emisor solo lee
-    // el último JPEG listo (ibid.: dos cadencias desacopladas).
-    let mut next_deadline = std::time::Instant::now();
-    while !stop.load(Ordering::Relaxed) {
-        let (dw, dh, quality, fps) = match cfg.lock() {
-            Ok(c) => (c.width, c.height, c.jpeg_quality, c.fps),
-            Err(_) => break, // lock envenenado: el emisor terminó
-        };
-        if let Ok((sw, sh, layout, rgba)) = grabber.frame() {
-            let rgb: Arc<[u8]> = twinpad_capture::rgb8_scaled(&rgba, sw, sh, dw, dh, layout).into();
-            if let Some(jpeg) = encode_jpeg(&rgb, dw, dh, quality) {
-                if let Ok(mut slot) = share.lock() {
-                    let seq = slot.as_ref().map_or(0, |f| f.pub_seq + 1);
-                    *slot = Some(SharedFrame {
-                        pub_seq: seq,
-                        w: dw,
-                        h: dh,
-                        rgb,
-                        jpeg: jpeg.into(),
-                    });
-                }
-            }
-        }
-        next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps).max(1));
-        let now = std::time::Instant::now();
-        if next_deadline > now {
-            std::thread::sleep(next_deadline - now);
-        } else {
-            next_deadline = now; // atrasados: no acumular deuda
-        }
-    }
-}
-
-/// Espera hasta 2 s el primer JPEG listo (evita anunciar un stream que
-/// nunca tendrá contenido, SPEC-003 §7: sin primer frame → `stream_stop`).
-fn wait_first_frame(share: &ArcFrameShare) -> bool {
-    let deadline = Instant::now() + std::time::Duration::from_secs(2);
-    loop {
-        let ok = share.lock().map(|s| s.is_some()).unwrap_or(false);
-        if ok {
-            return true;
-        }
-        if Instant::now() >= deadline {
-            return false;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-}
-
-/// Emisor del stream de escritorio con config dinámica: consulta `cfg` (fps)
-/// y `share` (JPEG más reciente) en cada frame; un cambio de resolución/fps
-/// genera un `stream_start` nuevo (§8.1) y ajusta el pacing.
-fn run_dynamic_emitter(
-    sink: &mut dyn FrameSink,
-    frames: u64,
-    cfg: &std::sync::Arc<std::sync::Mutex<VideoConfig>>,
-    share: &ArcFrameShare,
-) -> Result<(), VideoSourceError> {
-    if !wait_first_frame(share) {
-        // Sin primer frame no hay stream que anunciar: fin limpio.
-        return send(
-            sink,
-            &StreamMsg::StreamStop {
-                reason: twinpad_core::stream::StreamStopReason::PluginStopped,
-            },
-        );
-    }
-    let mut announced: Option<(u16, u16)> = None;
-    let mut announced_fps = 0u8;
-    let mut image_sender = TileImageSender::default();
-    let mut next_deadline = Instant::now();
-    // `ts` del envío real (§7 paso 2): referencia fija al arranque.
-    let stream_started = Instant::now();
-    // Drop adaptativo anti-lag @60fps: si una escritura tarda más del
-    // período de 1 frame (el SNDBUF acotado quedo lleno: el enlace drena
-    // a menos del bitrate), el siguiente frame NO se encola — se salta
-    // hasta que el socket despierta (avance al más reciente, R3). Sin esto,
-    // el emisor a 60 fps encola encolado y el receptor ve con NVSE retraso.
-    let mut skip_until_new_frame = false;
-    let mut last_sent_seq: Option<u64> = None;
-    for _ in 0..frames {
-        let Some(frame) = latest_frame(share) else {
-            break; // la captura desapareció: §7 paso 5
-        };
-        let pub_seq = frame.pub_seq;
-        let (w, h) = (frame.w, frame.h);
-        // Anti-judder: si la captura NO publicó un frame nuevo desde el
-        // último envío, reenviar sería duplicar un instante ya mostrado
-        // (dos veces el mismo contenido = fluidez visual < fps del wire).
-        // Mejor esperar: el pacing continúa y el próximo tick ya con contenido.
-        if last_sent_seq == Some(pub_seq) && !skip_until_new_frame {
-            let fps_now = cfg
-                .lock()
-                .map(|c| c.fps)
-                .unwrap_or(DEFAULT_FPS_FALLBACK)
-                .max(1);
-            next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps_now));
-            let now = Instant::now();
-            if next_deadline > now {
-                std::thread::sleep(next_deadline - now);
-            } else {
-                next_deadline = now;
-            }
-            continue;
-        }
-        last_sent_seq = Some(pub_seq);
-        // Drop adaptativo anti-lag (2026-10-10): si la escritura del frame
-        // ANTERIOR consumió más del período (el SNDBUF acotado quedó lleno:
-        // el enlace drena a menos del bitrate), este frame NO se encola —
-        // se salta y el emisor avanza al más reciente (R3). Sin esto, a
-        // 60 fps el socket encola video viejo y el receptor lo ve con
-        // segundos de retraso (el lag "constante" con saltos).
-        if skip_until_new_frame {
-            skip_until_new_frame = false;
-            next_deadline = Instant::now();
-            continue;
-        }
-        let (fps, period_ms) = match cfg.lock() {
-            Ok(c) => (c.fps, 1_000 / u64::from(c.fps).max(1)),
-            Err(_) => (
-                DEFAULT_FPS_FALLBACK,
-                1_000 / u64::from(DEFAULT_FPS_FALLBACK),
-            ),
-        };
-        let fmt = FrameFormat::JpegTiles;
-        // §8.1: resolución o fps nuevos → `stream_start` nuevo; `fn` continúa.
-        if announced != Some((w, h)) || announced_fps != fps {
-            announced = Some((w, h));
-            announced_fps = fps;
-            image_sender.reset_image();
-            send(sink, &StreamMsg::StreamStart { w, h, fmt, fps })?;
-        }
-        let t_write = Instant::now();
-        image_sender.emit(
-            sink,
-            crate::tile_video::RgbFrame {
-                width: w,
-                height: h,
-                pixels: Arc::clone(&frame.rgb),
-            },
-            &frame.jpeg,
-            stream_started.elapsed().as_millis() as u64,
-        )?;
-        // El write devolvió: cuanto más del período haya consumido,
-        // más lento drena el enlace. Si consumió más de 1 período, el
-        // siguiente frame se descarta (drop hasta que el socket despierte).
-        if t_write.elapsed() > std::time::Duration::from_millis(period_ms) {
-            skip_until_new_frame = true;
-        }
-        next_deadline += std::time::Duration::from_millis(period_ms);
-        let now = Instant::now();
-        if next_deadline > now {
-            std::thread::sleep(next_deadline - now);
-        } else {
-            // Atrasados (el write TCP manda): no acumular deuda.
-            next_deadline = now;
-        }
-    }
+    // CR-014: desktop capture is not a conforming H.264 source or fallback.
     send(
         sink,
         &StreamMsg::StreamStop {
             reason: twinpad_core::stream::StreamStopReason::PluginStopped,
         },
     )
-}
-
-/// Snapshot de referencias del frame más reciente; los buffers son `Arc`,
-/// por lo que el emisor no copia RGB/JPEG ni mantiene el lock al escribir.
-fn latest_frame(share: &ArcFrameShare) -> Option<SharedFrame> {
-    share.lock().ok()?.as_ref().cloned()
 }
 
 /// Fuente de frames del juego con SDK (REQ-006 AC-2): devuelve el último
@@ -539,11 +268,8 @@ pub fn run_game_stream(
 ) -> Result<(), VideoSourceError> {
     let mut announced: Option<(u16, u16, FrameFormat)> = None;
     let mut next_deadline = Instant::now();
-    let mut image_sender = TileImageSender::default();
-    // `ts` del envío real (§7 paso 2): referencia fija al arranque.
-    let stream_started = Instant::now();
     for _ in 0..frames {
-        let Some((game_id, gf)) = source() else {
+        let Some((_game_id, gf)) = source() else {
             if stop_on_no_game {
                 break;
             }
@@ -551,34 +277,30 @@ pub fn run_game_stream(
             next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
             continue;
         };
-        let _ = game_id; // v1: una sola fuente preferente (§8.1 de SPEC-006)
-        let Some(rgb) = game_frame_rgb(&gf) else {
+        let _ = _game_id; // v1: una sola fuente preferente (§8.1 de SPEC-006)
+        if gf.fmt == FrameFormat::H264 {
+            if gf.ts_capture_us.is_none() || gf.idr.is_none() {
+                continue;
+            }
+            if announced != Some((gf.w, gf.h, FrameFormat::H264)) {
+                if gf.idr != Some(true) {
+                    continue;
+                }
+                announced = Some((gf.w, gf.h, FrameFormat::H264));
+                send(
+                    sink,
+                    &StreamMsg::StreamStart {
+                        media_port: twinpad_core::media_crypto::MEDIA_PORT,
+                        w: gf.w,
+                        h: gf.h,
+                        fmt: FrameFormat::H264,
+                        fps,
+                    },
+                )?;
+            }
+        } else {
             continue;
-        };
-        // §8.1: resolución nueva → `stream_start` nuevo; `fn` continúa.
-        if announced != Some((gf.w, gf.h, FrameFormat::JpegTiles)) {
-            announced = Some((gf.w, gf.h, FrameFormat::JpegTiles));
-            image_sender.reset_image();
-            send(
-                sink,
-                &StreamMsg::StreamStart {
-                    w: gf.w,
-                    h: gf.h,
-                    fmt: FrameFormat::JpegTiles,
-                    fps,
-                },
-            )?;
         }
-        image_sender.emit_rgb(
-            sink,
-            crate::tile_video::RgbFrame {
-                width: gf.w,
-                height: gf.h,
-                pixels: rgb,
-            },
-            DEFAULT_JPEG_QUALITY,
-            stream_started.elapsed().as_millis() as u64,
-        )?;
         next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
         let now = Instant::now();
         if next_deadline > now {
@@ -599,71 +321,54 @@ pub fn run_game_stream(
 pub fn run_selected_game_stream(
     sink: &mut dyn FrameSink,
     running: &std::sync::atomic::AtomicBool,
-    fps: &mut dyn FnMut() -> u8,
+    config: &mut dyn FnMut() -> VideoConfig,
     source: &mut dyn FnMut() -> (Option<String>, Option<crate::games::GameFrame>),
 ) -> Result<(), VideoSourceError> {
     let mut active_game = None::<String>;
     let mut announced = None::<(u16, u16, u8)>;
-    let mut next_deadline = Instant::now();
-    let mut image_sender = TileImageSender::default();
-    let stream_started = Instant::now();
     while running.load(std::sync::atomic::Ordering::Acquire) {
         let (game_id, frame) = source();
         if game_id != active_game {
-            if active_game.is_some() {
-                send(
-                    sink,
-                    &StreamMsg::StreamStop {
-                        reason: twinpad_core::stream::StreamStopReason::PluginStopped,
-                    },
-                )?;
-            }
+            send_stream_stop(sink, announced.is_some())?;
             active_game = game_id;
             announced = None;
-            image_sender = TileImageSender::default();
-            next_deadline = Instant::now();
         }
         let Some(frame) = frame else {
+            send_stream_stop(sink, announced.take().is_some())?;
             std::thread::sleep(std::time::Duration::from_millis(10));
             continue;
         };
-        let Some(rgb) = game_frame_rgb(&frame) else {
+        if frame.fmt != FrameFormat::H264 {
+            send_stream_stop(sink, announced.take().is_some())?;
             std::thread::sleep(std::time::Duration::from_millis(10));
             continue;
-        };
-        let current_fps = fps().clamp(1, 60);
-        if announced != Some((frame.w, frame.h, current_fps)) {
-            announced = Some((frame.w, frame.h, current_fps));
-            image_sender.reset_image();
+        }
+        let fps = config().fps.clamp(1, 60);
+        if announced != Some((frame.w, frame.h, fps)) {
+            send_stream_stop(sink, announced.take().is_some())?;
+            if frame.idr != Some(true) {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+                continue;
+            }
+            announced = Some((frame.w, frame.h, fps));
             send(
                 sink,
                 &StreamMsg::StreamStart {
+                    media_port: twinpad_core::media_crypto::MEDIA_PORT,
                     w: frame.w,
                     h: frame.h,
-                    fmt: FrameFormat::JpegTiles,
-                    fps: current_fps,
+                    fmt: FrameFormat::H264,
+                    fps,
                 },
             )?;
         }
-        image_sender.emit_rgb(
-            sink,
-            crate::tile_video::RgbFrame {
-                width: frame.w,
-                height: frame.h,
-                pixels: rgb,
-            },
-            DEFAULT_JPEG_QUALITY,
-            stream_started.elapsed().as_millis() as u64,
-        )?;
-        next_deadline += std::time::Duration::from_millis(1_000 / u64::from(current_fps));
-        let now = Instant::now();
-        if next_deadline > now {
-            std::thread::sleep(next_deadline - now);
-        } else {
-            next_deadline = now;
-        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    if active_game.is_some() {
+    send_stream_stop(sink, announced.is_some())
+}
+
+fn send_stream_stop(sink: &mut dyn FrameSink, announced: bool) -> Result<(), VideoSourceError> {
+    if announced {
         send(
             sink,
             &StreamMsg::StreamStop {
@@ -672,30 +377,6 @@ pub fn run_selected_game_stream(
         )?;
     }
     Ok(())
-}
-
-/// Convierte el formato de un frame SDK a RGB8 para diff y composición de tiles.
-fn game_frame_rgb(frame: &crate::games::GameFrame) -> Option<Arc<[u8]>> {
-    match frame.fmt {
-        FrameFormat::Rgb8
-            if frame.data.len() == usize::from(frame.w) * usize::from(frame.h) * 3 =>
-        {
-            Some(Arc::clone(&frame.data))
-        }
-        FrameFormat::Gray8 if frame.data.len() == usize::from(frame.w) * usize::from(frame.h) => {
-            let mut rgb = Vec::with_capacity(usize::from(frame.w) * usize::from(frame.h) * 3);
-            for value in frame.data.iter() {
-                rgb.extend_from_slice(&[*value, *value, *value]);
-            }
-            Some(rgb.into())
-        }
-        FrameFormat::Jpeg => {
-            let image = image::load_from_memory(&frame.data).ok()?.to_rgb8();
-            (image.width() == u32::from(frame.w) && image.height() == u32::from(frame.h))
-                .then(|| Arc::from(image.into_raw()))
-        }
-        _ => None,
-    }
 }
 
 // ENG §6: unwrap permitido solo en tests.
@@ -819,28 +500,15 @@ mod tests {
     }
 
     #[test]
-    fn demo_stream_sends_start_frames_and_stop_in_order() {
+    fn demo_stream_is_disabled_without_an_h264_plugin_source() {
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
         run_demo_stream(&mut sink, 3, 60, 16, 16).unwrap();
         let lines = sink.0.borrow();
-        assert_eq!(lines.len(), 5); // start + 3 frames + stop
-        assert!(lines[0].starts_with("{\"type\":\"stream_start\""));
-        for (expected_fn, line) in lines[1..4].iter().enumerate() {
-            let message = StreamMsg::decode(line).unwrap();
-            match message {
-                StreamMsg::VideoFrame { fn_, fmt, .. } => {
-                    assert_eq!(fn_, expected_fn as u64);
-                    assert_eq!(fmt, FrameFormat::Jpeg);
-                }
-                StreamMsg::VideoPatch { .. } => panic!("demo test image must use keyframes"),
-                _ => panic!("unexpected image message"),
-            }
-        }
-        assert!(lines[4].starts_with("{\"type\":\"stream_stop\""));
-        // Cada línea es decodificable por el codec compartido (paridad).
-        for line in lines.iter() {
-            StreamMsg::decode(line).unwrap();
-        }
+        assert_eq!(lines.len(), 1);
+        assert!(matches!(
+            StreamMsg::decode(&lines[0]).unwrap(),
+            StreamMsg::StreamStop { .. }
+        ));
     }
 
     #[test]
@@ -868,7 +536,21 @@ mod tests {
             w,
             h,
             fmt: FrameFormat::Rgb8,
+            ts_capture_us: None,
+            idr: None,
             data: vec![gfn as u8; usize::from(w) * usize::from(h) * 3].into(),
+        }
+    }
+
+    fn h264_game_frame(gfn: u64, w: u16, h: u16) -> GameFrame {
+        GameFrame {
+            gfn,
+            w,
+            h,
+            fmt: FrameFormat::H264,
+            ts_capture_us: Some(gfn + 1),
+            idr: Some(true),
+            data: vec![0, 0, 0, 1, 0x65, gfn as u8].into(),
         }
     }
 
@@ -892,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn game_stream_announces_sends_frames_and_stops() {
+    fn game_stream_does_not_emit_legacy_rgb_frames() {
         let exhausted = std::rc::Rc::new(std::cell::Cell::new(false));
         let mut source = test_source(2, std::rc::Rc::clone(&exhausted));
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
@@ -900,34 +582,16 @@ mod tests {
         run_game_stream(&mut sink, 3, 60, &mut source, true).unwrap();
         let lines = sink.0.borrow();
         // start + fn=0 + fn=1 + stop: el juego dejó de publicar → fin limpio.
-        assert_eq!(lines.len(), 4);
-        assert!(lines[0].starts_with("{\"type\":\"stream_start\""));
+        assert_eq!(lines.len(), 1);
         assert!(matches!(
-            StreamMsg::decode(&lines[1]).unwrap(),
-            StreamMsg::VideoFrame {
-                fn_: 0,
-                fmt: FrameFormat::Jpeg,
-                ..
-            }
+            StreamMsg::decode(&lines[0]).unwrap(),
+            StreamMsg::StreamStop { .. }
         ));
-        assert!(matches!(
-            StreamMsg::decode(&lines[2]).unwrap(),
-            StreamMsg::VideoFrame {
-                fn_: 1,
-                fmt: FrameFormat::Jpeg,
-                ..
-            }
-        ));
-        assert!(lines[3].starts_with("{\"type\":\"stream_stop\""));
-        // Paridad con el codec compartido (test-strategy §10).
-        for line in lines.iter() {
-            StreamMsg::decode(line).unwrap();
-        }
     }
 
     // TEST-028 — verifies SPEC-003/CR-002: SDK JPEG frames remain eligible sources.
     #[test]
-    fn game_stream_decodes_jpeg_game_frames_for_tile_emission() {
+    fn game_stream_does_not_fallback_to_jpeg_frames() {
         let first = encode_jpeg(&vec![80u8; 64 * 64 * 3], 64, 64, 80).unwrap();
         let mut emitted = 0u64;
         let mut source = move || {
@@ -940,6 +604,8 @@ mod tests {
                     w: 64,
                     h: 64,
                     fmt: FrameFormat::Jpeg,
+                    ts_capture_us: None,
+                    idr: None,
                     data: first.clone().into(),
                 },
             ))
@@ -953,95 +619,27 @@ mod tests {
             .map(|line| StreamMsg::decode(line).unwrap())
             .collect();
         assert!(matches!(
-            messages[0],
-            StreamMsg::StreamStart {
-                fmt: FrameFormat::JpegTiles,
-                ..
-            }
-        ));
-        assert!(matches!(
-            messages[1],
-            StreamMsg::VideoFrame {
-                fn_: 0,
-                fmt: FrameFormat::Jpeg,
-                ..
-            }
+            messages.as_slice(),
+            [StreamMsg::StreamStop { .. }]
         ));
     }
 
     // TEST-028 — verifies SPEC-003/CR-002: localized RGB changes emit one tile patch.
     #[test]
-    fn game_stream_emits_a_tile_patch_for_a_localized_rgb_change() {
-        let mut first = vec![0u8; 128 * 128 * 3];
-        let mut state = 1u32;
-        for byte in &mut first {
-            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            *byte = (state >> 24) as u8;
-        }
-        let mut second = first.clone();
-        for y in 8..24 {
-            for x in 72..88 {
-                let offset = (y * 128 + x) * 3;
-                second[offset..offset + 3].copy_from_slice(&[255, 0, 0]);
-            }
-        }
-        let frames = [first, second];
-        let mut emitted = 0usize;
-        let mut source = move || {
-            let index = emitted;
-            emitted += 1;
-            let data = frames.get(index)?.clone();
-            Some((
-                "pacdemo".into(),
-                GameFrame {
-                    gfn: index as u64,
-                    w: 128,
-                    h: 128,
-                    fmt: FrameFormat::Rgb8,
-                    data: data.into(),
-                },
-            ))
-        };
+    fn game_stream_does_not_fallback_to_rgb_tile_patches() {
+        let mut source = || Some(("pacdemo".into(), game_frame(0, 128, 128)));
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
-        run_game_stream(&mut sink, 2, 60, &mut source, true).unwrap();
+        run_game_stream(&mut sink, 1, 60, &mut source, true).unwrap();
         let lines = sink.0.borrow();
-        let messages: Vec<StreamMsg> = lines
-            .iter()
-            .map(|line| StreamMsg::decode(line).unwrap())
-            .collect();
+        assert_eq!(lines.len(), 1);
         assert!(matches!(
-            messages[0],
-            StreamMsg::StreamStart {
-                fmt: FrameFormat::JpegTiles,
-                ..
-            }
+            StreamMsg::decode(&lines[0]).unwrap(),
+            StreamMsg::StreamStop { .. }
         ));
-        assert!(matches!(
-            &messages[1],
-            StreamMsg::VideoFrame {
-                fn_: 0,
-                fmt: FrameFormat::Jpeg,
-                ..
-            }
-        ));
-        match &messages[2] {
-            StreamMsg::VideoPatch {
-                fn_: 1,
-                base_fn: 0,
-                patches,
-                ..
-            } => {
-                assert_eq!(patches.len(), 1);
-                assert_eq!((patches[0].x, patches[0].y), (64, 0));
-                assert_eq!((patches[0].w, patches[0].h), (64, 64));
-            }
-            _ => panic!("localized RGB change should emit a tile patch"),
-        }
-        assert!(matches!(messages[3], StreamMsg::StreamStop { .. }));
     }
 
     #[test]
-    fn game_stream_re_announces_on_resolution_change() {
+    fn game_stream_does_not_announce_raw_frame_resolution_changes() {
         let mut emitted = 0u64;
         let mut source = move || {
             let gfn = emitted;
@@ -1055,19 +653,10 @@ mod tests {
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
         run_game_stream(&mut sink, 2, 60, &mut source, true).unwrap();
         let lines = sink.0.borrow();
-        // start(32×16) + frame0 + start(64×16) + frame1 + stop
-        assert_eq!(lines.len(), 5);
-        assert!(lines[0].contains("\"w\":32"));
-        assert!(lines[2].starts_with("{\"type\":\"stream_start\""));
-        assert!(lines[2].contains("\"w\":64"));
-        // `fn` continúa (§8.1): no se reinicia.
+        assert_eq!(lines.len(), 1);
         assert!(matches!(
-            StreamMsg::decode(&lines[3]).unwrap(),
-            StreamMsg::VideoFrame {
-                fn_: 1,
-                fmt: FrameFormat::Jpeg,
-                ..
-            }
+            StreamMsg::decode(&lines[0]).unwrap(),
+            StreamMsg::StreamStop { .. }
         ));
     }
 
@@ -1083,15 +672,20 @@ mod tests {
                 running.store(false, std::sync::atomic::Ordering::Release);
             }
             match poll {
-                0 => (None, None), // no selection: no generated frame or stream_start
-                1 | 2 => (Some("alpha".to_string()), Some(game_frame(0, 64, 64))),
-                3 | 4 => (Some("beta".to_string()), Some(game_frame(1, 64, 64))),
+                0 => (None, None),
+                1 | 2 => (Some("alpha".to_string()), Some(h264_game_frame(0, 64, 64))),
+                3 | 4 => (Some("beta".to_string()), Some(h264_game_frame(1, 64, 64))),
                 _ => (None, None),
             }
         };
-        let mut fps = || 60;
+        let mut config = || VideoConfig {
+            width: 1280,
+            height: 720,
+            fps: 60,
+            jpeg_quality: DEFAULT_JPEG_QUALITY,
+        };
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
-        run_selected_game_stream(&mut sink, &running, &mut fps, &mut source).unwrap();
+        run_selected_game_stream(&mut sink, &running, &mut config, &mut source).unwrap();
         let messages: Vec<StreamMsg> = sink
             .0
             .borrow()
@@ -1099,17 +693,22 @@ mod tests {
             .map(|line| StreamMsg::decode(line).unwrap())
             .collect();
         assert!(matches!(
-            messages[0],
-            StreamMsg::StreamStart { fps: 60, .. }
+            messages.as_slice(),
+            [
+                StreamMsg::StreamStart {
+                    fmt: FrameFormat::H264,
+                    fps: 60,
+                    ..
+                },
+                StreamMsg::StreamStop { .. },
+                StreamMsg::StreamStart {
+                    fmt: FrameFormat::H264,
+                    fps: 60,
+                    ..
+                },
+                StreamMsg::StreamStop { .. },
+            ]
         ));
-        assert!(matches!(messages[1], StreamMsg::VideoFrame { fn_: 0, .. }));
-        assert!(matches!(messages[2], StreamMsg::StreamStop { .. }));
-        assert!(matches!(
-            messages[3],
-            StreamMsg::StreamStart { fps: 60, .. }
-        ));
-        assert!(matches!(messages[4], StreamMsg::VideoFrame { fn_: 0, .. }));
-        assert!(matches!(messages[5], StreamMsg::StreamStop { .. }));
     }
 
     #[test]

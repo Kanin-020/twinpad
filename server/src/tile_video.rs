@@ -57,7 +57,7 @@ impl TileImageSender {
                 .previous
                 .as_ref()
                 .ok_or(VideoSourceError::Disconnected)?;
-            let Some(patch) = diff_tiles(previous, &current) else {
+            let Some(patch) = diff_tiles_with_quality(previous, &current, quality) else {
                 return Ok(());
             };
             PatchPlan::Ready(Some(patch))
@@ -171,6 +171,15 @@ impl TileImageSender {
 
 /// Devuelve los tiles modificados contra `previous`; `None` significa que no cambió ninguno.
 pub fn diff_tiles(previous: &RgbFrame, current: &RgbFrame) -> Option<EncodedPatch> {
+    diff_tiles_with_quality(previous, current, DEFAULT_JPEG_QUALITY)
+}
+
+/// Calcula y codifica los tiles modificados con la calidad vigente del stream.
+fn diff_tiles_with_quality(
+    previous: &RgbFrame,
+    current: &RgbFrame,
+    quality: u8,
+) -> Option<EncodedPatch> {
     if previous.width != current.width
         || previous.height != current.height
         || !valid_rgb(previous)
@@ -189,7 +198,7 @@ pub fn diff_tiles(previous: &RgbFrame, current: &RgbFrame) -> Option<EncodedPatc
                 continue;
             }
             let pixels = extract_tile(current, x, y, width, height);
-            let jpeg = encode_jpeg(&pixels, width, height, DEFAULT_JPEG_QUALITY)?;
+            let jpeg = encode_jpeg(&pixels, width, height, quality)?;
             tiles.push(VideoTile {
                 x,
                 y,

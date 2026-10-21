@@ -2,6 +2,7 @@ package com.twinpad.android.app.pairing
 
 import android.app.Application
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,18 +12,19 @@ import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.network.TcpPairingClient
+import com.twinpad.android.app.ui.AndroidSettingsStore
 import com.twinpad.android.app.wire.GameListCodec
 import com.twinpad.android.app.wire.StreamCodec
 import com.twinpad.android.app.wire.StreamMessage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-private const val NANOS_PER_MICROSECOND = 1_000L
+private const val GYRO_LOG_REPORT_INTERVAL = 10
+private const val GYRO_LOG_TAG = "TwinpadGyro"
 
 /**
  * Único dueño del estado de la Pantalla de Pairing (DES-002 §4).
@@ -30,22 +32,12 @@ private const val NANOS_PER_MICROSECOND = 1_000L
  * conexión TCP y señales de cámara para la Activity.
  */
 class PairingViewModel(app: Application) : AndroidViewModel(app) {
-    private data class PendingVideoLine(
-        val line: String,
-        val enqueuedAtNanos: Long,
-        val frameNumber: Long?,
-    )
-
     private val machine = PairingStateMachine()
     private val network = TcpPairingClient()
     private val streamMachine = com.twinpad.android.app.stream.StreamStateMachine()
-    private val tileComposer = com.twinpad.android.app.stream.TileComposer()
-    private val pendingVideoLines = Channel<PendingVideoLine>(Channel.UNLIMITED)
     private val audioMachine = com.twinpad.android.app.audio.AudioStateMachine()
     private val gamepad = com.twinpad.android.app.hid.GamepadStateMachine()
-    private var selectionPending = false
-    private var requestedGameId: String? = null
-    private var automaticSelectionId: String? = null
+    private val selection = PairingSelectionState()
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para
      * preservar la cadena base_fn de los patches (SPEC-003/CR-002). */
@@ -61,6 +53,19 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val _streamState =
         MutableStateFlow(com.twinpad.android.app.stream.StreamUiState())
     val streamState: StateFlow<com.twinpad.android.app.stream.StreamUiState> = _streamState
+    private val mediaSession =
+        PairingMediaSession(
+            PairingMediaDependencies(
+                viewModelScope,
+                machine,
+                network,
+                streamMachine,
+                streamStats,
+            ),
+            { _streamState.value },
+        ) { state ->
+            _streamState.value = state
+        }
 
     /** Juegos compatibles vivos (SPEC-006 §5): lista publicada por el server. */
     private val _availableGames =
@@ -70,6 +75,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     /** Plugin confirmado para esta sesión (SPEC-006). */
     private val _selectedGameId = MutableStateFlow<String?>(null)
     val selectedGameId: StateFlow<String?> = _selectedGameId
+    val profileSelection: StateFlow<String?> = selectedGameId
 
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
@@ -79,11 +85,6 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val _audioState =
         MutableStateFlow(com.twinpad.android.app.audio.AudioState.INACTIVE)
     val audioState: StateFlow<com.twinpad.android.app.audio.AudioState> = _audioState
-
-    /** Bitmap listo para la vista (publicado por el pipeline de video). */
-    private val _lastFrame =
-        MutableStateFlow<com.twinpad.android.app.stream.DecodedFrame?>(null)
-    val lastFrame: StateFlow<com.twinpad.android.app.stream.DecodedFrame?> = _lastFrame
 
     /** Adaptador de reproducción (AudioTrack). */
     private val playback = com.twinpad.android.app.audio.AudioPlayback()
@@ -102,13 +103,6 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     feed(PairingEvent.WireMessage(line))
                 }
-            }
-        }
-        // El compositor es un consumidor FIFO independiente: el decode JPEG
-        // no detiene al lector de socket ni retrasa audio/controles (CR-002).
-        viewModelScope.launch(Dispatchers.Default) {
-            for (pending in pendingVideoLines) {
-                streamPipelineSubmit(pending)
             }
         }
         // SPEC-003 §6: marcar V2 si el stream se queda sin frames; SPEC-005
@@ -133,188 +127,67 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
      * Actualiza el estado del stream y publica el frame si aplica. */
     private fun onStreamLine(line: String?) {
         if (line == null) {
-            // Corte de conexión con sesión activa: V0/A0 y sesión terminada
-            // (SPEC-002 §9 la reporta; aquí solo limpiamos los streams).
-            streamMachine.reset()
-            tileComposer.reset()
-            _streamState.value = com.twinpad.android.app.stream.StreamUiState()
-            audioMachine.reset()
-            playback.stop()
-            _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
-            _lastFrame.value = null
-            streamStats.reset()
-            _availableGames.value = emptyList()
-            _selectedGameId.value = null
-            selectionPending = false
-            requestedGameId = null
-            automaticSelectionId = null
-            feed(PairingEvent.WireMessage(null))
+            onSessionDisconnected()
             return
         }
-        // Ruta rápida: separar por `type` SIN parsear todo el JSON (una
-        // línea de video puede medir 500 KB; parsearla dos veces —audio y
-        // video— con kotlinx.serialization costaba el doble de CPU).
+        // La ruta rápida separa `type` sin parsear payloads grandes de medios.
         when (lineType(line)) {
-            "games_available" -> {
-                GameListCodec.decode(line)?.let(::handleGamesAvailable)
-            }
-            "game_selected" -> {
-                GameListCodec.selectedGameId(line)?.let(::confirmGameSelection)
-            }
-            "audio_start", "audio_chunk", "audio_stop" -> {
-                // R3 de ARCH §8: el audio no espera al video — se procesa
-                // directo en el lector (decode barato: ≤ 16 KiB).
-                if (audioMachine.onLine(line, System.currentTimeMillis())) {
-                    _audioState.value = audioMachine.state
-                    when (lineType(line)) {
-                        "audio_start", "audio_stop" -> playback.stop()
-                        "audio_chunk" -> playback.drain(audioMachine.drainPending())
-                    }
-                }
-                streamStats.onAudio(line.length)
-            }
-            "video_frame", "video_patch" -> {
-                val frameNumber = StreamCodec.frameNumber(line)
-                if (frameNumber == null) {
-                    streamStats.onFrameRejected()
-                } else {
-                    streamStats.onImageReceived(frameNumber, line.length)
-                    pendingVideoLines.trySend(PendingVideoLine(line, System.nanoTime(), frameNumber))
-                }
-            }
-            "stream_start", "stream_stop" ->
-                pendingVideoLines.trySend(PendingVideoLine(line, System.nanoTime(), null))
-            else -> Unit // mensaje desconocido: ignorado (§9)
+            "games_available" -> GameListCodec.decode(line)?.let(::handleGamesAvailable)
+            "game_selected" -> GameListCodec.selectedGameId(line)?.let(::confirmGameSelection)
+            "audio_start", "audio_chunk", "audio_stop" -> handleAudioLine(line)
+            "stream_start", "stream_stop" -> handleStreamControlLine(line)
+            "video_frame", "video_patch" -> streamStats.onFrameRejected()
+            else -> Unit
         }
     }
 
-    /** Encola el frame crudo al pipeline con su thunk de decodificación. */
-    private fun streamPipelineSubmit(pending: PendingVideoLine) {
-        val enteredAtNanos = System.nanoTime()
-        val queueDelayNanos = enteredAtNanos - pending.enqueuedAtNanos
-        if (pending.frameNumber != null) {
-            streamStats.recordStage(
-                com.twinpad.android.app.stream.StreamStats.VideoStage.LINE_TO_DECODE,
-                queueDelayNanos,
-            )
-            com.twinpad.android.app.stream.VideoTrace.counter(
-                "video.queue_delay_us",
-                queueDelayNanos / NANOS_PER_MICROSECOND,
-            )
-        }
-        val message =
-            try {
-                com.twinpad.android.app.stream.VideoTrace.section("video.codec") {
-                    if (pending.frameNumber != null) {
-                        com.twinpad.android.app.stream.VideoTrace.section("video.base64_and_json") {
-                            StreamCodec.decode(pending.line)
-                        }
-                    } else {
-                        StreamCodec.decode(pending.line)
-                    }
-                }
-            } catch (e: com.twinpad.android.app.core.PairingException) {
-                streamStats.onFrameRejected()
-                return
-            } finally {
-                if (pending.frameNumber != null) {
-                    val codecNanos = System.nanoTime() - enteredAtNanos
-                    streamStats.recordStage(
-                        com.twinpad.android.app.stream.StreamStats.VideoStage.CODEC,
-                        codecNanos,
-                    )
-                    com.twinpad.android.app.stream.VideoTrace.counter(
-                        "video.codec_us",
-                        codecNanos / NANOS_PER_MICROSECOND,
-                    )
-                }
+    private fun onSessionDisconnected() {
+        clearStreamSession()
+        _availableGames.value = emptyList()
+        _selectedGameId.value = null
+        selection.clear()
+        feed(PairingEvent.WireMessage(null))
+    }
+
+    private fun clearStreamSession() {
+        mediaSession.clearForSessionEnd()
+        streamMachine.reset()
+        _streamState.value = com.twinpad.android.app.stream.StreamUiState()
+        audioMachine.reset()
+        playback.stop()
+        _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
+        streamStats.reset()
+    }
+
+    private fun handleAudioLine(line: String) {
+        if (audioMachine.onLine(line, System.currentTimeMillis())) {
+            _audioState.value = audioMachine.state
+            when (lineType(line)) {
+                "audio_start", "audio_stop" -> playback.stop()
+                "audio_chunk" -> playback.drain(audioMachine.drainPending())
             }
-        handleStreamMessage(message, pending.line)
-    }
-
-    private fun handleStreamMessage(
-        message: StreamMessage,
-        line: String,
-    ) {
-        when (message) {
-            is StreamMessage.Start -> onStreamStart(message, line)
-            is StreamMessage.Stop -> onStreamStop(line)
-            is StreamMessage.Frame -> onKeyframe(message)
-            is StreamMessage.Patch -> onPatch(message)
+        }
+        if (lineType(line) == "audio_chunk") {
+            streamStats.onAudioChunkReceived(line.length)
+        } else {
+            streamStats.onAudio(line.length)
         }
     }
 
-    private fun onStreamStart(
-        message: StreamMessage.Start,
-        line: String,
-    ) {
-        tileComposer.beginStream(message.width, message.height)
-        streamMachine.onLine(line)
-        _streamState.value =
-            _streamState.value.copy(
-                state = streamMachine.state,
-                width = message.width,
-                height = message.height,
-            )
-    }
-
-    private fun onStreamStop(line: String) {
-        tileComposer.reset()
-        streamMachine.onLine(line)
-        _lastFrame.value = null
-        _streamState.value = _streamState.value.copy(state = streamMachine.state)
-    }
-
-    private fun onKeyframe(message: StreamMessage.Frame) {
-        val startedAtNanos = System.nanoTime()
-        val bitmap =
-            com.twinpad.android.app.stream.VideoTrace.section("video.frame_decode") {
-                tileComposer.applyKeyframe(message)
+    private fun handleStreamControlLine(line: String) {
+        when (lineType(line)) {
+            "stream_start" -> {
+                val message = runCatching { StreamCodec.decode(line) as? StreamMessage.Start }.getOrNull()
+                if (message == null) streamStats.onFrameRejected() else mediaSession.onStreamStart(message, line)
             }
-        streamStats.recordStage(
-            com.twinpad.android.app.stream.StreamStats.VideoStage.JPEG_DECODE,
-            System.nanoTime() - startedAtNanos,
-        )
-        if (bitmap == null) {
-            streamStats.onFrameRejected()
-            return
-        }
-        acceptComposedFrame(message.frameNumber, message.width, message.height, bitmap)
-    }
-
-    private fun onPatch(message: StreamMessage.Patch) {
-        val startedAtNanos = System.nanoTime()
-        val bitmap =
-            com.twinpad.android.app.stream.VideoTrace.section("video.tile_compose") {
-                tileComposer.applyPatch(message)
+            "stream_stop" -> {
+                val message = runCatching { StreamCodec.decode(line) as? StreamMessage.Stop }.getOrNull()
+                if (message == null) streamStats.onFrameRejected() else mediaSession.onStreamStop(line)
             }
-        streamStats.recordStage(
-            com.twinpad.android.app.stream.StreamStats.VideoStage.TILE_COMPOSE,
-            System.nanoTime() - startedAtNanos,
-        )
-        if (bitmap == null) {
-            streamStats.onFrameRejected()
-            return
         }
-        acceptComposedFrame(message.frameNumber, message.width, message.height, bitmap)
     }
 
-    private fun acceptComposedFrame(
-        frameNumber: Long,
-        width: Int,
-        height: Int,
-        bitmap: android.graphics.Bitmap,
-    ) {
-        streamMachine.acceptFrame(frameNumber, width, height)
-        _lastFrame.value = com.twinpad.android.app.stream.DecodedFrame(bitmap, width, height, frameNumber)
-
-        _streamState.value =
-            _streamState.value.copy(
-                state = com.twinpad.android.app.stream.StreamState.STREAMING,
-                width = width,
-                height = height,
-            )
-    }
+    fun attachMediaSurface(surface: android.view.Surface?) = mediaSession.attachSurface(surface)
 
     /** Solicita la fuente seleccionada; medios previos se limpian al confirmarse. */
     fun selectGame(gameId: String) {
@@ -324,10 +197,10 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun handleGamesAvailable(games: List<com.twinpad.android.app.wire.GameInfo>) {
         _availableGames.value = games
-        val pendingId = requestedGameId
+        val pendingId = selection.requestedGameId
         if (pendingId != null && GameListCodec.retainedSelection(pendingId, games) == null) {
-            selectionPending = false
-            requestedGameId = null
+            selection.pending = false
+            selection.requestedGameId = null
         }
         val selected = _selectedGameId.value
         val retained = GameListCodec.retainedSelection(selected, games)
@@ -337,16 +210,16 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         when {
-            games.isEmpty() -> automaticSelectionId = null
+            games.isEmpty() -> selection.automaticGameId = null
             games.size == 1 -> {
-                automaticSelectionId = games.single().gameId
-                if (selected != automaticSelectionId && requestedGameId != automaticSelectionId) {
-                    sendGameSelection(automaticSelectionId!!)
+                selection.automaticGameId = games.single().gameId
+                if (selected != selection.automaticGameId && selection.requestedGameId != selection.automaticGameId) {
+                    sendGameSelection(selection.automaticGameId!!)
                 }
             }
             else -> {
-                automaticSelectionId = null
-                if (GameListCodec.needsExplicitSelection(games, requestedGameId)) {
+                selection.automaticGameId = null
+                if (GameListCodec.needsExplicitSelection(games, selection.requestedGameId)) {
                     _selectionRequest.tryEmit(games)
                 }
             }
@@ -354,25 +227,28 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun sendGameSelection(gameId: String) {
-        requestedGameId = gameId
-        selectionPending = true
+        selection.requestedGameId = gameId
+        selection.pending = true
         network.send(GameListCodec.selectionLine(gameId))
     }
 
     private fun confirmGameSelection(gameId: String) {
-        if (!selectionPending || requestedGameId != gameId) return
+        if (!selection.pending || selection.requestedGameId != gameId) return
         val previous = _selectedGameId.value
         if (previous != gameId) clearMediaForSelectionChange()
         _selectedGameId.value = gameId
-        selectionPending = false
-        requestedGameId = null
+        selection.pending = false
+        selection.requestedGameId = null
     }
 
     private fun clearMediaForSelectionChange() {
-        tileComposer.reset()
+        mediaSession.clearForSessionEnd()
         streamMachine.reset()
-        _lastFrame.value = null
         _streamState.value = com.twinpad.android.app.stream.StreamUiState()
+        resetAudioSession()
+    }
+
+    private fun resetAudioSession() {
         audioMachine.reset()
         playback.stop()
         _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
@@ -384,28 +260,28 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     /** Ajuste de calidad del video en caliente (menú de la app): pide al
      * server nueva resolución/fps para las próximas sesiones (v1: el server
      * lo aplica al re-anunciar; la sesión vigente continúa). */
-    fun onVideoQualityChanged(
-        width: Int,
-        height: Int,
-        fps: Int,
+    fun onStreamSettingsChanged(
+        settings: com.twinpad.android.app.ui.AndroidSettings =
+            AndroidSettingsStore(getApplication()).load(),
     ) {
-        val line =
-            "{\"type\":\"video_config\",\"w\":$width,\"h\":$height,\"fps\":$fps}"
-        network.send(line)
-    }
-
-    /** Ajuste de calidad JPEG en caliente (drawer, CR-001): 1–100. */
-    fun onJpegQualityChanged(quality: Int) {
-        val line = "{\"type\":\"video_config\",\"jpeg_quality\":$quality}"
-        network.send(line)
+        AndroidSettingsStore(getApplication()).save(settings)
+        network.send(settings.videoConfigLine())
     }
 
     /** SPEC-004 §7: un cambio de la superficie táctil genera un
      * `input_report` (canal: sesión LAN, ADR-007). Solo en Linked (H1);
      * el `seq` lo asigna la máquina del gamepad (R2). */
+    fun setAudioVolume(volume: Float) = playback.setVolume(volume)
+
     fun onGamepadInput(report: com.twinpad.android.app.wire.InputReport) {
         val updated = gamepad.onElementChanged(report)
         if (updated != null) {
+            updated.gyro?.takeIf { updated.seq % GYRO_LOG_REPORT_INTERVAL == 0 }?.let { gyro ->
+                Log.i(
+                    GYRO_LOG_TAG,
+                    "stage=android seq=${updated.seq} yaw=${gyro[0]} pitch=${gyro[1]} roll=${gyro[2]}",
+                )
+            }
             network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
         }
     }
@@ -458,8 +334,7 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        pendingVideoLines.close()
-        tileComposer.reset()
+        mediaSession.close()
         playback.release()
         network.shutdown()
     }

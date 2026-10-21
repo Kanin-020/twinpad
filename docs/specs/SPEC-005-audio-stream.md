@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-005 |
 | Title | Transmisión y reproducción de audio (REQ-005) |
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-005 (AC-1, AC-2 parcial: reanudación compartida con SPEC-003) |
-| Realized by | DES-004 (CR-010; Draft) |
-| Verified by | TEST-020, TEST-051 |
-| Last updated | 2026-10-18 |
+| Realized by | DES-004 (CR-010/CR-012; Draft) |
+| Verified by | TEST-020, TEST-051, TEST-062 |
+| Last updated | 2026-10-19 |
 
 ## 1. Purpose
 
@@ -96,6 +96,13 @@ Invariant: en `A1` el desfase entre la presentación del audio y el frame de SPE
 - **Flow:** al restablecerse, el Server continúa con `seq` creciente sobre la sesión reanudada; el hueco de audio no se retransmite (R3 del SPEC-003 aplicado a audio).
 - **Result:** la reproducción se reanuda en el fragmento más reciente; sin re-pairing.
 
+### 8.4 Rutas de audio independientes de Cemu (CR-012)
+
+- **Trigger:** Cemu produce audio TV y GamePad/DRC.
+- **Flow:** Cemu conserva TV en la salida local del PC y publica únicamente PCM GamePad/DRC por la fuente del Plugin; la sesión Twinpad retransmite esa fuente a Android.
+- **Result:** ninguna ruta se captura, mezcla o sustituye con la otra. Un corte del stream Android no silencia TV local. No se añaden streams ni campos wire.
+- **Referencia:** la separación de callbacks y destinos del adaptador Cemu se realiza en SPEC-006 y DES-004.
+
 ## 9. Errors
 
 | Condition | Observable behavior | Error code / message |
@@ -123,6 +130,7 @@ Invariant: en `A1` el desfase entre la presentación del audio y el frame de SPE
 - **R3:** los fragmentos perdidos no se retransmiten; la reproducción avanza al más reciente (coherente con R3 de SPEC-003).
 - **R4:** ante congestión, el Server prioriza video sobre audio en cada límite de mensaje y el SDK/Server descartan PCM antiguo en colas acotadas; el audio no bloquea al productor de frames ni retiene chunks obsoletos.
 - **R5:** la sincronía A/V se mantiene dentro de ±150 ms; si el desfase lo excede, la app re-sincroniza descartando audio atrasado.
+- **R6 (CR-012):** para el adaptador Cemu, la fuente PCM retransmitida a Android es exclusivamente el audio GamePad/DRC; el audio TV permanece en la salida local de Cemu/PC. Ambas rutas son independientes y no se mezclan; no cambia el contrato PCM ni se añade otro stream Android.
 
 ## 12. Contracts
 
@@ -171,6 +179,7 @@ Una implementación cumple este SPEC si y solo si: honra §3, produce §5 en cad
 | Reanudación tras corte (§8.3, AC-2) | compartido con TEST-017 de SPEC-003 |
 | Relay de audio de fuente seleccionada y cambio de Plugin | TEST-051 |
 | Sincronía A/V (±150 ms) y NFR-006/007 | pruebas de performance en banco físico |
+| Separación Cemu: TV audible solo en PC y GamePad/DRC en Android, sin mezcla ni dependencia entre rutas (CR-012) | TEST-062 (banco físico; pendiente) |
 
 ## 17. Open questions
 
@@ -185,3 +194,4 @@ Una implementación cumple este SPEC si y solo si: honra §3, produce §5 en cad
 | 1.0.0 | 2026-10-08 | Owner (usuario) | Approved: OQ §17 resueltas (PCM s16le sin compresión; jitter 500 ms fijo) |
 | 1.1.0 | 2026-10-17 | Owner + Twinpad team (CR-003) | Origen PCM por callback SDK, canal IPC separado, colas acotadas drop-old y prioridad de video por mensaje |
 | 1.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | El Servidor solo retransmite PCM del Plugin confirmado; cambio/fallo de fuente termina audio previo |
+| 1.3.0 | 2026-10-19 | Product owner + Twinpad team (CR-012) | En Cemu, TV permanece en PC y la única fuente PCM Android es DRC; rutas independientes, wire sin cambios |

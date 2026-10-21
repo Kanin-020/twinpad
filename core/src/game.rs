@@ -14,7 +14,7 @@
 //! SPEC-003 §4: orden exclusivo del frame dentro del stream de la app).
 
 use crate::error::{PairError, PairResult};
-use crate::stream::FrameFormat;
+use crate::stream::{FrameFormat, validate_dims};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -81,7 +81,13 @@ pub enum GameMsg {
         h: u16,
         /// Formato del Framebuffer (SPEC-003 §4: `rgb8` v1).
         fmt: FrameFormat,
-        /// Framebuffer crudo en base64url: exactamente `w×h×bpp` bytes.
+        /// Timestamp monotónico desde el inicio del encoder (solo H.264, CR-015).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        ts_capture_us: Option<u64>,
+        /// Indica si la access unit H.264 es IDR (solo H.264, CR-015).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        idr: Option<bool>,
+        /// Framebuffer crudo o access unit en base64url.
         data: String,
     },
 }
@@ -113,8 +119,26 @@ impl GameMsg {
                 validate_game_id(game_id)
             }
             GameMsg::GameFrame {
-                w, h, fmt, data, ..
-            } => crate::stream::validate_frame_params(*w, *h, *fmt, data),
+                w,
+                h,
+                fmt,
+                ts_capture_us,
+                idr,
+                data,
+                ..
+            } => {
+                if *fmt == FrameFormat::H264 {
+                    validate_dims(*w, *h)?;
+                    if data.is_empty() || ts_capture_us.is_none() || idr.is_none() {
+                        return Err(PairError::MalformedMessage);
+                    }
+                    Ok(())
+                } else if ts_capture_us.is_some() || idr.is_some() {
+                    Err(PairError::MalformedMessage)
+                } else {
+                    crate::stream::validate_frame_params(*w, *h, *fmt, data)
+                }
+            }
         }
     }
 }
@@ -292,6 +316,8 @@ mod tests {
             w,
             h,
             fmt: FrameFormat::Rgb8,
+            ts_capture_us: None,
+            idr: None,
             data: rgb_data(w, h),
         }
     }
@@ -345,6 +371,8 @@ mod tests {
             w: 32,
             h: 16,
             fmt: FrameFormat::Rgb8,
+            ts_capture_us: None,
+            idr: None,
             data: short,
         };
         assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
@@ -357,6 +385,8 @@ mod tests {
             w: 16,
             h: 16,
             fmt: FrameFormat::Rgb8,
+            ts_capture_us: None,
+            idr: None,
             data: "¡no es base64!".into(),
         };
         assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
@@ -365,5 +395,29 @@ mod tests {
     #[test]
     fn game_frame_zero_is_valid() {
         assert_eq!(frame(0, 16, 16).validate(), Ok(()));
+    }
+
+    // TEST-073 — CR-015: H.264 IPC requires encoder timestamp and IDR flag.
+    #[test]
+    fn h264_game_frame_requires_capture_timestamp_and_idr_metadata() {
+        let message = GameMsg::GameFrame {
+            gfn: 0,
+            w: 1280,
+            h: 720,
+            fmt: FrameFormat::H264,
+            ts_capture_us: Some(10),
+            idr: Some(true),
+            data: "AAAA".into(),
+        };
+        let line = message.encode().unwrap();
+        assert_eq!(GameMsg::decode(&line).unwrap(), message);
+
+        let no_timestamp = line.replace(",\"ts_capture_us\":10", "");
+        assert_eq!(
+            GameMsg::decode(&no_timestamp),
+            Err(PairError::MalformedMessage)
+        );
+        let no_idr = line.replace(",\"idr\":true", "");
+        assert_eq!(GameMsg::decode(&no_idr), Err(PairError::MalformedMessage));
     }
 }

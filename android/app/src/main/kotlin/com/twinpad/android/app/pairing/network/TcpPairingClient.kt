@@ -36,6 +36,10 @@ class TcpPairingClient {
     private var readerJob: Job? = null
     private var socket: Socket? = null
 
+    @Volatile private var connectedHost: String? = null
+
+    fun remoteHost(): String? = connectedHost
+
     /** Desactiva el timeout PRÓXIMO al ver `pair_ack` en líneas: corrido por
      * el MISMO hilo lector que aplica `soTimeout`, así no hay carrera contra
      * la UI. El corte a ~5 s de la U4 venía de dejarlo a cargo de la UI:
@@ -57,6 +61,7 @@ class TcpPairingClient {
                     s.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
                     s.soTimeout = FIVE_SECONDS_MS // sin respuesta en 5 s → E1
                     socket = s
+                    connectedHost = addr
                     startWriter(s)
                     val reader = s.getInputStream().bufferedReader()
                     readSessionLines(s, reader)
@@ -163,6 +168,7 @@ class TcpPairingClient {
     private fun closeQuietly() {
         runCatching { socket?.close() }
         socket = null
+        connectedHost = null
         sessionMode.set(false)
         while (true) {
             if (pendingWrites.tryReceive().getOrNull() == null) break

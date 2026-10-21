@@ -375,11 +375,46 @@ impl TwinpadGame {
         fmt: twinpad_core::stream::FrameFormat,
         data: &[u8],
     ) -> Result<(), SdkError> {
-        // `jpeg` (CR-001) tiene tamaño libre; los formatos crudos deben
+        self.push_frame_with_metadata(w, h, fmt, data, None, None)
+    }
+
+    /// Publica una access unit H.264 junto con metadata monotónica del encoder (CR-015).
+    pub fn push_h264_access_unit(
+        &mut self,
+        w: u16,
+        h: u16,
+        annex_b: &[u8],
+        ts_capture_us: u64,
+        idr: bool,
+    ) -> Result<(), SdkError> {
+        self.push_frame_with_metadata(
+            w,
+            h,
+            twinpad_core::stream::FrameFormat::H264,
+            annex_b,
+            Some(ts_capture_us),
+            Some(idr),
+        )
+    }
+
+    fn push_frame_with_metadata(
+        &mut self,
+        w: u16,
+        h: u16,
+        fmt: twinpad_core::stream::FrameFormat,
+        data: &[u8],
+        ts_capture_us: Option<u64>,
+        idr: Option<bool>,
+    ) -> Result<(), SdkError> {
+        // `jpeg`/`h264` tienen tamaño comprimido libre; los formatos crudos deben
         // medir exactamente w×h×bpp.
         let size_ok = match fmt.bytes_per_pixel() {
             Some(bpp) => data.len() == usize::from(w) * usize::from(h) * bpp,
-            None => !data.is_empty(),
+            None => {
+                !data.is_empty()
+                    && (fmt != twinpad_core::stream::FrameFormat::H264
+                        || (ts_capture_us.is_some() && idr.is_some()))
+            }
         };
         if !size_ok {
             return Err(SdkError::InvalidConfig);
@@ -392,6 +427,8 @@ impl TwinpadGame {
             w,
             h,
             fmt,
+            ts_capture_us,
+            idr,
             data: encoded,
         }
         .encode()

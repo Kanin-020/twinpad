@@ -78,6 +78,7 @@ fn main() {
         Err(error) => eprintln!("Twinpad: interfaz local del QR no disponible: {error}"),
     }
     let registry = Arc::new(twinpad_server::registry::SessionRegistry::new());
+    let media_hub = Arc::new(twinpad_server::media::MediaHub::default());
     let input_owner = Arc::new(std::sync::Mutex::new(None::<twinpad_core::SessionId>));
 
     // SPEC-006/ADR-008: listener IPC para juegos con SDK. Si el puerto está
@@ -99,9 +100,15 @@ fn main() {
                     sessions.broadcast_line(&line);
                 }
             });
+            let media_hub_for_ipc = Arc::clone(&media_hub);
             std::thread::spawn(move || {
                 println!("Detección de juegos SDK activa en 127.0.0.1:{ipc_port} (SPEC-006).");
-                twinpad_server::games::run_ipc_listener(ipc_listener, games, publish);
+                twinpad_server::games::run_ipc_listener_with_media(
+                    ipc_listener,
+                    games,
+                    publish,
+                    Some(media_hub_for_ipc),
+                );
             });
         }
         Err(_) => {
@@ -122,6 +129,41 @@ fn main() {
         Err(_) => eprintln!(
             "Twinpad: puerto IPC de audio {DEFAULT_AUDIO_IPC_PORT} en uso; PCM SDK desactivado."
         ),
+    }
+
+    match TcpListener::bind(("0.0.0.0", twinpad_server::media::MEDIA_PORT)) {
+        Ok(media_listener) => {
+            let media_registry = Arc::clone(&registry);
+            let session_registry = Arc::clone(&registry);
+            let keys: Arc<twinpad_server::media::MediaCredentialLookup> =
+                Arc::new(move |session_id| media_registry.media_credential(session_id));
+            let media_registry_for_lookup = Arc::clone(&registry);
+            let hub = Arc::clone(&media_hub);
+            let selected: Arc<twinpad_server::media::SelectedGameLookup> =
+                Arc::new(move |session_id| session_registry.selected_game(session_id));
+            let media_game: Arc<twinpad_server::media::MediaGameLookup> =
+                Arc::new(move |session_id| media_registry_for_lookup.media_game(session_id));
+            std::thread::spawn(move || {
+                println!(
+                    "Canal media autenticado activo en 0.0.0.0:{} (SPEC-003).",
+                    twinpad_server::media::MEDIA_PORT
+                );
+                twinpad_server::media::run_media_listener(
+                    media_listener,
+                    keys,
+                    hub,
+                    selected,
+                    media_game,
+                );
+            });
+        }
+        Err(error) => {
+            eprintln!(
+                "Twinpad: no se pudo abrir puerto media {}: {error}",
+                twinpad_server::media::MEDIA_PORT
+            );
+            std::process::exit(1);
+        }
     }
 
     println!("Twinpad Servidor PC — escuchando en {addr}:{port}");
@@ -186,7 +228,7 @@ fn main() {
                         );
                         session_alive = true;
                     }
-                    let _ = session_key; // se usará por el canal cifrado (futuro)
+                    registry_ref.insert_active_key(session_id, session_key);
 
                     if session_alive {
                         // Anti-lag @60fps (2026-10-10): el socket de sesión
@@ -212,6 +254,10 @@ fn main() {
                         let write_lock = SessionWriteLock::default();
                         let session_writer = Arc::new(SessionWriter::default());
                         let selected_game = Arc::new(std::sync::Mutex::new(None::<String>));
+                        let media_game = Arc::new(std::sync::Mutex::new(None::<String>));
+                        registry_ref.set_selected_game(session_id, None);
+                        twinpad_server::games::set_cemu_capture_fps(30);
+
                         let session_input_snapshot =
                             Arc::new(std::sync::Mutex::new(None::<String>));
                         let pending_snapshot_for_selection = Arc::clone(&session_input_snapshot);
@@ -224,6 +270,9 @@ fn main() {
                                 priority: Arc::clone(&session_writer),
                                 is_video: true,
                                 selected_game: Arc::clone(&selected_game),
+                                media_game: Some(Arc::clone(&media_game)),
+                                registry: Some(Arc::clone(&registry_ref)),
+                                session_id: Some(session_id),
                             }),
                             Err(_) => None,
                         };
@@ -242,41 +291,38 @@ fn main() {
                         // hilo de video (abajo), que corre en paralelo, y el
                         // lector arranca de inmediato.
                         let selected_game_for_video = Arc::clone(&selected_game);
-                        let selection_changed_for_video = Arc::clone(&selection_changed);
                         let running_for_video = Arc::clone(&session_running);
                         let video_thread = writer.map(|mut sink| {
                             let games = Arc::clone(&games_ref);
                             let selected_game = selected_game_for_video;
-                            let video_config_shared = std::sync::Arc::clone(&video_config_shared);
+                            let video_config_shared = Arc::clone(&video_config_shared);
                             std::thread::spawn(move || {
-                                let selection = Arc::clone(&selected_game);
-                                let changed = selection_changed_for_video;
-                                let mut poll = move || {
+                                let config = Arc::clone(&video_config_shared);
+                                let mut current_config = move || {
+                                    config.lock().map(|config| *config).unwrap_or_else(|_| {
+                                        twinpad_server::video::VideoConfig::from_env()
+                                    })
+                                };
+                                let source_games = Arc::clone(&games);
+                                let source_selection = Arc::clone(&selected_game);
+                                let running = Arc::clone(&running_for_video);
+                                let mut selected_source = move || {
                                     let game_id =
-                                        selection.lock().ok().and_then(|slot| slot.clone());
+                                        source_selection.lock().ok().and_then(|slot| slot.clone());
                                     let Some(game_id) = game_id else {
                                         return (None, None);
                                     };
-                                    if changed.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                                    if !source_games.has_live_game(&game_id) {
                                         return (None, None);
                                     }
-                                    let frame = games.latest_frame(&game_id);
-                                    if frame.is_none() && !games.has_live_game(&game_id) {
-                                        if let Ok(mut slot) = selection.lock() {
-                                            *slot = None;
-                                        }
-                                        return (None, None);
-                                    }
+                                    let frame = source_games.latest_frame(&game_id);
                                     (Some(game_id), frame)
                                 };
-                                let config = Arc::clone(&video_config_shared);
-                                let mut fps =
-                                    move || config.lock().map(|config| config.fps).unwrap_or(30);
                                 let _ = twinpad_server::video::run_selected_game_stream(
                                     &mut sink,
-                                    &running_for_video,
-                                    &mut fps,
-                                    &mut poll,
+                                    &running,
+                                    &mut current_config,
+                                    &mut selected_source,
                                 );
                             })
                         });
@@ -340,6 +386,7 @@ fn main() {
                                             if let Ok(mut slot) = reader_cfg.lock() {
                                                 *slot = cfg;
                                             }
+                                            twinpad_server::games::set_cemu_capture_fps(cfg.fps);
                                             if selected_game
                                                 .lock()
                                                 .ok()
@@ -350,8 +397,8 @@ fn main() {
                                                 games_ref.send_cemu_video_fps(cfg.fps);
                                             }
                                             println!(
-                                                "Video config actualizada por la app: {}×{} @ {} fps.",
-                                                cfg.width, cfg.height, cfg.fps
+                                                "Video config actualizada por la app: {}×{} @ {} fps, JPEG {}.",
+                                                cfg.width, cfg.height, cfg.fps, cfg.jpeg_quality
                                             );
                                         }
                                         continue;
@@ -366,6 +413,16 @@ fn main() {
                                                 if let Ok(mut selected) = selected_game.lock() {
                                                     *selected = Some(game_id.clone());
                                                 }
+                                                if let Ok(mut active_media_game) = media_game.lock()
+                                                {
+                                                    *active_media_game = None;
+                                                }
+                                                registry_ref.set_selected_game(
+                                                    session_id,
+                                                    Some(game_id.clone()),
+                                                );
+                                                registry_ref.set_media_game(session_id, None);
+
                                                 if game_id == "cemu" {
                                                     if let Ok(config) = reader_cfg.lock() {
                                                         games_ref.send_cemu_video_fps(config.fps);
@@ -571,6 +628,9 @@ struct StreamSink {
     priority: Arc<SessionWriter>,
     is_video: bool,
     selected_game: Arc<std::sync::Mutex<Option<String>>>,
+    media_game: Option<Arc<std::sync::Mutex<Option<String>>>>,
+    registry: Option<Arc<twinpad_server::registry::SessionRegistry>>,
+    session_id: Option<twinpad_core::SessionId>,
 }
 
 fn spawn_game_audio_forwarding(
@@ -590,6 +650,9 @@ fn spawn_game_audio_forwarding(
             priority: writer,
             is_video: false,
             selected_game,
+            media_game: None,
+            registry: None,
+            session_id: None,
         };
         let mut current_game = None::<String>;
         let mut seq = 0u64;
@@ -766,7 +829,44 @@ fn write_line(stream: &mut std::net::TcpStream, line: &str) -> bool {
 
 impl twinpad_server::video::FrameSink for StreamSink {
     fn send_line(&mut self, line: &str) -> bool {
-        self.send_locked(line)
+        let message = twinpad_core::stream::StreamMsg::decode(line).ok();
+        let sent = self.send_locked(line);
+        if sent {
+            if let (Some(registry), Some(session_id), Some(message)) =
+                (&self.registry, self.session_id, message)
+            {
+                match message {
+                    twinpad_core::stream::StreamMsg::StreamStart {
+                        fmt: twinpad_core::stream::FrameFormat::H264,
+                        ..
+                    } => {
+                        let game_id = self
+                            .selected_game
+                            .lock()
+                            .ok()
+                            .and_then(|selected| selected.clone());
+                        if registry.selected_game(&session_id) == game_id {
+                            if let Some(media_game) = &self.media_game {
+                                if let Ok(mut active_media_game) = media_game.lock() {
+                                    *active_media_game = game_id.clone();
+                                }
+                            }
+                            registry.set_media_game(session_id, game_id);
+                        }
+                    }
+                    twinpad_core::stream::StreamMsg::StreamStop { .. } => {
+                        if let Some(media_game) = &self.media_game {
+                            if let Ok(mut active_media_game) = media_game.lock() {
+                                *active_media_game = None;
+                            }
+                        }
+                        registry.set_media_game(session_id, None);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        sent
     }
 }
 
@@ -930,6 +1030,9 @@ mod tests {
             priority: Arc::clone(&writer),
             is_video: false,
             selected_game: Arc::clone(&selected),
+            media_game: None,
+            registry: None,
+            session_id: None,
         };
         let mut video = StreamSink {
             inner: server,
@@ -937,6 +1040,9 @@ mod tests {
             priority: Arc::clone(&writer),
             is_video: true,
             selected_game: selected,
+            media_game: None,
+            registry: None,
+            session_id: None,
         };
         writer
             .video_waiting

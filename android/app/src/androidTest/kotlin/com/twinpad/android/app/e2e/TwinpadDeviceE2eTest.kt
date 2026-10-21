@@ -3,9 +3,9 @@ package com.twinpad.android.app.e2e
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -59,30 +59,29 @@ class TwinpadDeviceE2eTest {
             assertEquals("cemu", viewModel.selectedGameId.value)
             val pairingMs = SystemClock.elapsedRealtime() - pairingStartedAt
 
-            awaitCondition("first presented Cemu Framebuffer") {
-                viewModel.lastFrame.value != null || viewModel.uiState.value is PairingUiState.Failure
+            awaitCondition("first Cemu H.264 frame presented on SurfaceView") {
+                viewModel.streamState.value.state == StreamState.STREAMING ||
+                    viewModel.uiState.value is PairingUiState.Failure
             }
-            assertNotNull("Cemu did not deliver a Framebuffer", viewModel.lastFrame.value)
             assertEquals(StreamState.STREAMING, viewModel.streamState.value.state)
             scenario.onActivity { activity ->
-                val video = activity.findViewById<ImageView>(R.id.video_view)
-                assertNotNull("The received Framebuffer was not published to the UI", video.drawable)
-                assertTrue(
-                    "The visible UI drawable is not the current Framebuffer",
-                    (video.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ===
-                        viewModel.lastFrame.value?.bitmap,
-                )
+                val video = activity.findViewById<SurfaceView>(R.id.video_view)
+                assertNotNull("H.264 SurfaceView is missing", video.holder.surface)
+                assertTrue("H.264 SurfaceView has no usable surface", video.holder.surface.isValid)
             }
 
-            val firstFrame = viewModel.lastFrame.value!!
+            val firstFrameNumber = viewModel.streamStats.snapshot().lastPresentedFrameNumber
+            assertNotNull("No decoded frame was presented to MediaCodec Surface", firstFrameNumber)
             val measuredAt = SystemClock.elapsedRealtime()
             Thread.sleep(FRAME_MEASUREMENT_MS)
-            val laterFrame = viewModel.lastFrame.value
-            assertNotNull("Cemu Framebuffer stopped arriving", laterFrame)
-            assertTrue("No new frame arrived during measurement", laterFrame!!.frameNumber > firstFrame.frameNumber)
+            val laterStats = viewModel.streamStats.snapshot()
+            assertNotNull("No frame-number snapshot after presentation", laterStats.lastPresentedFrameNumber)
+            assertTrue("No new H.264 frame was presented during measurement", laterStats.lastPresentedFrameNumber!! > firstFrameNumber!!)
             val measuredMs = SystemClock.elapsedRealtime() - measuredAt
-            val frameDelta = laterFrame.frameNumber - firstFrame.frameNumber
-            val streamStats = viewModel.streamStats.snapshot()
+            val frameDelta = laterStats.lastPresentedFrameNumber!! - firstFrameNumber
+            val streamStats = laterStats
+            assertEquals(StreamState.STREAMING, viewModel.streamState.value.state)
+            assertTrue("No media frames in the measurement window", frameDelta > 0 && measuredMs > 0)
 
             val arguments = InstrumentationRegistry.getArguments()
             val proxyPort = arguments.getString("server_port")?.toIntOrNull() ?: SERVER_PORT
@@ -116,10 +115,14 @@ class TwinpadDeviceE2eTest {
             Log.i(
                 LOG_TAG,
                 "run=$runId TEST-056 pairing_ms=$pairingMs linked=true source=cemu; " +
-                    "TEST-057 frame=${laterFrame.frameNumber} size=${laterFrame.width}x${laterFrame.height} " +
+                    "TEST-057 frame=${streamStats.lastPresentedFrameNumber} " +
+                    "size=${viewModel.streamState.value.width}x${viewModel.streamState.value.height} " +
                     "frames=$frameDelta elapsed_ms=$measuredMs receive_fps=${streamStats.receiveFps} " +
                     "presented_fps=${streamStats.presentedFps} kbps=${streamStats.kbps} " +
-                    "gaps=${streamStats.frameNumberGaps} rejected=${streamStats.rejectedFrames}; " +
+                    "stage_avg_ms=${streamStats.stageAverageMs} " +
+                    "gaps=${streamStats.frameNumberGaps} rejected=${streamStats.rejectedFrames} " +
+                    "audio_state=${viewModel.audioState.value} audio_kbps=${streamStats.audioKbps} " +
+                    "audio_chunks_seen=${streamStats.audioChunksSeen}; " +
                     "TEST-058 touch_gesture_dispatched=true session_alive=true",
             )
         } finally {

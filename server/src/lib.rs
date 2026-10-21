@@ -10,6 +10,7 @@
 
 pub mod audio;
 pub mod games;
+pub mod media;
 pub mod qr;
 pub mod qr_render;
 pub mod registry;

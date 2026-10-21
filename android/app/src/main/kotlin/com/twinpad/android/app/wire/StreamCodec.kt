@@ -18,6 +18,7 @@ sealed class StreamMessage {
         val height: Int,
         val fmt: String,
         val fps: Int,
+        val mediaPort: Int,
     ) : StreamMessage()
 
     /**
@@ -78,7 +79,7 @@ object StreamCodec {
     private val json = Json
 
     /** Formatos válidos (SPEC-003 §4; `jpeg_tiles` es modo CR-002). */
-    private val FMTS = setOf("gray8", "rgb8", "jpeg", "jpeg_tiles")
+    private val FMTS = setOf("h264")
     private val IMAGE_FMTS = setOf("gray8", "rgb8", "jpeg")
     private const val TILE_SIZE = 64
 
@@ -143,11 +144,14 @@ object StreamCodec {
         val h = obj.intField("h")
         val fps = obj.intField("fps")
         val fmt = obj.stringField("fmt")
-        val validFps = fps in ProtocolConstants.MIN_FPS..ProtocolConstants.MAX_FPS
-        if (fmt !in FMTS || !validDimensions(w, h) || !validFps) {
+        val mediaPort = obj.intField("media_port")
+        if (fmt !in FMTS) throw PairingException(PairingError.InvalidResponse)
+        if (!validDimensions(w, h)) throw PairingException(PairingError.InvalidResponse)
+        if (fps !in ProtocolConstants.MIN_FPS..ProtocolConstants.MAX_FPS) {
             throw PairingException(PairingError.InvalidResponse)
         }
-        return StreamMessage.Start(w, h, fmt, fps)
+        if (mediaPort != MediaCrypto.PORT) throw PairingException(PairingError.InvalidResponse)
+        return StreamMessage.Start(w, h, fmt, fps, mediaPort)
     }
 
     private fun decodeFrame(obj: kotlinx.serialization.json.JsonObject): StreamMessage.Frame {
@@ -263,6 +267,8 @@ object StreamCodec {
     private fun kotlinx.serialization.json.JsonObject.intField(name: String): Int =
         try {
             getValue(name).jsonPrimitive.content.toInt()
+        } catch (e: NoSuchElementException) {
+            throw PairingException(PairingError.InvalidResponse, e)
         } catch (e: IllegalArgumentException) {
             throw PairingException(PairingError.InvalidResponse, e)
         }

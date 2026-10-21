@@ -43,11 +43,19 @@ object ProtocolConstants {
     const val DPAD_DOWN: Int = 4
     const val DPAD_LEFT: Int = 6
 
-    /** Máscaras de bit de los botones A/B/X/Y (SPEC-004 §4: bit 0 = button_a). */
+    /** Máscaras de los 12 botones de SPEC-004 §4, orden de bits canónico. */
     const val BUTTON_BIT_A: Int = 1 shl 0
     const val BUTTON_BIT_B: Int = 1 shl 1
     const val BUTTON_BIT_X: Int = 1 shl 2
     const val BUTTON_BIT_Y: Int = 1 shl 3
+    const val BUTTON_BIT_L1: Int = 1 shl 4
+    const val BUTTON_BIT_R1: Int = 1 shl 5
+    const val BUTTON_BIT_L3: Int = 1 shl 6
+    const val BUTTON_BIT_R3: Int = 1 shl 7
+    const val BUTTON_BIT_START: Int = 1 shl 8
+    const val BUTTON_BIT_SELECT: Int = 1 shl 9
+    const val BUTTON_BIT_EXTRA_1: Int = 1 shl 10
+    const val BUTTON_BIT_EXTRA_2: Int = 1 shl 11
 
     /** Ejes yaw/pitch/roll del giroscopio absoluto (SPEC-004 §4). */
     const val GYRO_AXES: Int = 3

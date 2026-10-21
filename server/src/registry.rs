@@ -5,8 +5,12 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use twinpad_core::SessionId;
+use std::sync::Arc;
+use twinpad_core::{SessionId, SessionKey};
+
+type StoredMediaCredential = (Arc<SessionKey>, Arc<AtomicBool>);
 
 /// Toma el lock; envenenado → degrada a registro vacío (seguro: las
 /// sesiones "perdidas" se cierran al caer sus streams).
@@ -32,6 +36,9 @@ pub struct ActiveSession {
 #[derive(Default)]
 pub struct SessionRegistry {
     streams: Mutex<HashMap<SessionId, TcpStream>>,
+    keys: Mutex<HashMap<SessionId, StoredMediaCredential>>,
+    selected_games: Mutex<HashMap<SessionId, String>>,
+    media_games: Mutex<HashMap<SessionId, String>>,
 }
 
 impl SessionRegistry {
@@ -47,6 +54,97 @@ impl SessionRegistry {
             .is_none();
         let _ = session; // los campos quedan disponibles para UI/logs futuros
         was_new
+    }
+
+    /// Registra la credencial en memoria para el listener media asociado al Pairing.
+    pub fn insert_key(&self, session_id: SessionId, key: SessionKey) {
+        self.keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(session_id, (Arc::new(key), Arc::new(AtomicBool::new(true))));
+    }
+
+    pub fn insert_active_key(&self, session_id: SessionId, key: SessionKey) {
+        let mut keys = self
+            .keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some((_, active)) =
+            keys.insert(session_id, (Arc::new(key), Arc::new(AtomicBool::new(true))))
+        {
+            active.store(false, Ordering::Release);
+        }
+    }
+
+    /// Devuelve la clave y el estado de vida del Pairing para el listener media.
+    pub fn media_credential(
+        &self,
+        session_id: &SessionId,
+    ) -> Option<(Arc<SessionKey>, Arc<AtomicBool>)> {
+        if !self.contains(session_id) {
+            return None;
+        }
+        self.keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(session_id)
+            .cloned()
+    }
+
+    /// Selección de Plugin confirmada para esta sesión (SPEC-006 §6).
+    pub fn set_selected_game(&self, session_id: SessionId, game_id: Option<String>) {
+        let mut selected_games = self
+            .selected_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut media_games = self
+            .media_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match game_id {
+            Some(game_id) => {
+                selected_games.insert(session_id, game_id);
+                media_games.remove(&session_id);
+            }
+            None => {
+                selected_games.remove(&session_id);
+                media_games.remove(&session_id);
+            }
+        }
+    }
+
+    /// Plugin actualmente seleccionado por esta sesión, si lo hay.
+    pub fn selected_game(&self, session_id: &SessionId) -> Option<String> {
+        self.selected_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(session_id)
+            .cloned()
+    }
+
+    /// Fuente H.264 cuya configuración `stream_start` ya fue anunciada.
+    pub fn set_media_game(&self, session_id: SessionId, game_id: Option<String>) {
+        let selected = self.selected_game(&session_id);
+        let mut media_games = self
+            .media_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match game_id {
+            Some(active_game) if selected.as_deref() == Some(active_game.as_str()) => {
+                media_games.insert(session_id, active_game);
+            }
+            _ => {
+                media_games.remove(&session_id);
+            }
+        }
+    }
+
+    pub fn media_game(&self, session_id: &SessionId) -> Option<String> {
+        self.media_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(session_id)
+            .cloned()
     }
 
     /// ¿Existe una sesión activa con este id? (TEST-007: reanudación §8.2.)
@@ -85,6 +183,22 @@ impl SessionRegistry {
     /// Cierra y elimina una sesión (TEST-008: revocación §8.3; el stream
     /// cae y la app ve el corte).
     pub fn remove(&self, session_id: &SessionId) -> bool {
+        if let Some((_, active)) = self
+            .keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id)
+        {
+            active.store(false, Ordering::Release);
+        }
+        self.selected_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id);
+        self.media_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id);
         lock_or_reset(&self.streams).remove(session_id).is_some()
     }
 

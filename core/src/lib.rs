@@ -19,6 +19,7 @@ pub mod game;
 pub mod game_audio;
 pub mod handshake;
 pub mod input;
+pub mod media_crypto;
 pub mod message;
 pub mod qr;
 pub mod stream;

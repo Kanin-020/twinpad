@@ -38,7 +38,7 @@
 |---|---|---|---|---|---|---|
 | SPEC-001 | Pairing por QR y Handshake de sesión autenticada | REQ-002 | `Approved` | DES-001 | TEST-001..009 (5 en código `core/`) | [SPEC-001-pairing-session.md](SPEC-001-pairing-session.md) |
 | SPEC-002 | App Android: escaneo del QR y pantalla de Pairing | REQ-002; selección de Plugin (CR-010) | `Approved` | DES-002 | TEST-010..014, TEST-053, TEST-055 | [SPEC-002-android-pairing-ui.md](SPEC-002-android-pairing-ui.md) |
-| SPEC-003 | Stream de video de la Segunda pantalla (framebuffers) | REQ-004, REQ-005 (video) | `Approved` | DES-003, DES-004 (Draft) | TEST-015..017, TEST-051, TEST-054 | [SPEC-003-video-stream.md](SPEC-003-video-stream.md) |
+| SPEC-003 | Stream de video de la Segunda pantalla (H.264/AVC) | REQ-004, REQ-005 (video) | `Approved` | DES-003, DES-004 (Draft) | TEST-051, TEST-054, TEST-071..074 | [SPEC-003-video-stream.md](SPEC-003-video-stream.md) |
 | SPEC-004 | Signature HID y flujo de inputs del Gamepad | REQ-003 | `Approved` | DES-004 (Draft) | TEST-018, TEST-019, TEST-052 | [SPEC-004-signature-hid.md](SPEC-004-signature-hid.md) |
 | SPEC-005 | Transmisión y reproducción de audio | REQ-005 | `Approved` | DES-004 (Draft) | TEST-020, TEST-051 | [SPEC-005-audio-stream.md](SPEC-005-audio-stream.md) |
 | SPEC-006 | Detección/selección de Plugin y SDK Twinpad | REQ-006 | `Approved` | DES-004 (Draft) | TEST-021, TEST-044, TEST-046, TEST-047, TEST-051..055 | [SPEC-006-plugin-sdk-detection.md](SPEC-006-plugin-sdk-detection.md) |

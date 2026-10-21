@@ -16,13 +16,33 @@ class StreamStatsTest {
         stats.recordStage(StreamStats.VideoStage.CODEC, 5_000_000L)
         stats.onFrameRejected()
         now += 16L
-        stats.onFramePresented()
+        stats.onFramePresented(1)
 
         val snapshot = stats.snapshot()
         assertEquals(1L, snapshot.frameNumberGaps)
+        assertEquals(1L, snapshot.lastPresentedFrameNumber)
         assertEquals(1L, snapshot.rejectedFrames)
         assertEquals(4.0, snapshot.stageAverageMs[StreamStats.VideoStage.CODEC]!!, 0.001)
-        assertEquals(5, snapshot.stageAverageMs.size)
+        assertEquals(6, snapshot.stageAverageMs.size)
+    }
+
+    // TEST-030 regression: a new stream restarts frame numbers at zero; only video sequence stats reset.
+    @Test
+    fun new_video_stream_resets_frame_number_epoch_without_resetting_audio_stats() {
+        var now = 1_000L
+        val stats = StreamStats(clockMs = { now }, traceCounter = { _, _ -> })
+        stats.onImageReceived(101, 1_000)
+        assertEquals(true, stats.onFramePresented(101))
+        stats.onAudio(12_000)
+        now += 1_000L
+        stats.refresh()
+
+        stats.resetVideoStream()
+        stats.onImageReceived(0, 1_000)
+        assertEquals(0L, stats.snapshot().rejectedFrames)
+        assertEquals(true, stats.onFramePresented(0))
+        assertEquals(0L, stats.snapshot().lastPresentedFrameNumber)
+        assertEquals(96.0, stats.snapshot().audioKbps, 0.001)
     }
 
     @Test
@@ -39,6 +59,22 @@ class StreamStatsTest {
 
         assertEquals(62.5, stats.receiveFps, 0.1)
         assertEquals(31.25, stats.fps, 0.1)
+    }
+
+    @Test
+    fun audio_rate_is_reported_separately_and_reset_with_stream_metrics() {
+        var now = 2_000L
+        val stats = StreamStats(clockMs = { now }, traceCounter = { _, _ -> })
+        stats.onAudio(12_000)
+        now += 1_000L
+        stats.onMediaAccessUnitReceived(0, 2_000)
+        val measured = stats.snapshot()
+        assertEquals(96.0, measured.audioKbps, 0.001)
+        assertEquals(112.0, measured.kbps, 0.001)
+
+        stats.reset()
+        assertEquals(0.0, stats.snapshot().audioKbps, 0.0)
+        assertEquals(null, stats.snapshot().lastPresentedFrameNumber)
     }
 
     @Test
