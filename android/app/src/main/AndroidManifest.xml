@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- ENG §8: permisos mínimos. Cámara solo para escanear el QR (SPEC-002 §11-R2). -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- TCP hacia el Servidor PC en la LAN (SPEC-001 §7 paso 4). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Servicio en primer plano de la sesión (request del owner: la

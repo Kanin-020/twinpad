@@ -73,6 +73,8 @@ object ControlProfileCodec {
         setOf(
             "dpad",
             "button_a", "button_b", "button_x", "button_y",
+            "button_l1", "button_r1", "button_l3", "button_r3",
+            "button_start", "button_select", "button_extra_1", "button_extra_2",
             "trigger_l2", "trigger_r2",
             "stick_l", "stick_r",
         )
@@ -283,42 +285,73 @@ object ControlProfileCodec {
 }
 
 /** Coordenadas del default (SPEC-008 §10; layout del gamepad genérico). */
-private const val DEF_STICK_X = 0.04f
-private const val DEF_STICK_W = 0.22f
-private const val DEF_STICK_H = 0.32f
-private const val DEF_STICK_Y = 0.62f
-private const val DEF_BTN_SIZE = 0.10f
-private const val DEF_BTN_H = 0.14f
-private const val DEF_A_Y = 0.44f
-private const val DEF_B_Y = 0.36f
-private const val DEF_B_X = 0.82f
-private const val DEF_X_X = 0.58f
-private const val DEF_Y_Y = 0.28f
-private const val DEF_DPAD_Y = 0.30f
-private const val DEF_TRIGGER_SIZE = 0.14f
-private const val DEF_TRIGGER_H = 0.12f
-private const val DEF_TRIGGER_Y = 0.08f
-private const val DEF_TRIGGER_R_X = 0.80f
+private const val DEF_STICK_W = 0.18f
+private const val DEF_STICK_H = 0.24f
+private const val DEF_STICK_Y = 0.69f
+private const val DEF_BTN_SIZE = 0.09f
+private const val DEF_BTN_H = 0.11f
+private const val DEF_SHOULDER_W = 0.12f
+private const val DEF_SHOULDER_H = 0.10f
+private const val DEF_LEFT_STICK_X = 0.06f
+private const val DEF_RIGHT_STICK_X = 0.76f
+private const val DEF_DPAD_X = 0.05f
+private const val DEF_DPAD_Y = 0.37f
+private const val DEF_DPAD_W = 0.20f
+private const val DEF_DPAD_H = 0.29f
+private const val DEF_TRIGGER_SIZE = 0.13f
+private const val DEF_TRIGGER_H = 0.10f
+private const val DEF_TRIGGER_Y = 0.02f
+private const val DEF_LEFT_SIDE_X = 0.04f
+private const val DEF_RIGHT_SIDE_X = 0.84f
+private const val DEF_SHOULDER_Y = 0.13f
+private const val DEF_SELECT_X = 0.39f
+private const val DEF_START_X = 0.52f
+private const val DEF_FACE_LEFT_X = 0.74f
+private const val DEF_FACE_TOP_X = 0.84f
+private const val DEF_FACE_RIGHT_X = 0.90f
+private const val DEF_FACE_BOTTOM_X = 0.82f
+private const val DEF_FACE_TOP_Y = 0.29f
+private const val DEF_FACE_SIDE_Y = 0.39f
+private const val DEF_FACE_BOTTOM_Y = 0.49f
+private const val DEF_STICK_CLICK_Y = 0.76f
+private const val DEF_LEFT_STICK_CLICK_X = 0.27f
+private const val DEF_RIGHT_STICK_CLICK_X = 0.65f
 
-/** X de la columna derecha y alto del d-pad (default, SPEC-008 §10). */
-private const val RIGHT_COLUMN_X = 0.74f
-private const val DEF_DPAD_H = 0.30f
-
-/** Offset del botón A/Y respecto a la columna derecha (default). */
-private const val BTN_A_OFFSET_X = 0.04f
-
-/** Controles de la superficie por omisión (SPEC-008 §10: gamepad genérico). */
+/** Controles modernos por omisión, organizados como gamepad horizontal. */
 private fun defaultControls(): List<TouchControl> =
     listOf(
-        stickDefault("stick_left", "L", "stick_l", DEF_STICK_X, DEF_STICK_Y),
-        stickDefault("stick_right", "R", "stick_r", RIGHT_COLUMN_X, DEF_STICK_Y),
-        faceDefault("btn_a", "A", "button_a", RIGHT_COLUMN_X - BTN_A_OFFSET_X, DEF_A_Y),
-        faceDefault("btn_b", "B", "button_b", DEF_B_X, DEF_B_Y),
-        faceDefault("btn_x", "X", "button_x", DEF_X_X, DEF_B_Y),
-        faceDefault("btn_y", "Y", "button_y", RIGHT_COLUMN_X - BTN_A_OFFSET_X, DEF_Y_Y),
-        dpadDefault(DEF_STICK_X, DEF_DPAD_Y),
-        triggerDefault("trigger_l", "L2", "trigger_l2", DEF_STICK_X),
-        triggerDefault("trigger_r", "R2", "trigger_r2", DEF_TRIGGER_R_X),
+        triggerDefault("trigger_l", "L2", "trigger_l2", DEF_LEFT_SIDE_X),
+        shoulderDefault("button_l1", "L1", "button_l1", DEF_LEFT_SIDE_X),
+        faceDefault("button_select", "Select", "button_select", DEF_SELECT_X, DEF_SHOULDER_Y),
+        faceDefault("button_start", "Start", "button_start", DEF_START_X, DEF_SHOULDER_Y),
+        shoulderDefault("button_r1", "R1", "button_r1", DEF_RIGHT_SIDE_X),
+        triggerDefault("trigger_r", "R2", "trigger_r2", DEF_RIGHT_SIDE_X),
+        dpadDefault(DEF_DPAD_X, DEF_DPAD_Y),
+        stickDefault("stick_left", "L", "stick_l", DEF_LEFT_STICK_X, DEF_STICK_Y),
+        faceDefault("button_l3", "L3", "button_l3", DEF_LEFT_STICK_CLICK_X, DEF_STICK_CLICK_Y),
+        stickDefault("stick_right", "R", "stick_r", DEF_RIGHT_STICK_X, DEF_STICK_Y),
+        faceDefault("button_r3", "R3", "button_r3", DEF_RIGHT_STICK_CLICK_X, DEF_STICK_CLICK_Y),
+        faceDefault("btn_y", "Y", "button_y", DEF_FACE_TOP_X, DEF_FACE_TOP_Y),
+        faceDefault("btn_x", "X", "button_x", DEF_FACE_LEFT_X, DEF_FACE_SIDE_Y),
+        faceDefault("btn_b", "B", "button_b", DEF_FACE_RIGHT_X, DEF_FACE_SIDE_Y),
+        faceDefault("btn_a", "A", "button_a", DEF_FACE_BOTTOM_X, DEF_FACE_BOTTOM_Y),
+    )
+
+private fun shoulderDefault(
+    id: String,
+    label: String,
+    hid: String,
+    x: Float,
+): TouchControl =
+    TouchControl(
+        id,
+        ControlProfileCodec.KIND_BUTTON,
+        label,
+        hid,
+        x,
+        DEF_SHOULDER_Y,
+        DEF_SHOULDER_W,
+        DEF_SHOULDER_H,
     )
 
 private fun stickDefault(
@@ -368,7 +401,7 @@ private fun dpadDefault(
         "dpad",
         x,
         y,
-        DEF_STICK_W,
+        DEF_DPAD_W,
         DEF_DPAD_H,
     )
 

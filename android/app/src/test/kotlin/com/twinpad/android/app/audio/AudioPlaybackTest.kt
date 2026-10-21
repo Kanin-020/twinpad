@@ -6,6 +6,7 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /** TEST-024 — verifies SPEC-005 §7: playback continues across stream changes. */
 class AudioPlaybackTest {
@@ -15,6 +16,8 @@ class AudioPlaybackTest {
         val tracksCreated = AtomicInteger()
         val allWrites = CountDownLatch(4)
         val released = CountDownLatch(3)
+        val volumeUpdates = AtomicInteger()
+        val latestVolume = AtomicReference(1f)
         val playback =
             AudioPlayback(
                 PlaybackTrackFactory { _, _ ->
@@ -23,6 +26,11 @@ class AudioPlaybackTest {
                         override fun write(pcm: ByteArray) {
                             writes.incrementAndGet()
                             allWrites.countDown()
+                        }
+
+                        override fun setVolume(volume: Float) {
+                            latestVolume.set(volume)
+                            volumeUpdates.incrementAndGet()
                         }
 
                         override fun stopAndRelease() {
@@ -35,6 +43,7 @@ class AudioPlaybackTest {
         try {
             playback.drain(listOf(chunk(seq = 0, rate = 44_100)))
             playback.drain(listOf(chunk(seq = 1, rate = 44_100)))
+            playback.setVolume(0.5f)
             playback.drain(listOf(chunk(seq = 2, rate = 48_000)))
             playback.stop()
             playback.drain(listOf(chunk(seq = 3, rate = 48_000)))
@@ -44,6 +53,8 @@ class AudioPlaybackTest {
             assertTrue("each active track should be released", released.await(2, TimeUnit.SECONDS))
             assertEquals(4, writes.get())
             assertEquals(3, tracksCreated.get())
+            assertTrue("volume should be applied to active tracks", volumeUpdates.get() >= 2)
+            assertEquals(0.5f, latestVolume.get(), 0.001f)
         } finally {
             playback.release()
         }

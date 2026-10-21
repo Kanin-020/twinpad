@@ -27,6 +27,26 @@ class ControlProfileTest {
     }
 
     @Test
+    fun default_profile_includes_modern_gamepad_controls() {
+        val controls = ControlProfileCodec.defaultProfile().controls
+        val assignments = controls.map { it.hid }.toSet()
+
+        assertEquals(15, controls.size)
+        assertTrue(
+            assignments.containsAll(
+                setOf(
+                    "button_a", "button_b", "button_x", "button_y", "dpad",
+                    "stick_l", "stick_r", "button_start", "button_select",
+                    "button_l1", "trigger_l2", "button_r1", "trigger_r2",
+                ),
+            ),
+        )
+        assertEquals(1, controls.count { it.kind == ControlProfileCodec.KIND_DPAD })
+        assertEquals(2, controls.count { it.kind == ControlProfileCodec.KIND_STICK })
+        ControlProfileCodec.validate(ControlProfile("", controls))
+    }
+
+    @Test
     fun more_than_24_controls_is_rejected() {
         val controls = (0 until 25).map { i -> button("b$i", "button_a", x = (i % 10) / 10f) }
         val e =

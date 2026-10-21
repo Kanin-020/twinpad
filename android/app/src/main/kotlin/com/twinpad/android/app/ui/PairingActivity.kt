@@ -6,20 +6,21 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
-import android.view.Gravity
 import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.RadioButton
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
+import androidx.core.view.GravityCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -40,8 +41,6 @@ import com.twinpad.android.app.wire.ProtocolConstants
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-private const val MICROSECONDS_PER_MILLISECOND = 1_000.0
-
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
 
@@ -59,6 +58,8 @@ private const val RES_H_1080 = 1080
 /** fps seleccionables. */
 private const val FPS_30 = 30
 private const val FPS_60 = 60
+private const val AUDIO_VOLUME_PERCENT_MAX = 100
+private const val JOG_WHEEL_PERCENT_SCALE = 100
 
 /**
  * Pantalla de Pairing (SPEC-002 §6) sobre Views clásicas: layouts XML +
@@ -72,8 +73,31 @@ class PairingActivity : AppCompatActivity() {
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
-    private var pendingFrameNumber: Long? = null
-    private var pendingFramePublishedAtNanos = 0L
+    private var sessionConfigSent = false
+    private var mediaSurfaceHolder: SurfaceHolder? = null
+    private val mediaSurfaceCallback =
+        object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                mediaSurfaceHolder = holder
+                viewModel.attachMediaSurface(holder.surface)
+            }
+
+            override fun surfaceChanged(
+                holder: SurfaceHolder,
+                format: Int,
+                width: Int,
+                height: Int,
+            ) {
+                viewModel.attachMediaSurface(holder.surface)
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                if (mediaSurfaceHolder === holder) {
+                    mediaSurfaceHolder = null
+                    viewModel.attachMediaSurface(null)
+                }
+            }
+        }
     private lateinit var sensorManager: SensorManager
     private var rotationVector: Sensor? = null
     private val orientationMatrix = FloatArray(9)
@@ -116,9 +140,10 @@ class PairingActivity : AppCompatActivity() {
                 viewModel.onEvent(PairingEvent.QrScanned(raw))
             }
         wireViews()
+        findViewById<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
+        applyPersistedSettings()
         observeCameraEffects()
         observeStates()
-        observeVideoPresentation()
     }
 
     /** Cablea cada View a su evento del ViewModel. */
@@ -133,29 +158,43 @@ class PairingActivity : AppCompatActivity() {
             viewModel.onEvent(PairingEvent.Retry)
         }
         findViewById<ImageButton>(R.id.btn_settings).setOnClickListener {
-            findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(Gravity.START)
+            findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
         }
         findViewById<TextView>(R.id.editor_entry).setOnClickListener {
             surfaceRef?.toggleEditing()
         }
+        findViewById<Button>(R.id.editor_add_button).setOnClickListener { surfaceRef?.addControl("button") }
+        findViewById<Button>(R.id.editor_add_stick).setOnClickListener { surfaceRef?.addControl("stick") }
+        findViewById<Button>(R.id.editor_add_dpad).setOnClickListener { surfaceRef?.addControl("dpad") }
+        findViewById<Button>(R.id.editor_delete).setOnClickListener { surfaceRef?.deleteSelectedControl() }
+        findViewById<Button>(R.id.editor_assign).setOnClickListener {
+            val assignments = surfaceRef?.availableAssignments().orEmpty()
+            if (assignments.isNotEmpty()) {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.editor_assign)
+                    .setItems(assignments.toTypedArray()) { _, index ->
+                        surfaceRef?.assignSelected(assignments[index])
+                    }
+                    .show()
+            }
+        }
         findViewById<Button>(R.id.btn_close_drawer).setOnClickListener {
-            findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(Gravity.START)
+            findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
         }
     }
 
     /** Observa la sesión completa (video por frame, HUD por tick). */
     private fun observeStates() {
         lifecycleScope.launch {
-            viewModel.lastFrame.collectLatest { decoded ->
-                val videoView = findViewById<ImageView>(R.id.video_view)
-                videoView.setImageBitmap(decoded?.bitmap)
-                pendingFrameNumber = decoded?.frameNumber
-                pendingFramePublishedAtNanos = if (decoded != null) System.nanoTime() else 0L
-                if (decoded != null) videoView.invalidate()
+            viewModel.uiState.collectLatest { state ->
+                renderState(state)
+                if (state is PairingUiState.Linked && !sessionConfigSent) {
+                    viewModel.onStreamSettingsChanged(AndroidSettingsStore(this@PairingActivity).load())
+                    sessionConfigSent = true
+                } else if (state !is PairingUiState.Linked) {
+                    sessionConfigSent = false
+                }
             }
-        }
-        lifecycleScope.launch {
-            viewModel.uiState.collectLatest { renderState(it) }
         }
         lifecycleScope.launch {
             viewModel.streamState.collectLatest { s ->
@@ -171,12 +210,17 @@ class PairingActivity : AppCompatActivity() {
                             getString(R.string.second_screen_reconnecting)
                         else -> getString(R.string.second_screen_inactive)
                     }
-                updateKeepScreenOn(s.state)
+                keepDisplayAwake(s.state)
             }
         }
         lifecycleScope.launch {
             viewModel.availableGames.collectLatest { games ->
                 findViewById<TextView>(R.id.txt_games).text = gamesText(games)
+            }
+        }
+        lifecycleScope.launch {
+            viewModel.selectedGameId.collectLatest { gameId ->
+                surfaceRef?.loadProfile(gameId.orEmpty())
             }
         }
         lifecycleScope.launch {
@@ -197,44 +241,6 @@ class PairingActivity : AppCompatActivity() {
             }
         }
         wireDrawerControls()
-    }
-
-    private fun observeVideoPresentation() {
-        findViewById<ImageView>(R.id.video_view).viewTreeObserver.addOnPreDrawListener {
-            val frameNumber = pendingFrameNumber
-            if (frameNumber != null) {
-                val presentationDelay = System.nanoTime() - pendingFramePublishedAtNanos
-                viewModel.streamStats.recordStage(
-                    com.twinpad.android.app.stream.StreamStats.VideoStage.UI_PUBLISH_TO_DRAW,
-                    presentationDelay,
-                )
-                com.twinpad.android.app.stream.VideoTrace.section("video.present") {}
-                pendingFrameNumber = null
-                pendingFramePublishedAtNanos = 0L
-                val snapshot = viewModel.streamStats.snapshot()
-                snapshot.stageAverageMs.forEach { (stage, averageMs) ->
-                    com.twinpad.android.app.stream.VideoTrace.counter(
-                        "video.stage_${stage.name.lowercase()}_us",
-                        (averageMs * MICROSECONDS_PER_MILLISECOND).toLong(),
-                    )
-                }
-                viewModel.streamStats.onFramePresented()
-            }
-            true
-        }
-    }
-
-    /** Segunda pantalla activa = pantalla del teléfono encendida (pedido
-     * del owner: el video no debe apagar el display mientras corre).
-     * `FLAG_KEEP_SCREEN_ON` es la vía recomendada: sin permisos, se libera
-     * al salir del estado STREAMING (o al destruir la Activity). */
-    private fun updateKeepScreenOn(state: StreamState) {
-        val window = window
-        if (state == StreamState.STREAMING || state == StreamState.INTERRUPTED) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
     }
 
     private fun gamesText(games: List<com.twinpad.android.app.wire.GameInfo>): String =
@@ -263,15 +269,49 @@ class PairingActivity : AppCompatActivity() {
     }
 
     /** Drawer de ajustes: resolución/fps/calidad/HUD/controles → ViewModel. */
+    private fun applyPersistedSettings() {
+        val settings = AndroidSettingsStore(this).load()
+        viewModel.setAudioVolume(settings.audioVolumePercent / AUDIO_VOLUME_PERCENT_MAX.toFloat())
+        resolutionButtons().forEach { (button, dims) ->
+            if (dims.first == settings.width && dims.second == settings.height) button.isChecked = true
+        }
+        if (!hasConfiguredResolution(settings.width, settings.height)) {
+            findViewById<RadioButton>(R.id.resolution_1280x720).isChecked = true
+        }
+        findViewById<RadioButton>(if (settings.fps == FPS_30) R.id.fps_30 else R.id.fps_60).isChecked = true
+        findViewById<SeekBar>(R.id.jpeg_quality_seek).progress = settings.jpegQuality
+        findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
+        hudVisible = settings.showHud
+        controlsVisible = settings.showControls
+        findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
+        findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
+        findViewById<ViewGroup>(R.id.surface_container).isVisible = settings.showControls
+    }
+
+    private fun hasConfiguredResolution(
+        width: Int,
+        height: Int,
+    ): Boolean = resolutionButtons().values.any { dims -> dims.first == width && dims.second == height }
+
+    private fun saveSettings(transform: (AndroidSettings) -> AndroidSettings) {
+        val store = AndroidSettingsStore(this)
+        val updated = transform(store.load())
+        store.save(updated)
+        viewModel.onStreamSettingsChanged(updated)
+    }
+
     private fun wireDrawerControls() {
         resolutionButtons().forEach { (button, dims) ->
             button.setOnCheckedChangeListener { _, checked ->
-                if (checked) viewModel.onVideoQualityChanged(dims.first, dims.second, currentFps())
+                if (checked) saveSettings { it.copy(width = dims.first, height = dims.second, fps = currentFps()) }
             }
         }
         fpsButtons().forEach { (button, fps) ->
             button.setOnCheckedChangeListener { _, checked ->
-                if (checked) viewModel.onVideoQualityChanged(currentWidth(), currentHeight(), fps)
+                if (checked) {
+                    val (width, height) = currentResolution()
+                    saveSettings { it.copy(width = width, height = height, fps = fps) }
+                }
             }
         }
         findViewById<SeekBar>(R.id.jpeg_quality_seek).setOnSeekBarChangeListener(
@@ -281,7 +321,30 @@ class PairingActivity : AppCompatActivity() {
                     value: Int,
                     fromUser: Boolean,
                 ) {
-                    if (fromUser) viewModel.onJpegQualityChanged(value)
+                    if (fromUser) saveSettings { it.copy(jpegQuality = value) }
+                }
+
+                override fun onStartTrackingTouch(bar: SeekBar) = Unit
+
+                override fun onStopTrackingTouch(bar: SeekBar) = Unit
+            },
+        )
+        val audioVolume = findViewById<SeekBar>(R.id.audio_volume_seek)
+        audioVolume.max = AUDIO_VOLUME_PERCENT_MAX
+        audioVolume.progress = AndroidSettingsStore(this).load().audioVolumePercent
+        audioVolume.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    bar: SeekBar,
+                    value: Int,
+                    fromUser: Boolean,
+                ) {
+                    if (fromUser) {
+                        val percent = if (bar.max == 0) 0 else value * JOG_WHEEL_PERCENT_SCALE / bar.max
+                        val settingsStore = AndroidSettingsStore(this@PairingActivity)
+                        settingsStore.save(settingsStore.load().copy(audioVolumePercent = percent))
+                        viewModel.setAudioVolume(percent / AUDIO_VOLUME_PERCENT_MAX.toFloat())
+                    }
                 }
 
                 override fun onStartTrackingTouch(bar: SeekBar) = Unit
@@ -291,10 +354,15 @@ class PairingActivity : AppCompatActivity() {
         )
         findViewById<SwitchMaterial>(R.id.switch_show_fps).setOnCheckedChangeListener { _, checked ->
             hudVisible = checked
+            val store = AndroidSettingsStore(this)
+            store.save(store.load().copy(showHud = checked))
+            renderHudChip()
         }
         findViewById<SwitchMaterial>(R.id.switch_show_controls).setOnCheckedChangeListener { _, checked ->
             controlsVisible = checked
             findViewById<ViewGroup>(R.id.surface_container).isVisible = checked
+            val store = AndroidSettingsStore(this)
+            store.save(store.load().copy(showControls = checked))
         }
         attachProfileSurface()
     }
@@ -314,18 +382,11 @@ class PairingActivity : AppCompatActivity() {
 
     private fun currentFps(): Int = if (findViewById<RadioButton>(R.id.fps_30).isChecked) FPS_30 else FPS_60
 
-    private fun currentWidth(): Int =
+    private fun currentResolution(): Pair<Int, Int> =
         when {
-            findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked -> RES_W_1920
-            findViewById<RadioButton>(R.id.resolution_1280x720).isChecked -> RES_W_1280
-            else -> RES_W_960
-        }
-
-    private fun currentHeight(): Int =
-        when {
-            findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked -> RES_H_1080
-            findViewById<RadioButton>(R.id.resolution_1280x720).isChecked -> RES_H_720
-            else -> RES_H_540
+            findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked -> RES_W_1920 to RES_H_1080
+            findViewById<RadioButton>(R.id.resolution_1280x720).isChecked -> RES_W_1280 to RES_H_720
+            else -> RES_W_960 to RES_H_540
         }
 
     /** Superficie táctil: instanciar el editor/uso una sola vez. */
@@ -333,7 +394,10 @@ class PairingActivity : AppCompatActivity() {
         if (surfaceRef == null) {
             val surface = ProfileSurface(this) { report -> viewModel.onGamepadInput(report) }
             surfaceRef = surface
-            findViewById<ViewGroup>(R.id.surface_container).addView(surface)
+            findViewById<ViewGroup>(R.id.surface_container).addView(
+                surface,
+                ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+            )
         }
     }
 
@@ -440,9 +504,19 @@ class PairingActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        findViewById<SurfaceView>(R.id.video_view).holder.removeCallback(mediaSurfaceCallback)
+        viewModel.attachMediaSurface(null)
         cameraController.release()
         SessionForegroundService.stop(this)
         super.onDestroy()
+    }
+}
+
+private fun PairingActivity.keepDisplayAwake(state: StreamState) {
+    if (state == StreamState.STREAMING || state == StreamState.INTERRUPTED) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    } else {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }
 

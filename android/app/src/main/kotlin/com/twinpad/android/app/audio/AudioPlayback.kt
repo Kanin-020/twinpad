@@ -24,12 +24,17 @@ class AudioPlayback internal constructor(
     private var track: PlaybackTrack? = null
     private var rate: Int = 0
     private var channels: Int = 0
+    private var volume: Float = 1f
 
     init {
         scope.launch {
             for (command in commands) {
                 when (command) {
                     is PlaybackCommand.Write -> write(command.chunk)
+                    is PlaybackCommand.SetVolume -> {
+                        volume = command.volume
+                        track?.setVolume(volume)
+                    }
                     PlaybackCommand.Stop -> releaseTrack()
                     PlaybackCommand.Close -> {
                         releaseTrack()
@@ -45,6 +50,11 @@ class AudioPlayback internal constructor(
         for (chunk in chunks) {
             commands.trySend(PlaybackCommand.Write(chunk))
         }
+    }
+
+    /** Cambia el volumen local del track activo (0..1); no altera PCM ni salida del host. */
+    fun setVolume(volume: Float) {
+        commands.trySend(PlaybackCommand.SetVolume(volume.coerceIn(0f, 1f)))
     }
 
     /** Silencia el stream vigente sin cerrar el reproductor para futuros streams. */
@@ -63,6 +73,7 @@ class AudioPlayback internal constructor(
             releaseTrack()
             if (chunk.rate <= 0 || chunk.channels !in 1..2) return
             track = trackFactory.create(chunk.rate, chunk.channels) ?: return
+            track?.setVolume(volume)
             rate = chunk.rate
             channels = chunk.channels
         }
@@ -80,6 +91,8 @@ class AudioPlayback internal constructor(
 internal sealed interface PlaybackCommand {
     data class Write(val chunk: AudioChunk) : PlaybackCommand
 
+    data class SetVolume(val volume: Float) : PlaybackCommand
+
     data object Stop : PlaybackCommand
 
     data object Close : PlaybackCommand
@@ -94,6 +107,8 @@ internal fun interface PlaybackTrackFactory {
 
 internal interface PlaybackTrack {
     fun write(pcm: ByteArray)
+
+    fun setVolume(volume: Float)
 
     fun stopAndRelease()
 }
@@ -134,6 +149,10 @@ private class AndroidPlaybackTrack(
 ) : PlaybackTrack {
     override fun write(pcm: ByteArray) {
         track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+    }
+
+    override fun setVolume(volume: Float) {
+        track.setVolume(volume.coerceIn(0f, 1f))
     }
 
     override fun stopAndRelease() {
