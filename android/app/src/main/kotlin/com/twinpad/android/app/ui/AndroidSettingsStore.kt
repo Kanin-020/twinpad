@@ -20,6 +20,7 @@ data class AndroidSettings(
     val fps: Int = DEFAULT_FPS,
     val jpegQuality: Int = DEFAULT_JPEG_QUALITY,
     val audioVolumePercent: Int = DEFAULT_AUDIO_VOLUME_PERCENT,
+    val showGyroMonitor: Boolean = false,
     val showHud: Boolean = true,
     val showControls: Boolean = true,
 ) {
@@ -57,6 +58,7 @@ internal class AndroidSettingsStore(context: Context) {
             jpegQuality = preferences.getInt(KEY_QUALITY, AndroidSettings.DEFAULT_JPEG_QUALITY),
             audioVolumePercent =
                 preferences.getInt(KEY_AUDIO_VOLUME, AndroidSettings.DEFAULT_AUDIO_VOLUME_PERCENT),
+            showGyroMonitor = preferences.getBoolean(KEY_GYRO_MONITOR, false),
             showHud = preferences.getBoolean(KEY_HUD, true),
             showControls = preferences.getBoolean(KEY_CONTROLS, true),
         )
@@ -71,6 +73,7 @@ internal class AndroidSettingsStore(context: Context) {
                 KEY_AUDIO_VOLUME,
                 settings.audioVolumePercent.coerceIn(MIN_AUDIO_VOLUME_PERCENT, MAX_AUDIO_VOLUME_PERCENT),
             )
+            .putBoolean(KEY_GYRO_MONITOR, settings.showGyroMonitor)
             .putBoolean(KEY_HUD, settings.showHud)
             .putBoolean(KEY_CONTROLS, settings.showControls)
             .apply()
@@ -83,6 +86,7 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_FPS = "stream_fps"
         const val KEY_QUALITY = "jpeg_quality"
         const val KEY_AUDIO_VOLUME = "audio_volume_percent"
+        const val KEY_GYRO_MONITOR = "show_gyro_monitor"
         const val KEY_HUD = "show_hud"
         const val KEY_CONTROLS = "show_controls"
     }

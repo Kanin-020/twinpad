@@ -47,6 +47,9 @@ private const val HUD_TICK_MS: Long = 1_000L
 /** Conversión kbps → Mbps. */
 private const val KBPS_PER_MBPS: Int = 1_000
 
+/** Número de ejes yaw/pitch/roll. */
+private const val GYRO_AXIS_COUNT = 3
+
 /** Resoluciones seleccionables (16:9, CR-001). */
 private const val RES_W_960 = 960
 private const val RES_H_540 = 540
@@ -73,6 +76,7 @@ class PairingActivity : AppCompatActivity() {
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
+    private var gyroMonitorVisible = false
     private var sessionConfigSent = false
     private var mediaSurfaceHolder: SurfaceHolder? = null
     private val mediaSurfaceCallback =
@@ -108,12 +112,21 @@ class PairingActivity : AppCompatActivity() {
                 SensorManager.getRotationMatrixFromVector(orientationMatrix, event.values)
                 remapOrientationMatrix(orientationMatrix, display.rotation)
                 SensorManager.getOrientation(orientationMatrix, orientationAngles)
-                surfaceRef?.updateGyro(
+                val orientationTurns =
                     GyroOrientationMapper.toScreenTurns(
                         orientationAngles,
                         ProtocolConstants.GYRO_TURN_SCALE,
-                    ),
-                )
+                    )
+                surfaceRef?.updateGyro(orientationTurns)
+                if (orientationTurns.size == GYRO_AXIS_COUNT && gyroMonitorVisible) {
+                    val monitor = findViewById<GyroMonitorView>(R.id.gyro_monitor)
+                    monitor.setOrientationTurns(
+                        orientationTurns[0],
+                        orientationTurns[1],
+                        orientationTurns[2],
+                    )
+                    monitor.bringToFront()
+                }
             }
 
             override fun onAccuracyChanged(
@@ -285,6 +298,10 @@ class PairingActivity : AppCompatActivity() {
         controlsVisible = settings.showControls
         findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
         findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
+        gyroMonitorVisible = settings.showGyroMonitor
+        findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
+        findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = settings.showGyroMonitor
+        findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
         findViewById<ViewGroup>(R.id.surface_container).isVisible = settings.showControls
     }
 
@@ -357,6 +374,13 @@ class PairingActivity : AppCompatActivity() {
             val store = AndroidSettingsStore(this)
             store.save(store.load().copy(showHud = checked))
             renderHudChip()
+        }
+        findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).setOnCheckedChangeListener { _, checked ->
+            gyroMonitorVisible = checked
+            findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = checked
+            findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
+            val store = AndroidSettingsStore(this)
+            store.save(store.load().copy(showGyroMonitor = checked))
         }
         findViewById<SwitchMaterial>(R.id.switch_show_controls).setOnCheckedChangeListener { _, checked ->
             controlsVisible = checked

@@ -7,13 +7,13 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.2.0 |
+| Version | 1.3.1 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059 (registrados en `testing/traceability.md`) |
-| Last updated | 2026-10-18 |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-078 (registrados en `testing/traceability.md`) |
+| Last updated | 2026-10-22 |
 
 ## 1. Purpose
 
@@ -52,6 +52,7 @@ Define el comportamiento observable de la app Twinpad en Android para vinculaci�
 |---|---|---|
 | Estado de pantalla | uno de §6 (Inicio, Escaneando, Handshake, Vinculado, Error) | siempre visible en la Pantalla de Pairing |
 | Orientación de la app | landscape habitual fijo | la app está visible; no se permite verticalidad ni rotación automática |
+| Monitor de orientación gyro | vista opcional superpuesta en Pairing y en la sesión, con rectángulo, ejes X/Y/Z etiquetados y valores yaw/pitch/roll absolutos en tiempo real del dato de pantalla que envía la app; yaw verde, pitch rojo, roll azul | el usuario lo activa en ajustes; apagado por defecto, preferencia local persistente (CR-016/CR-018) |
 | Barras del sistema | estado y navegación ocultos en modo inmersivo | PairingActivity tiene foco; Android puede mostrarlas transitoriamente por gesto del usuario |
 | Solicitud de permiso de cámara | diálogo del SO | al entrar a Escaneando sin permiso (§11-R2) |
 | Conexión TCP + Handshake cliente | mensajes exactos de SPEC-001 §4.2 lado app | tras escaneo válido (§7) |
@@ -155,6 +156,7 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R8 (CR-010):** solo se aceptan medios tras `game_selected`; selección única automática y lista seleccionable para múltiples Plugins vivos.
 - **R9 (CR-011):** PairingActivity permanece en landscape habitual fijo, sin verticalidad ni autorrotación.
 - **R10 (CR-011):** las barras de estado y navegación se ocultan con immersive mode; Android puede revelarlas temporalmente mediante gesto y se vuelven a ocultar al recuperar foco.
+- **R11 (CR-016/CR-018):** el monitor opcional de orientación se superpone tanto en la pantalla Pairing como durante la sesión, representa yaw/pitch/roll absoluto remapeado al marco de pantalla con ejes X/Y/Z etiquetados, y se actualiza con las lecturas del sensor. Yaw es verde, pitch rojo y roll azul. No cambia el reporte ni la experiencia de input; está apagado si no hay preferencia y conserva la activación local elegida.
 
 ## 12. Contracts
 
@@ -218,6 +220,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Auto-selección con una fuente, lista con varias y fuente confirmada | TEST-053 |
 | Selección obsoleta eliminada ante cambio de liveness | TEST-055 |
 | Landscape habitual fijo, barras del sistema inmersivas | TEST-059 |
+| Monitor gyro opt-in dibuja orientación absoluta de sensor y paleta semántica (CR-016/CR-018) | TEST-078 |
 
 ## 17. Open questions
 
@@ -242,3 +245,5 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |
 | 1.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Landscape habitual fijo y modo inmersivo sin barras de estado/navegación |
+| 1.3.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Monitor gyro opt-in persistente en la app Android, sin alterar inputs ni protocolo |
+| 1.3.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Precisa paleta común y muestra la orientación absoluta que Android reporta |

@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.11.0 |
+| Version | 1.13.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
-| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015, Draft; adaptador Cemu) |
-| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064 |
-| Last updated | 2026-10-20 |
+| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017, Draft; adaptador Cemu) |
+| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079 |
+| Last updated | 2026-10-22 |
 
 ## 1. Purpose
 
@@ -75,7 +75,8 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 6. Al cambiar de Plugin, el Servidor detiene los streams previos antes de iniciar los nuevos. Si la fuente seleccionada desaparece, detiene sus streams y Android procesa la nueva lista.
 7. Cemu publica el framebuffer DRC/GamePad internamente hasta 60 fps según la configuración vigente y PCM DRC, sin ventana separada ni selector, y consume los snapshots de input enviados por el Servidor. Si Twinpad se conecta y Jugador 1 no tiene VPAD emulado, Cemu crea uno temporal en memoria; si ya hay VPAD, lo reutiliza. El temporal no se persiste y se retira al desconectar sin alterar un perfil/asignación configurados. Conforme a CR-012, la salida TV del juego continúa local en Cemu/PC; la única fuente PCM de Cemu que se publica al Plugin SDK y se retransmite a Android es GamePad/DRC. La ausencia o fallo del stream Android no silencia TV y las rutas no se mezclan. El wire de SPEC-005 no cambia.
 
-El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su política de auto/manual start se mantiene salvo donde contradiga este flujo.
+El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su política de auto/manual start se mantiene salvo donde contradiga este flujo. Bajo CR-016/CR-017, Configuraciones permite activar un monitor de orientación en una ventana Cemu separada y redimensionable, inicialmente apagado; muestra yaw/pitch/roll recibido y su mapeo al VPAD desde el último snapshot. Sin gyro válido, la ventana indica que espera entrada. No se superpone al juego ni requiere cambiar inputs o contrato wire.
+
 
 ## 8. Alternative flows
 
@@ -125,6 +126,7 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 - **R10 (CR-010):** el host de cada Plugin SDK inicia/reutiliza el Servidor PC y presenta el QR; la librería SDK permanece headless.
 - **R11 (CR-012):** en el adaptador Cemu, TV solo usa la salida local PC y PCM Android procede solo de DRC/GamePad. Las salidas y volúmenes son independientes; no se mezclan ni se altera TV cuando el transporte Android se detiene. No se añade un segundo stream de sesión.
 - **R12 (CR-013):** al conectar Cemu/Twinpad, crear un VPAD temporal en memoria para Jugador 1 solo si no existe uno; reutilizar sin modificar el VPAD existente; nunca persistir el temporal; retirarlo al desconectar y preservar cualquier controlador configurado que haya reemplazado ese temporal.
+- **R13 (CR-016/CR-017):** el host Cemu permite activar por preferencia local un monitor visual de orientación en una ventana wxWidgets independiente y redimensionable (640×480 inicial, mínimo 480×360), inicialmente apagado. Presenta el snapshot recibido y las tres vueltas mapeadas al VPAD; se actualiza al llegar nuevos snapshots. Sin gyro válido indica que espera entrada. Desactivar la preferencia o cerrar la ventana la cierra y deja la preferencia apagada; habilitarla abre la ventana. No cambia input, A/V, selección ni contrato wire.
 
 ## 12. Contracts
 
@@ -134,6 +136,7 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 | Canal IPC SDK ↔ Servidor | este documento §4/§12; ADR-008; CR-015 para metadata H.264 | local al PC; medios Plugin→Servidor y snapshot input Servidor→Plugin |
 | Consulta de QR Cemu ↔ Servidor | DES-004 (CR-007/CR-009) | TCP 127.0.0.1:8423; petición `GET_QR\n`, respuesta NDJSON `{uri, modules, cemu_live}` |
 | Streams que el juego alimenta | SPEC-003 (video), SPEC-005 (audio) | referenciados |
+| Diagnóstico de orientación Cemu (CR-016/CR-017) | SPEC-004 §4 | La ventana externa se alimenta del snapshot de `input_report`; no crea un mensaje nuevo ni se transmite fuera del PC. |
 
 ## 13. Examples (Given / When / Then)
 
@@ -207,6 +210,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Anuncio Cemu confirmado antes de mostrar QR; cancelación manual limpia | TEST-050 |
 | IPC H.264 conserva timestamp monotónico del encoder e indicador IDR (CR-015) | TEST-073 |
 | VPAD temporal de Jugador 1 solo cuando falta, sin sobreescribir ni persistir perfil local (CR-013) | TEST-064 |
+| Monitor Cemu opt-in en ventana externa, con orientación recibida y mapeada a VPAD (CR-016/CR-017) | TEST-079 |
 
 ## 17. Open questions
 
@@ -230,3 +234,5 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.9.0 | 2026-10-19 | Product owner + Twinpad team (CR-012) | Audio TV permanece local; PCM DRC/GamePad Cemu es la única fuente de Android; no cambia el contrato wire |
 | 1.10.0 | 2026-10-19 | Product owner + Twinpad team (CR-013) | Cemu crea temporalmente el VPAD de Jugador 1 si falta; conserva configuraciones existentes y no persiste el temporal |
 | 1.11.0 | 2026-10-20 | Product owner (CR-015) | Define `ts_capture_us` e `idr` obligatorios en `game_frame(fmt=h264)` para preservar metadata del encoder en el relay |
+| 1.12.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitor Cemu opt-in de orientación recibida y mapeada a VPAD, sin cambio del protocolo |
+| 1.13.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Mueve el monitor Cemu a ventana wxWidgets independiente y ampliable; sin cambio wire |

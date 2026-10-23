@@ -45,10 +45,6 @@ class ProfileSurface(
 
     fun updateGyro(orientationTurns: List<Int>) = gyroController.update(orientationTurns)
 
-    fun setGyroSensitivity(sensitivity: Float) = gyroController.setSensitivity(sensitivity)
-
-    fun calibrateGyro() = gyroController.recalibrate()
-
     fun loadProfile(gameId: String) {
         activeGameId = gameId
         val generation = ++profileLoadGeneration

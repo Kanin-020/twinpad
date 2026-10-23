@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-077 |
+| TEST | TEST-082 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -88,6 +88,11 @@
 | REQ-004/006 | SPEC-003/006 | DES-004 | TEST-073 | Draft | `TwinpadClient_h264_encoder_test` prueba el encoder OpenH264 real: SPS/PPS + IDR inicial y tras reset, perfil Constrained Baseline nivel 4.2 y timestamps de captura crecientes (CR-014/CR-015); validación IPC autenticada pendiente de integración |
 | REQ-004 | SPEC-003 | DES-003 | TEST-074 | Draft | Instrumentación `H264SurfaceDecoderTest` con MediaCodec y Surface real: ignora P-frame previo a IDR y hasta nuevo IDR tras discontinuidad/cambio de dimensiones. `MediaCryptoTest` verifica por socket local handshake/HKDF/AES-GCM y no entrega registro manipulado; E2E físico instrumentado asociado a TEST-056/057 (CR-014) |
 | REQ-004 | SPEC-003 | DES-004 | TEST-075 | Draft | `VulkanRenderer_twinpad_readback_test` verifica que el selector escoge el slot de readback terminado más reciente, ignora slots no terminados y maneja slots libres; el E2E de FPS requiere volver a lanzar Cemu y medir en dispositivo físico |
+| REQ-003 | SPEC-004 | DES-004 | TEST-077 | Draft | `TwinpadOrientationMapper_test` verifica la conversión de orientación absoluta yaw/pitch/roll con la ganancia 0.5×, convención de signo de pitch, orden de ejes y límites int16 para VPAD Cemu (CR-019) |
+| REQ-003 | SPEC-002/004 | DES-002/004 | TEST-078 | Draft | `GyroMonitorRenderingTest` verifica que el monitor Android aparece apagado por defecto, persiste la preferencia opt-in y dibuja el rectángulo, ejes y valores yaw/pitch/roll; también afirma la paleta semántica yaw verde, pitch rojo, roll azul (CR-016/018) |
+| REQ-006 | SPEC-006 | DES-004 | TEST-079 | Draft | `TwinpadGyroMonitor_test` verifica activación opt-in por defecto apagada y mapeo de los ejes recibidos a VPAD; aceptación GUI debe verificar ventana externa redimensionable (640×480 inicial, 480×360 mínimo), datos en vivo/estado de espera y persistencia al cerrar (CR-016/CR-017) |
+| REQ-003 | SPEC-004 | DES-002 | TEST-080 | Draft | `ProfileGyroControllerTest.publishes_absolute_screen_orientation_without_calibration_offset` verifica que los mismos valores yaw/pitch/roll que se muestran en Android llegan sin compensación de calibración al reporte del gamepad (CR-018) |
+| REQ-003 | SPEC-004 | DES-004 | TEST-081 | Draft | `TwinpadOrientationMapper_test` verifica que Cemu aplica ganancia gyro 0.5× solo al mapear a VPAD, sin alterar orientación recibida, valores del monitor ni sus ángulos (CR-019) |
 
 ## NFR verification
 
@@ -128,6 +133,8 @@
 | CR | Changes | Date | Status |
 |---|---|---|---|
 | CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |
+| CR-018 | SPEC-002/004 y DES-002/004: Android envía la orientación absoluta mostrada; ambos monitores usan yaw verde, pitch rojo, roll azul; TEST-078/080 | 2026-10-22 | Approved / in execution |
+| CR-019 | SPEC-004/DES-004: escala gyro Cemu→VPAD a 0.5×; reporte y monitores siguen absolutos; TEST-077/081 | 2026-10-22 | Approved / in execution |
 | — | `video_config` por sesión: resolución/fps/calidad JPEG en caliente desde el drawer de la app (parser del server + VM) | 2026-10-09 | Applied (owner-requested) |
 | CR-002 | SPEC-003 v1.2.0: patches JPEG por tiles de 64 px, base_fn y keyframes periódicos; DES-003 y TEST-027/028 | 2026-10-17 | Applied |
 | CR-003 | PCM de audio del juego vía SDK: canal IPC separado, callback y prioridad video/drop-old | 2026-10-17 | Approved |

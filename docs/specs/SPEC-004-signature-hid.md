@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.3.0 |
+| Version | 1.5.2 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
-| Realized by | DES-004 (CR-005, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059 |
-| Last updated | 2026-10-18 |
+| Realized by | DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019, Draft) |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-077, TEST-078, TEST-079, TEST-080, TEST-081 |
+| Last updated | 2026-10-22 |
 
 ## 1. Purpose
 
@@ -42,7 +42,7 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 | `touch_x`, `touch_y` | integer (uint16) | posición normalizada sobre la imagen DRC, 0…65535; al soltar se conserva la última coordenada | yes |
 | `touch_pressed` | boolean | true mientras hay contacto con la imagen DRC | yes |
 
-Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo. Bluetooth HID nativo sigue siendo el objetivo posterior de ADR-003. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad, orientación gyro y touch se mapean directamente.
+Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo. Bluetooth HID nativo sigue siendo el objetivo posterior de ADR-003. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad y touch se mapean directamente. Para Cemu, antes de convertir la orientación gyro al VPAD se escala cada ángulo yaw/pitch/roll por 0.5 (CR-019); el reporte recibido y ambos monitores conservan los valores absolutos originales.
 
 ## 5. Outputs
 
@@ -103,6 +103,8 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 | Otro gamepad físico conectado a la PC | conviven: cada gamepad es un dispositivo HID independiente; el juego elige cuál usar |
 | Dispositivo sin HID device role (CTX-A2) | la app lo detecta y lo informa; no aparece como gamepad |
 | Gyro ausente en el dispositivo | el reporte se envía sin `gyro`; los ejes no llegan al juego |
+| Diagnóstico gyro Android/Cemu (CR-018) | el reporte contiene la misma orientación absoluta yaw/pitch/roll que Android muestra; ambos diagramas usan yaw verde, pitch rojo y roll azul |
+| CR-016/CR-017: diagnóstico visual del gyro | Android muestra la orientación absoluta que prepara para `input_report`; Cemu muestra en una ventana externa ampliable el yaw/pitch/roll recibido y su orientación mapeada a VPAD. Ambos monitores son opt-in, locales, apagados por defecto y no alteran el reporte |
 
 ## 11. Business rules
 
@@ -159,6 +161,8 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | Flujo táctil → juego (AC-2) y orden por `seq` | TEST-018 |
 | Campos touch normalizados y orientación absoluta extendida | TEST-043 |
 | Remapeo de ejes gyro al marco de pantalla en landscape fijo | TEST-059 |
+| Ganancia 0.5× del gyro aplicado al VPAD Cemu, sin alterar el reporte ni el diagnóstico visual | TEST-081 |
+| Mapper Twinpad a VPAD y monitor visual de orientación en ambos extremos (CR-016/CR-017/CR-018/CR-019) | TEST-077, TEST-078, TEST-079, TEST-080, TEST-081 |
 | Rumble (AC-3) y edge cases de §10 | TEST-019 |
 | Latencia NFR-002 (p95 ≤ 15 ms) | pruebas de performance en banco físico con inyección HID sintética |
 | Snapshot input conservado y sondeable por Plugin | TEST-052 |
@@ -178,3 +182,7 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.0.0 | 2026-10-07 | Eng lead (owner) | Approved: transporte inicial por sesión LAN de SPEC-001 (ver §17); BT HID nativo queda como meta (ADR-003) |
 | 1.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Retención por sesión del último input y polling SDK para entregarlo al Plugin seleccionado |
 | 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Precisa yaw/pitch/roll en el marco de la pantalla; esquema wire sin cambios |
+| 1.4.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitores opt-in de orientación en Android/Cemu y define mapper de orientación al VPAD; sin cambio wire |
+| 1.5.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Mueve el monitor Cemu a una ventana externa redimensionable; sin cambio wire |
+| 1.5.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Aclara que Android envía la orientación absoluta mostrada y alinea los colores semánticos de ambos monitores; sin cambio wire |
+| 1.5.2 | 2026-10-22 | Product owner + Twinpad team (CR-019) | Reduce a 0.5× el gyro que Cemu aplica al VPAD, sin cambio del valor absoluto wire ni de los monitores |

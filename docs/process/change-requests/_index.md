@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-016 |
+| CR | CR-020 |
 
 ## Open / In review
 
@@ -17,6 +17,11 @@
 ## Approved / in execution
 
 | ID | Title | Targets | Decided | File |
+|---|---|---|---|---|
+| CR-019 | Reducir al 50% la sensibilidad gyro de Cemu en VPAD | SPEC-004, DES-004 | 2026-10-22 | [CR-019-cemu-gyro-sensitivity.md](CR-019-cemu-gyro-sensitivity.md) |
+| CR-018 | Alinear valores y colores de los monitores gyro | SPEC-004, DES-002/004 | 2026-10-22 | [CR-018-align-gyro-monitors.md](CR-018-align-gyro-monitors.md) |
+| CR-017 | Mover el monitor gyro de Cemu a una ventana externa ampliada | SPEC-004/006, DES-004 | 2026-10-22 | [CR-017-cemu-external-gyro-monitor.md](CR-017-cemu-external-gyro-monitor.md) |
+| CR-016 | Monitores opcionales de orientación gyro en Android y Cemu | SPEC-002/004/006, DES-002/004 | 2026-10-22 | [CR-016-gyro-monitor.md](CR-016-gyro-monitor.md) |
 |---|---|---|---|---|
 | CR-015 | Añadir metadata de access units H.264 al IPC Plugin | SPEC-006, DES-004 | 2026-10-20 | [CR-015-game-frame-h264-metadata.md](CR-015-game-frame-h264-metadata.md) |
 | CR-014 | Migrar la Segunda pantalla de JPEG/tiles a H.264/AVC con canal media seguro | SPEC-003, ARCH, DES-003/004 | 2026-10-20 | [CR-014-video-codec-migration.md](CR-014-video-codec-migration.md) |

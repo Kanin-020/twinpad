@@ -1,15 +1,15 @@
-# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015)
+# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019)
 
 | | |
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 0.9.0 |
+| Version | 1.1.5 |
 | Status | `Draft` |
 | Owner | Eng |
-| Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015) |
+| Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019) |
 | Depends on | DES-003, ADR-007, ADR-008 |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-10-22 |
 
 ## 1. Overview
 
@@ -31,6 +31,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 - `VPADStatus_t`: recibe el estado Twinpad más reciente mientras el Plugin Cemu es el destino seleccionado; controles locales no se combinan.
 - `Temporary Player 1 VPAD`: InputManager crea un VPAD en memoria al conectarse Twinpad solo si no hay uno para Jugador 1; el objeto es propiedad temporal del adaptador, no se persiste y se retira al desconectar. Un VPAD existente nunca se reemplaza.
 - `DRC source`: textura GamePad publicada por el adaptador a la tasa configurada del stream, máximo 60 fps; Separate GamePad View permanece independiente.
+- `Twinpad gyro monitor`: preferencia local host opt-in (default false); conserva el snapshot gyro recibido y lo visualiza en una ventana wxWidgets externa y redimensionable (640×480 inicial, mínimo 480×360) junto con su conversión de ejes VPAD. Los colores del diagrama corresponden a los ejes recibidos: yaw verde, pitch rojo, roll azul. Sin gyro válido muestra estado de espera. Al apagar la preferencia o cerrar la ventana, esta se cierra y la preferencia queda apagada. No envía mensajes ni toca los datos de juego.
 
 ## 4. Interfaces
 
@@ -53,6 +54,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 |---|---|---|---|
 | Estado del adaptador | `TwinpadInputState` + último `seq` en memoria | Ninguna | Reiniciado al conectar/desconectar o salir del título |
 | Propiedad de input server | `Option<SessionId>` en memoria | Ninguna | Hasta desconexión de la sesión |
+| Preferencia gyro del host | `twinpad_show_gyro_monitor: bool` en config local Cemu; default false | Config XML existente | Hasta que el usuario la cambie |
 
 ## 6. Internal flows
 
@@ -104,6 +106,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | Servidor ausente o reiniciado | reconectar y re-anunciar cada 2 s mientras el título permanezca activo |
 | EOF, framing inválido o error de socket | marcar desconectado, descartar buffer parcial, resetear estado de input y reintentar |
 | `seq` repetido/antiguo | descartar el reporte sin alterar VPAD |
+| Gyro ausente | mantener abierta la ventana externa y mostrar que espera entrada hasta recibir un snapshot con orientación válida |
 | Sin título activo | “Iniciar conexión” está deshabilitado; cerrar sockets al salir del título y no reintentar hasta nueva solicitud válida |
 | Auto-connect desactivado | no iniciar al comenzar títulos; solicitud manual sigue disponible |
 | Auto-connect desactivado mientras conexión activa | conservar la conexión actual y aplicar la preferencia al próximo título |
@@ -125,6 +128,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | Enmarcado NDJSON | acumular bytes, extraer cada línea LF y parsear JSON completo | O(n) bytes | TCP no preserva límites de mensaje |
 | Mapeo sticks | `int8 / 127.0f`, invertir Y para convención VPAD | O(1) | conserva rango −1…1 |
 | Mapeo de touch | escalar 0…65535 a rectángulo TP del VPAD; al soltar conservar posición | O(1) | coincide con el rango de touch definido |
+| Mapeo de orientación Twinpad a Cemu | yaw/pitch/roll absoluto int16 → ganancia 0.5× → orden y vueltas VPAD; el signo de pitch se invierte para la convención del eje vertical Cemu. El gráfico y el wire conservan el valor sin escalar | O(1) | reduce la respuesta gyro del juego sin cambiar el snapshot reportado ni el diagnóstico visual (CR-019) |
 
 ## 11. Patterns applied
 
@@ -135,6 +139,11 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | SPEC aspect | Where realized | Test |
 |---|---|---|
 | SPEC-004 touch/orientación y serialización | `core::input`, Kotlin `InputCodec` | TEST-043 |
+| SPEC-004 orientación absoluta Android → VPAD Cemu | `TwinpadOrientationMapper::ToCemuTurns`, `VPADController` | TEST-077 |
+| CR-016/CR-017/CR-018 monitor Cemu externo con snapshot recibido, mapeo VPAD y colores semánticos compartidos | `TwinpadClient`, preferencia `wxCemuConfig`, `TwinpadGyroMonitorFrame` | TEST-079 |
+| Convención de yaw/pitch/roll del diagrama Cemu coincide con Android y dibuja los ejes desde los valores recibidos, sin mapeo VPAD | `TwinpadOrientationMapper::ToMonitorRadians`, `ToMonitorEndPoint`, `TwinpadGyroMonitorFrame` | TEST-079 |
+| Convención de signo de pitch y ganancia 0.5× en el mapeo VPAD Cemu | `TwinpadOrientationMapper::ToCemuTurns` y `VPADController` | TEST-077 |
+| Ganancia gyro VPAD 0.5× sin cambio al reporte/monitor | `TwinpadOrientationMapper::ToCemuTurns`; `ToMonitorRadians` conserva el snapshot | TEST-081 |
 | SPEC-006 selección por sesión y relay A/V | `GameRegistry`, handler de sesión, escritor de streams | TEST-051 |
 | SPEC-004/006 snapshot inicial, retención y polling SDK | sesión PC, IPC primary, `TwinpadGame::poll_input` | TEST-052 |
 | SPEC-002 selección Android única/múltiple y liveness | `PairingViewModel`, `PairingActivity` | TEST-053 |
@@ -155,6 +164,9 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 - CR-009 — Cemu se anuncia antes de presentar QR; cancelación limpia y captura desktop limitada a pruebas explícitas.
 - ADR-007 — primera ruta de inputs por sesión LAN autenticada.
 - ADR-008 — IPC localhost TCP NDJSON.
+- CR-016 — monitores de orientación opt-in en Android y Cemu, sin cambio de wire.
+- CR-017 — ventana externa, redimensionable y ampliada para el monitor gyro Cemu.
+- CR-019 — sensibilidad gyro fija de 0.5× únicamente para la conversión VPAD Cemu; wire y monitor conservan orientación absoluta.
 
 ## 14. Open questions
 
@@ -167,7 +179,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 - [x] Retry, desconexión, secuencia y framing descritos.
 - [x] Auto-connect persistente opt-in y conexión manual descritos (CR-006).
 - [x] Menú Twinpad descrito con “Iniciar conexión” y “Configuraciones”.
-- [ ] Probar visualmente ventana de ajustes, persistencia y conexión en vivo en Cemu.
+- [ ] Probar visualmente ventana de ajustes, persistencia y conexión en vivo en Cemu; verificar la ventana gyro externa/redimensionable conforme a CR-017.
 - [x] TEST-043/044, TEST-046/047, TEST-051…054, TEST-064 y TEST-065 registrados en trazabilidad; TEST-064/065 assertions incorporadas al debug unit-test entrypoint, ejecución pendiente.
 - [x] Rust tests/Clippy y build Cemu (`Cemu_debug`) verificados; ejecución de assertions TEST-064 y Android unit tests de esta entrega no aplica/no ejecutada.
 - [ ] Banco físico Cemu + Android: confirmar hasta 60 fps efectivos y desfase A/V ≤ ±150 ms.
@@ -187,3 +199,10 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | 0.8.0 | 2026-10-19 | Product owner + Twinpad team (CR-013) | VPAD temporal de Jugador 1 si falta, reutilización sin alterar el existente y limpieza sin persistencia |
 | 0.8.1 | 2026-10-19 | Twinpad team | Base64URL de IPC Cemu usa salida preasignada; TEST-065 y medición aislada en 720p/1080p, sin cambio de wire |
 | 0.9.0 | 2026-10-20 | Product owner + Twinpad team (CR-014) | Añade encoder OpenH264 y canal H.264 TCP autenticado/cifrado; screenshot independiente intacto |
+| 1.0.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Mapea orientación absoluta a VPAD y añade monitor Cemu persistente, opt-in, solo overlay TV |
+| 1.1.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Sustituye el overlay TV por ventana wxWidgets externa y redimensionable |
+| 1.1.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Alinea los colores yaw/pitch/roll de Cemu con Android y documenta la orientación absoluta reportada |
+| 1.1.2 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Corrige el signo de pitch en la conversión de Cemu al VPAD y afirma el signo en TEST-077 |
+| 1.1.3 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Elimina el desfase gráfico de 90° en roll y añade aserción de roll cero hacia la derecha en TEST-079 |
+| 1.1.4 | 2026-10-22 | Product owner + Twinpad team (CR-018) | El gráfico Cemu usa ahora directamente yaw/pitch/roll recibidos en lugar del mapeo VPAD, y TEST-079 cubre los valores de roll casi cero de las capturas |
+| 1.1.5 | 2026-10-22 | Product owner + Twinpad team (CR-019) | Aplica ganancia 0.5× al gyro que Cemu mapea al VPAD, sin cambiar wire ni monitor |

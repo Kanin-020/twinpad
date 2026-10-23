@@ -178,6 +178,16 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
         </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <com.twinpad.android.app.ui.GyroMonitorView
+            android:id="@+id/gyro_monitor"
+            android:layout_width="240dp"
+            android:layout_height="152dp"
+            android:layout_margin="12dp"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <include

@@ -7,12 +7,12 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.2.0 |
+| Version | 0.3.1 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
 | Depends on | DES-001, ADR-001 (stack), ADR-002 (transporte), ADR-004 (QR + challenge) |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-22 |
 
 ## 1. Overview
 
@@ -45,6 +45,8 @@ erDiagram
 - `QrPayload` (Kotlin, espejo de `core::qr`): `serverAddr`, `serverPort`, `token`; parseo estricto de `twinpad://v1#s=&p=&t=` (E5).
 - `HandshakeMessage` (sealed, espejo de SPEC-001 §4.2): `PairRequest`, `PairChallenge`, `PairProof`, `PairAck`, `PairError(code, message)`.
 - `SessionState`: `sessionId` + `sessionKey` en memoria del proceso (SPEC-002 R6); sin persistencia.
+- `GyroMonitorView`: diagnóstico visual de sensor con marco rectangular y tres ejes; consume yaw/pitch/roll de pantalla después del remapeo CR-011.
+- `AndroidSettings.showGyroMonitor`: booleano persistido en `SharedPreferences`; false si no existe y modificable desde el drawer.
 
 ## 4. Interfaces
 
@@ -56,12 +58,14 @@ erDiagram
 | `PairingStateMachine.onEvent(e): List<Effect>` | eventos: `ScanRequested`, `CameraGranted/Denied`, `QrScanned(raw)`, `WireMessage(String?)`, `Cancelled`, `AppBackgrounded`, `Retry` | núcleo de SPEC-002 §6 |
 | `Effect` (sealed) | `RequestCamera`, `StartCamera`, `StopCamera`, `Connect(addr, port)`, `Disconnect`, `SendLine(String)`, `ShowMessage(resId)`, `ShowError(resId)` | la UI/capa Android los ejecuta |
 | `PairingViewModel` | une máquina + adaptador de red + cámara; expone `StateFlow<PairingUiState>` | único dueño del estado |
+| Sensor de orientación → `GyroMonitorView` y `input_report` | `SensorManager.TYPE_ROTATION_VECTOR` → remapeo CR-011 → yaw/pitch/roll absolutos de pantalla | La vista solo se dibuja si la preferencia opt-in está activa; el reporte envía los mismos valores absolutos (CR-018). Colores: yaw verde, pitch rojo, roll azul. |
 
 ## 5. Data model and persistence
 
 | Store | Schema | Migrations | Retention |
 |---|---|---|---|
-| (ninguno) | toda la sesión vive en memoria del proceso (SPEC-002 R6); perfiles y prefs llegan con REQ-008 | — | proceso vivo |
+| SessionState | toda la sesión vive en memoria del proceso (SPEC-002 R6) | — | proceso vivo |
+| Preferencias locales | `showGyroMonitor: Boolean`, default false | ninguna | hasta que el usuario lo cambie; guardado en `SharedPreferences` |
 
 ## 6. Internal flows
 
@@ -145,6 +149,7 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | §10 edge cases (cancelar, fondo, código desconocido, rotación de mensajes) | máquina | TEST-014 |
 | §11 R4 strings en recursos | `res/values/strings.xml` | revisión + TEST-013 (afirma resId/texto) |
 | CR-011: landscape inmersivo y marco gyro | Manifest + `PairingActivity` | TEST-059 (instrumentado en dispositivo Android) |
+| CR-016/CR-018: monitor Android opt-in, orientación absoluta reportada y colores semánticos de ejes | `PairingActivity`, `GyroMonitorView`, `ProfileGyroController`, `AndroidSettingsStore` | TEST-078, TEST-080 |
 
 ## 13. Related decisions
 
@@ -172,3 +177,5 @@ No aplica (sin datos cacheados; la sesión no persiste).
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Diseño inicial: máquina de estados pura + adaptadores; handshake en Kotlin puro sin JNI |
 | 0.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Documenta orientación landscape fija, modo inmersivo y remapeo gyro de pantalla |
+| 0.3.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitor Android opt-in con preferencia persistente y render de orientación/ejes en vivo |
+| 0.3.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Envía la orientación absoluta mostrada y define colores semánticos compartidos para yaw/pitch/roll |
