@@ -34,7 +34,8 @@ class H264SurfaceDecoderTest {
         val presented = AtomicInteger(0)
         val firstPresented = CountDownLatch(1)
         val recoveredPresented = CountDownLatch(1)
-        val decoder =
+        val reconnectedPresented = CountDownLatch(1)
+        var decoder =
             H264SurfaceDecoder(surface) { frameNumber ->
                 when (frameNumber) {
                     in 10..19 -> {
@@ -79,6 +80,27 @@ class H264SurfaceDecoderTest {
                 Thread.sleep(20)
             }
             assertTrue("decoder did not resume after a fresh IDR", recoveredPresented.await(3, TimeUnit.SECONDS))
+
+            // A media reconnect creates a new MediaCodec while Android keeps the same
+            // Surface attached. Releasing the old codec must free its Surface consumer.
+            decoder.close()
+            decoder =
+                H264SurfaceDecoder(surface) { frameNumber ->
+                    if (frameNumber in 40..49) {
+                        presented.incrementAndGet()
+                        reconnectedPresented.countDown()
+                    }
+                }
+            decoder.configure(64, 64)
+            decoder.queue(accessUnits[0].asFrame(40, 700_000))
+            repeat(6) { index ->
+                decoder.queue(accessUnits[1].asFrame(41L + index, 733_333L + index * 33_333L))
+                Thread.sleep(20)
+            }
+            assertTrue(
+                "new decoder could not reconnect to the still-attached Surface",
+                reconnectedPresented.await(3, TimeUnit.SECONDS),
+            )
         } finally {
             decoder.close()
             surface.release()

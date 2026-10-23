@@ -163,16 +163,23 @@ internal class PairingMediaSession(
     private fun createDecoder(
         connection: ConnectionParameters,
         connectionGeneration: Long,
-    ): H264SurfaceDecoder? =
-        try {
-            H264SurfaceDecoder(connection.output) { frameNumber ->
-                onFramePresented(connectionGeneration, frameNumber, connection.frameSize)
-            }.also {
-                it.configure(connection.frameSize.first, connection.frameSize.second, connection.frameRate)
+    ): H264SurfaceDecoder? {
+        val newDecoder =
+            try {
+                H264SurfaceDecoder(connection.output) { frameNumber ->
+                    onFramePresented(connectionGeneration, frameNumber, connection.frameSize)
+                }
+            } catch (_: Exception) {
+                return null
             }
+        return try {
+            newDecoder.configure(connection.frameSize.first, connection.frameSize.second, connection.frameRate)
+            newDecoder
         } catch (_: Exception) {
+            newDecoder.close()
             null
         }
+    }
 
     private data class ConnectionParameters(
         val output: Surface,
@@ -272,9 +279,15 @@ internal class PairingMediaSession(
 
     private fun onClientClosed(connectionGeneration: Long) {
         if (connectionGeneration != generation.get()) return
+        generation.incrementAndGet()
         val current = currentStreamState()
         setStreamState(current.copy(state = StreamState.INTERRUPTED))
         client = null
+        clearQueuedAccessUnits()
+        decoder?.close()
+        decoder = null
+        lastPresentedFrameNumber = null
+        lastReceivedFrameNumber = null
         scheduleReconnect()
     }
 
