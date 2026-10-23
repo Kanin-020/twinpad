@@ -10,6 +10,9 @@ private const val MAX_FRAME_WIDTH = 3840
 private const val MAX_FRAME_HEIGHT = 2160
 private const val MAX_INPUT_BYTES = 4 * 1024 * 1024
 private const val LOW_LATENCY_ENABLED = 1
+private const val MIN_FRAME_RATE = 1
+private const val MAX_FRAME_RATE = 60
+private const val DEFAULT_FRAME_RATE = 30
 
 /** MediaCodec AVC decoder feeding the app-owned SurfaceView. */
 class H264SurfaceDecoder(
@@ -24,21 +27,28 @@ class H264SurfaceDecoder(
     private val frameNumbersByTimestamp = HashMap<Long, Long>()
     private var width = 0
     private var height = 0
+    private var configuredFrameRate = 0
 
     @Synchronized
     fun configure(
         frameWidth: Int,
         frameHeight: Int,
+        frameRate: Int = DEFAULT_FRAME_RATE,
     ) {
         check(!released.get())
         require(frameWidth in MIN_FRAME_DIMENSION..MAX_FRAME_WIDTH)
         require(frameHeight in MIN_FRAME_DIMENSION..MAX_FRAME_HEIGHT)
-        if (configured && width == frameWidth && height == frameHeight) return
+        require(frameRate in MIN_FRAME_RATE..MAX_FRAME_RATE)
+        val configurationMatches =
+            configured && width == frameWidth && height == frameHeight && configuredFrameRate == frameRate
+        if (configurationMatches) return
         if (configured) codec.stop()
         width = frameWidth
         height = frameHeight
+        configuredFrameRate = frameRate
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
         format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_BYTES)
+        format.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
         format.setInteger(MediaFormat.KEY_LOW_LATENCY, LOW_LATENCY_ENABLED)
         codec.configure(format, surface, null, 0)
         codec.start()

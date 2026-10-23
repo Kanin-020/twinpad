@@ -256,7 +256,8 @@ fn main() {
                         let selected_game = Arc::new(std::sync::Mutex::new(None::<String>));
                         let media_game = Arc::new(std::sync::Mutex::new(None::<String>));
                         registry_ref.set_selected_game(session_id, None);
-                        twinpad_server::games::set_cemu_capture_fps(30);
+                        let initial_video_config = twinpad_server::video::VideoConfig::from_env();
+                        twinpad_server::games::set_cemu_capture_fps(initial_video_config.fps);
 
                         let session_input_snapshot =
                             Arc::new(std::sync::Mutex::new(None::<String>));
@@ -279,9 +280,8 @@ fn main() {
                         // CR-001: resolución/fps/calidad por entorno (720p×30
                         // por defecto); la app puede cambiarla en caliente
                         // (menú de ajustes) vía `video_config` de sesión.
-                        let video_config_shared = std::sync::Arc::new(std::sync::Mutex::new(
-                            twinpad_server::video::VideoConfig::from_env(),
-                        ));
+                        let video_config_shared =
+                            std::sync::Arc::new(std::sync::Mutex::new(initial_video_config));
                         // POR QUÉ AQUÍ: crear el grabber AHORA STARIA el hilo
                         // de sesión — el portal ScreenCast (Wayland) pide permiso
                         // con DIÁLOGO y espera al owner (U4 paciencia, §9), y el
