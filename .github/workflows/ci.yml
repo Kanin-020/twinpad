@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux capture dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libwayland-dev libpipewire-0.3-dev libgbm-dev libdrm-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -30,7 +34,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4.0.4
+        with:
+          packages: platform-tools
       - name: ktlint + detekt
         run: ./gradlew ktlintCheck detekt
         working-directory: android
