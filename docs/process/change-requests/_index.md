@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-020 |
+| CR | CR-021 |
 
 ## Open / In review
 
@@ -18,6 +18,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-020 | Aceleración por hardware del encoder H.264 de Cemu | SPEC-003, ARCH, DES-004 | 2026-10-23 | [CR-020-hardware-video-encoding.md](CR-020-hardware-video-encoding.md) |
 | CR-019 | Reducir al 50% la sensibilidad gyro de Cemu en VPAD | SPEC-004, DES-004 | 2026-10-22 | [CR-019-cemu-gyro-sensitivity.md](CR-019-cemu-gyro-sensitivity.md) |
 | CR-018 | Alinear valores y colores de los monitores gyro | SPEC-004, DES-002/004 | 2026-10-22 | [CR-018-align-gyro-monitors.md](CR-018-align-gyro-monitors.md) |
 | CR-017 | Mover el monitor gyro de Cemu a una ventana externa ampliada | SPEC-004/006, DES-004 | 2026-10-22 | [CR-017-cemu-external-gyro-monitor.md](CR-017-cemu-external-gyro-monitor.md) |

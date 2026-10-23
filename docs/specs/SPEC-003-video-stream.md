@@ -4,17 +4,17 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.4.0 |
+| Version | 1.5.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
-| Realized by | DES-003 (CR-014; Draft), DES-004 (CR-014; Draft) |
-| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-051, TEST-054 |
-| Last updated | 2026-10-20 |
+| Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
+| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054 |
+| Last updated | 2026-10-23 |
 
 ## 1. Purpose
 
-Define transporte y presentación del Stream de video de la Segunda pantalla, publicado como access units H.264/AVC por el Plugin seleccionado y descodificado por Android. El canal multimedia TCP separado se autentica con la sesión SPEC-001, usa AES-256-GCM y framing binario. El servidor retransmite opacamente; no captura, decodifica ni genera la fuente. La versión 1.4.0 reemplaza el transporte JPEG/tiles de 1.3.0 (CR-014); no existe negociación ni fallback entre versiones.
+Define transporte y presentación del Stream de video de la Segunda pantalla, publicado como access units H.264/AVC por el Plugin seleccionado y descodificado por Android. El canal multimedia TCP separado se autentica con la sesión SPEC-001, usa AES-256-GCM y framing binario. El servidor retransmite opacamente; no captura, decodifica ni genera la fuente. La versión 1.5.0 permite al adaptador Cemu optar por encoder H.264 hardware con fallback CPU sin cambiar el wire contract ni el perfil exigido. La versión 1.4.0 reemplazó el transporte JPEG/tiles de 1.3.0 (CR-014); no existe negociación ni fallback entre versiones.
 
 ## 2. Definitions
 
@@ -40,7 +40,7 @@ Define transporte y presentación del Stream de video de la Segunda pantalla, pu
 | `stream_start` | `w`,`h`,`fmt`,`fps`,`media_port` | `fmt="h264"`; dimensiones 16–3840 × 16–2160; fps 1–60; `media_port=8425` |
 | `stream_stop` | `reason` | `plugin_stopped` \| `server_shutdown` |
 
-El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo para la fuente seleccionada y cuando existe una AU IDR disponible. Una actualización de encoder/dimensiones genera `stream_stop`, `stream_start` nuevo y una IDR; no se envían medios sin un start vigente. `video_frame`, `video_patch` y `stream_gap` no forman parte de v1.4.0.
+El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo para la fuente seleccionada y cuando existe una AU IDR disponible. Una actualización de encoder/dimensiones genera `stream_stop`, `stream_start` nuevo y una IDR; no se envían medios sin un start vigente. `video_frame`, `video_patch` y `stream_gap` no forman parte de v1.5.0.
 
 ### 4.2 Handshake del canal media TCP
 
@@ -52,7 +52,7 @@ Ambos derivan `media_key = HKDF-SHA256(ikm=session_key, salt=nonce_c||nonce_s, i
 
 Cada registro servidor→Android tiene `length:u32 BE` (bytes que siguen, incluidos counter y tag), `counter:u64 BE`, `ciphertext[length-24]` (incluye tag GCM de 16 B). Máximo `length=4 MiB`; mínimo 24 B. AES-256-GCM nonce = `00000000:u32 BE || counter:u64 BE`; AAD = bytes wire `length || counter`. `counter` inicia en 0 y aumenta exactamente en uno; longitud inválida, truncamiento, salto/repetición o tag erróneo cierra el canal.
 
-Plaintext: `fn:u64 BE || ts_capture_us:u64 BE || flags:u8 || AnnexB access_unit`. `fn` comienza en cero y aumenta estrictamente; `ts_capture_us` es monótono desde inicio del encoder; bit 0 de flags indica IDR y bits 1–7 deben ser cero. H.264/AVC Constrained Baseline, nivel 4.2, YUV 4:2:0; sin B-frames. Cada IDR contiene SPS/PPS. Longitudes fuera de rango, AU vacía o flags inválidos cierran canal; el servidor no modifica el payload.
+Plaintext: `fn:u64 BE || ts_capture_us:u64 BE || flags:u8 || AnnexB access_unit`. `fn` comienza en cero y aumenta estrictamente; `ts_capture_us` es monótono desde inicio del encoder; bit 0 de flags indica IDR y bits 1–7 deben ser cero. H.264/AVC Constrained Baseline, nivel 4.2, YUV 4:2:0; sin B-frames. Cemu usa OpenH264 CPU por defecto. La preferencia persistente local `twinpad_hardware_acceleration` (false por defecto) habilita el intento de un encoder hardware disponible; si el encoder no puede inicializarse/configurarse o falla el contrato AVC, Cemu reinicia la codificación con OpenH264 CPU, sin alterar las dimensiones ni el FPS configurados. El cambio de preferencia se aplica en el siguiente frame/configuración vigente. Ambas rutas emiten Annex B con SPS/PPS en cada IDR. Longitudes fuera de rango, AU vacía o flags inválidos cierran canal; el servidor no modifica el payload.
 
 Los nonces frescos derivan subclave nueva en cada conexión; no hay reanudación de clave/counter. Cerrar el socket Pairing revoca y cierra inmediatamente su canal media asociado. El canal solo recibe la fuente seleccionada; el servidor conserva como máximo una AU pendiente por cliente (latest-frame-wins), no decodifica ni recodifica y nunca sirve a clientes no autenticados.
 ## 5. Outputs
@@ -159,7 +159,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 
 | Contract | Canonical source | Notes |
 |---|---|---|
-| Control `stream_start`/`stream_stop` | este documento §4.1; NDJSON por SPEC-001 §4.2 | v1.4.0; control solo en conexión Pairing |
+| Control `stream_start`/`stream_stop` | este documento §4.1; NDJSON por SPEC-001 §4.2 | v1.5.0; control solo en conexión Pairing |
 | Canal media H.264 cifrado | este documento §4.2–4.3 | TCP 8425; HMAC/HKDF/AES-256-GCM; Annex B; CR-014 |
 | Autenticación de la sesión | SPEC-001 §7/§8 | sin duplicación: se referencia |
 | Perfil de bitstream | este documento §4.3 | AVC Constrained Baseline Level 4.2, YUV 4:2:0, sin B-frames |
@@ -215,6 +215,7 @@ Una implementación cumple este SPEC si y solo si honra §3–§14 y pasa las ve
 | HKDF/HMAC/AEAD, framing, replay y validación de registros | TEST-071 |
 | Relay por sesión/fuente, revocación y latest-frame-wins | TEST-072 |
 | OpenH264 Annex B, perfil/IDR/SPS/PPS y timestamps | TEST-073 |
+| Preferencia hardware opt-in, fallback CPU y contrato AVC preservado | TEST-082 |
 | MediaCodec/Surface y recuperación por IDR | TEST-074 |
 | Latencia NFR-001 y CPU NFR-005 | pruebas de performance en banco físico (fuera de CI) |
 
@@ -242,5 +243,5 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |
 | 1.2.0 | 2026-10-16 | Owner (usuario, CR-002) | `jpeg_tiles`, patches JPEG de 64×64, base_fn y keyframes ≤1 s; despliegue coordinado sin compatibilidad hacia atrás |
 | 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Fuente exclusiva Plugin seleccionado; sin captura/demo Server y reinicio limpio al cambiar fuente |
-| 1.4.0 | 2026-10-20 | Product owner (CR-014) | Sustituye JPEG/tiles por AVC; OpenH264 en Cemu, relay TCP 8425 AES-256-GCM y MediaCodec SurfaceView |
 | 1.4.0 | 2026-10-20 | Product owner (CR-014) | Sustituye JPEG/tiles por AVC; OpenH264 en Cemu, relay TCP 8425 cifrado AES-256-GCM y MediaCodec SurfaceView |
+| 1.5.0 | 2026-10-23 | Product owner (CR-020) | Añade encoder hardware H.264 opt-in en Cemu con fallback OpenH264 CPU; wire y perfil invariantes |

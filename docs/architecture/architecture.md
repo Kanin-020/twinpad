@@ -44,7 +44,7 @@ C4Context
 | `Twinpad Core (PC)` | Ejecutar transporte LAN/Bluetooth y coordinar el relay autenticado de medios publicados por Plugins e inputs del Android | module (Rust) | REQ-003, REQ-004, REQ-005 |
 | `SDK Twinpad` | Permitir al Plugin anunciarse, publicar medios y consultar por polling el último snapshot de input | lib | REQ-006 |
 | `Integración host del Plugin` | Iniciar/reutilizar el Servidor PC y presentar el QR para Pairing | responsabilidad del host/integración | CR-010, REQ-006 |
-| `Adaptador experimental Cemu` | Codificar readback DRC a H.264 con OpenH264, publicar A/V e inputs del GamePad emulado | module (C++) | CR-004..CR-010/CR-012/CR-014, SPEC-003/004/006 |
+| `Adaptador experimental Cemu` | Codificar readback DRC a H.264 con encoder hardware opt-in y fallback OpenH264 CPU, publicar A/V e inputs del GamePad emulado | module (C++) | CR-004..CR-010/CR-012/CR-014/CR-020, SPEC-003/004/006 |
 | `Cargador de Config externa` | Cargar y validar configuraciones de juegos no integrados | module (Rust) | REQ-007 |
 | `App Twinpad (Android)` | Mostrar la Segunda pantalla mediante MediaCodec/Surface y capturar inputs táctiles/físicos | app (Kotlin) | REQ-004, REQ-008, CR-014 |
 | `Motor HID (Android)` | Presentar el celular como Gamepad HID vía Bluetooth y codificar inputs al descriptor | module (Kotlin+Rust) | REQ-003 |
@@ -75,7 +75,7 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | Interaction | Style | Contract | Failure semantics |
 |---|---|---|---|
 | `Android → Servidor PC` (pairing) | sync handshake | Payload del QR + challenge (SPEC del pairing) | QR expirado → rechazo; reintentos con backoff |
-| `Plugin → Servidor → Android` (Segunda pantalla) | control NDJSON + stream TCP binario separado | H.264 AVC del Plugin seleccionado (SPEC-003 v1.4.0); OpenH264 Cemu, relay opaco, MediaCodec Android | Handshake HMAC derivado de sesión; AES-256-GCM; sin selección/fuente viva → sin video |
+| `Plugin → Servidor → Android` (Segunda pantalla) | control NDJSON + stream TCP binario separado | H.264 AVC del Plugin seleccionado (SPEC-003 v1.5.0); encoder hardware opt-in con fallback OpenH264 en Cemu, relay opaco, MediaCodec Android | Handshake HMAC derivado de sesión; AES-256-GCM; sin selección/fuente viva → sin video |
 | `Plugin → Servidor → Android` (audio) | stream continuo | PCM del Plugin seleccionado (SPEC-005) | Sin fuente PCM → silencio; sin captura/síntesis Server |
 | `Android → Servidor → Plugin` (inputs) | snapshots de sesión | Signature HID (SPEC-004), selección SPEC-006, SDK polling | Secuencia antigua descartada; último snapshot retenido por sesión |
 | `PC → Android` (vibración) | evento | Contrato de rumble (SPEC HID) | Fire-and-forget con mejor esfuerzo |
@@ -93,6 +93,7 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | Perfiles de controles táctiles | `App Twinpad (Android)` | almacenamiento local Android | PII: ninguna; exportables |
 | Configs externas de juegos | `Cargador de Config externa` | archivos locales en PC | Comunidad/usuario |
 | Preferencia de inicio automático Cemu | `Adaptador experimental Cemu` | configuración persistente local de Cemu | `false` por defecto; implementación del primer host SDK, no política del SDK headless |
+| Preferencia de aceleración hardware H.264 Cemu | `Adaptador experimental Cemu` | configuración persistente local de Cemu | `twinpad_hardware_acceleration`, `false` por defecto; fallback OpenH264 CPU (CR-020) |
 | Tokens/sesiones de pairing | `Servidor PC` | almacén local cifrado + sesión activa en memoria | `session_key` disponible solo en RAM mientras vive Pairing; revocable |
 
 ## 6. Integrations
@@ -181,3 +182,4 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | 0.8.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Host de cada Plugin inicia/reutiliza server y presenta QR; relay de medios, selección Android y polling input sin captura/generación A/V en Server |
 | 0.9.0 | 2026-10-19 | Product owner + Twinpad team (CR-012) | Cemu conserva TV en PC y envía DRC/GamePad a Android en rutas independientes |
 | 1.0.0 | 2026-10-20 | Product owner + Twinpad team (CR-014) | Migra el video a H.264 OpenH264; relay PC opaco por TCP media autenticado/cifrado y MediaCodec Android |
+| 1.1.0 | 2026-10-23 | Product owner (CR-020) | Encoder H.264 hardware opt-in para Cemu, fallback OpenH264 CPU y contrato/wire H.264 invariantes |

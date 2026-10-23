@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-082 |
+| TEST | TEST-083 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -93,6 +93,7 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-079 | Draft | `TwinpadGyroMonitor_test` verifica activación opt-in por defecto apagada y mapeo de los ejes recibidos a VPAD; aceptación GUI debe verificar ventana externa redimensionable (640×480 inicial, 480×360 mínimo), datos en vivo/estado de espera y persistencia al cerrar (CR-016/CR-017) |
 | REQ-003 | SPEC-004 | DES-002 | TEST-080 | Draft | `ProfileGyroControllerTest.publishes_absolute_screen_orientation_without_calibration_offset` verifica que los mismos valores yaw/pitch/roll que se muestran en Android llegan sin compensación de calibración al reporte del gamepad (CR-018) |
 | REQ-003 | SPEC-004 | DES-004 | TEST-081 | Draft | `TwinpadOrientationMapper_test` verifica que Cemu aplica ganancia gyro 0.5× solo al mapear a VPAD, sin alterar orientación recibida, valores del monitor ni sus ángulos (CR-019) |
+| REQ-004/006 | SPEC-003/006 | DES-004 | TEST-082 | Draft | `TwinpadClient_hardware_encoder_test` verifica opt-in apagado por defecto, inicialización hardware oportunista con fallback OpenH264 y reinicio al cambiar la preferencia; mantiene salida AVC Baseline Level 4.2, Annex B, SPS/PPS + IDR (CR-020). Prueba real con GPU/backend disponible y aceptación GUI/config pendientes |
 
 ## NFR verification
 
@@ -135,6 +136,7 @@
 | CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |
 | CR-018 | SPEC-002/004 y DES-002/004: Android envía la orientación absoluta mostrada; ambos monitores usan yaw verde, pitch rojo, roll azul; TEST-078/080 | 2026-10-22 | Approved / in execution |
 | CR-019 | SPEC-004/DES-004: escala gyro Cemu→VPAD a 0.5×; reporte y monitores siguen absolutos; TEST-077/081 | 2026-10-22 | Approved / in execution |
+| CR-020 | SPEC-003 v1.5.0, ARCH y DES-004: preferencia Cemu opt-in para encoder H.264 hardware; fallback OpenH264 CPU, sin cambios de resolución ni wire; TEST-082 | 2026-10-23 | Approved / in execution |
 | — | `video_config` por sesión: resolución/fps/calidad JPEG en caliente desde el drawer de la app (parser del server + VM) | 2026-10-09 | Applied (owner-requested) |
 | CR-002 | SPEC-003 v1.2.0: patches JPEG por tiles de 64 px, base_fn y keyframes periódicos; DES-003 y TEST-027/028 | 2026-10-17 | Applied |
 | CR-003 | PCM de audio del juego vía SDK: canal IPC separado, callback y prioridad video/drop-old | 2026-10-17 | Approved |
