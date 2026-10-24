@@ -4,13 +4,41 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (for example, 1.2.3 or v1.2.3)
+        required: true
+        type: string
+      prerelease:
+        description: Mark this release as a pre-release
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
+  validate:
+    name: Validate release inputs
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Validate manual release version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_VERSION#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Invalid release version: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+
   android:
     name: Build Android APK
+    needs: validate
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +53,9 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease
       - name: Name APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk "twinpad-android-${GITHUB_REF_NAME}-debug-signed.apk"
+        env:
+          RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+        run: cp android/app/build/outputs/apk/release/app-release.apk "twinpad-android-${RELEASE_VERSION#v}-debug-signed.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: twinpad-android
@@ -34,6 +64,7 @@ jobs:
 
   server:
     name: Build Twinpad server AppImage (Linux x86_64)
+    needs: validate
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +77,7 @@ jobs:
         run: cargo build --locked --release -p twinpad-server
       - name: Package server as AppImage
         env:
-          APPIMAGE_VERSION: ${{ github.ref_name }}
+          APPIMAGE_VERSION: ${{ inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/scalable/apps dist
@@ -93,6 +124,7 @@ jobs:
 
   cemu:
     name: Build Cemu fork (Linux x86_64)
+    needs: validate
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -118,7 +150,7 @@ jobs:
         run: cmake --build build-twinpad --parallel 2
       - name: Package Cemu build
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p dist/cemu
@@ -134,8 +166,8 @@ jobs:
 
   publish:
     name: Publish GitHub release
+    needs: [validate, android, server, cemu]
     runs-on: ubuntu-22.04
-    needs: [android, server, cemu]
     permissions:
       contents: write
     steps:
@@ -147,10 +179,27 @@ jobs:
       - name: Create release and attach build artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" release-assets/* \
-            --title "Twinpad ${RELEASE_TAG}" \
-            --generate-notes \
-            --notes "Linux builds: Android APK (signed with the debug key; for testing only), Twinpad server AppImage, and Cemu fork x86_64 build."
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            release_tag="$RELEASE_TAG"
+            release_tag="${release_tag#v}"
+          else
+            release_tag="$GITHUB_REF_NAME"
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$release_tag" != v* ]]; then
+            release_tag="v${release_tag}"
+          fi
+
+          gh_args=(release create "$release_tag" release-assets/*
+            --target "$GITHUB_SHA"
+            --title "Twinpad ${release_tag}"
+            --generate-notes
+            --notes "Linux builds: Android APK (signed with the debug key; for testing only), Twinpad server AppImage, and Cemu fork x86_64 build.")
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$RELEASE_PRERELEASE" == "true" ]]; then
+            gh_args+=(--prerelease)
+          fi
+          gh "${gh_args[@]}"
