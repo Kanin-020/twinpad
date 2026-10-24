@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Build Android APK
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v4.0.4
+        with:
+          packages: platform-tools, platforms;android-35, build-tools;35.0.0
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Name APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "twinpad-android-${GITHUB_REF_NAME}-debug-signed.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twinpad-android
+          path: twinpad-android-*.apk
+          if-no-files-found: error
+
+  server:
+    name: Build Twinpad server AppImage (Linux x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libwayland-dev libpipewire-0.3-dev libgbm-dev libdrm-dev libegl1-mesa-dev pkg-config patchelf desktop-file-utils
+      - name: Build server
+        run: cargo build --locked --release -p twinpad-server
+      - name: Package server as AppImage
+        env:
+          APPIMAGE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/scalable/apps dist
+          install -m 0755 target/release/twinpad-server AppDir/usr/bin/twinpad-server
+          cat > AppDir/twinpad-server.desktop <<'EOF'
+          [Desktop Entry]
+          Name=Twinpad Server
+          Type=Application
+          Terminal=true
+          Exec=twinpad-server
+          Icon=twinpad-server
+          Categories=Utility;
+          EOF
+          cat > AppDir/usr/share/icons/hicolor/scalable/apps/twinpad-server.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <rect x="4" y="4" width="56" height="56" rx="12" fill="#315efb"/>
+            <path d="M20 22h24v6h-9v19h-6V28h-9z" fill="#fff"/>
+          </svg>
+          EOF
+          chmod +x AppDir/twinpad-server.desktop
+          desktop-file-validate AppDir/twinpad-server.desktop
+
+          curl --fail --location --retry 3 \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+            --output linuxdeploy.AppImage
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            --output appimagetool.AppImage
+          chmod +x linuxdeploy.AppImage appimagetool.AppImage
+
+          ./linuxdeploy.AppImage --appimage-extract-and-run \
+            --appdir AppDir \
+            --executable AppDir/usr/bin/twinpad-server \
+            --desktop-file AppDir/twinpad-server.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/twinpad-server.svg
+          ARCH=x86_64 ./appimagetool.AppImage --appimage-extract-and-run \
+            AppDir "dist/twinpad-server-${APPIMAGE_VERSION}-x86_64.AppImage"
+          chmod +x "dist/twinpad-server-${APPIMAGE_VERSION}-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twinpad-server-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  cemu:
+    name: Build Cemu fork (Linux x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Cemu build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes autoconf autoconf-archive automake clang-15 cmake freeglut3-dev libbluetooth-dev libgcrypt20-dev libglm-dev libgtk-3-dev libpulse-dev libsecret-1-dev libsystemd-dev libtool libudev-dev libusb-1.0-0-dev nasm ninja-build pkg-config wayland-protocols
+      - name: Bootstrap vcpkg
+        working-directory: integrations/cemu
+        run: ./dependencies/vcpkg/bootstrap-vcpkg.sh
+      - name: Configure Cemu
+        working-directory: integrations/cemu
+        run: >-
+          cmake -S . -B build-twinpad -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=/usr/bin/clang-15
+          -DCMAKE_CXX_COMPILER=/usr/bin/clang++-15
+          -DCMAKE_MAKE_PROGRAM=/usr/bin/ninja
+      - name: Build Cemu
+        working-directory: integrations/cemu
+        run: cmake --build build-twinpad --parallel 2
+      - name: Package Cemu build
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/cemu
+          install -m 0755 integrations/cemu/bin/Cemu_release dist/cemu/Cemu
+          cp -a integrations/cemu/bin/resources integrations/cemu/bin/gameProfiles dist/cemu/
+          cp integrations/cemu/LICENSE.txt dist/cemu/
+          tar -C dist -czf "dist/cemu-linux-x86_64-${RELEASE_TAG}.tar.gz" cemu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cemu-linux-x86_64
+          path: dist/cemu-linux-x86_64-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-22.04
+    needs: [android, server, cemu]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          path: release-assets
+          merge-multiple: true
+      - name: Create release and attach build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --title "Twinpad ${RELEASE_TAG}" \
+            --generate-notes \
+            --notes "Linux builds: Android APK (signed with the debug key; for testing only), Twinpad server AppImage, and Cemu fork x86_64 build."
