@@ -48,7 +48,9 @@ jobs:
           java-version: "21"
       - uses: android-actions/setup-android@v4.0.4
         with:
-          packages: platform-tools, platforms;android-35, build-tools;35.0.0
+          packages: platform-tools
+      - name: Install Android API and build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Build release APK
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease
@@ -134,6 +136,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes autoconf autoconf-archive automake clang-15 cmake freeglut3-dev libbluetooth-dev libgcrypt20-dev libglm-dev libgtk-3-dev libpulse-dev libsecret-1-dev libsystemd-dev libtool libudev-dev libusb-1.0-0-dev nasm ninja-build pkg-config wayland-protocols
+      - name: Apply Twinpad libva workaround
+        run: |
+          mkdir -p integrations/cemu/dependencies/vcpkg_overlay_ports_linux
+          cp -a integrations/cemu-vcpkg-overlay-linux/libva integrations/cemu/dependencies/vcpkg_overlay_ports_linux/
       - name: Bootstrap vcpkg
         working-directory: integrations/cemu
         run: ./dependencies/vcpkg/bootstrap-vcpkg.sh
