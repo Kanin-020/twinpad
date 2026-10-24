@@ -14,7 +14,7 @@ jobs:
       - name: Install Linux capture dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libwayland-dev libpipewire-0.3-dev libgbm-dev libdrm-dev
+          sudo apt-get install --yes libwayland-dev libpipewire-0.3-dev libgbm-dev libdrm-dev libegl1-mesa-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
