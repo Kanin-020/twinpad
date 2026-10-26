@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-085 |
+| TEST | TEST-086 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -95,6 +95,7 @@
 | REQ-003 | SPEC-004 | DES-004 | TEST-081 | Superseded by CR-021 | La ganancia VPAD 0.5× sobre orientación absoluta fue reemplazada por gyro rad/s ×0.9 y fusión AndroidDSU→VPAD |
 | REQ-004/006 | SPEC-003/006 | DES-004 | TEST-082 | Draft | `TwinpadClient_hardware_encoder_test` verifica opt-in apagado por defecto, inicialización hardware oportunista con fallback OpenH264 y reinicio al cambiar la preferencia; mantiene salida AVC Baseline Level 4.2, Annex B, SPS/PPS + IDR (CR-020). Prueba real con GPU/backend disponible y aceptación GUI/config pendientes |
 | REQ-003 | SPEC-004 | DES-002/004 | TEST-083 | Draft | `ProfileGyroControllerTest` y `InputCodecTest`: combina las muestras más recientes de ambos sensores con timestamp monotónico, omite `motion` si falta una muestra y serializa el snapshot inercial de CR-021 desde Android |
+| REQ-003 | SPEC-004 | DES-002/004 | TEST-085 | Draft | `ProfileGyroControllerTest.sensor_vectors_use_reference_frame`: `remapAccelerationVector` y `remapGyroscopeVector` aplican el marco AndroidDSU (accel `(-x,-z,y)`, gyro `(x,-z,y)`) (CR-022). Ejecución unitaria Android; prueba física pendiente |
 | REQ-003 | SPEC-004 | DES-004 | TEST-084 | Draft | `TwinpadMotionMapper_test` afirma el mapeo de gyro/aceleración y delta timestamp AndroidDSU→DSU; `TwinpadGyroMonitor_test` verifica muestras recibidas y estado de fusión. Build Cemu verificado; ejecución de las aserciones integradas y prueba física del VPAD pendientes |
 
 ## NFR verification
@@ -139,6 +140,7 @@
 | CR-018 | SPEC-002/004 y DES-002/004: Android envía la orientación absoluta mostrada; ambos monitores usan yaw verde, pitch rojo, roll azul; TEST-078/080 | 2026-10-22 | Approved / in execution |
 | CR-019 | SPEC-004/DES-004: escala gyro Cemu→VPAD a 0.5×; comportamiento supersedido por CR-021; TEST-077/081 históricos | 2026-10-22 | Superseded by CR-021 |
 | CR-020 | SPEC-003 v1.5.0, ARCH y DES-004: preferencia Cemu opt-in para encoder H.264 hardware; fallback OpenH264 CPU, sin cambios de resolución ni wire; TEST-082 | 2026-10-23 | Approved / in execution |
+| CR-022 | SPEC-004 v1.7.0, DES-002 v0.3.3 y DES-004 v1.4.0: mapeo de ejes AndroidDSU solo en Android; Cemu convierte unidades y niega accel Y/Z como DSU; TEST-085 | 2026-10-26 | Applied |
 | CR-021 | SPEC-004 y DES-002/004: muestras inerciales timestamped AndroidDSU→fusión `WiiUMotionHandler`/VPAD; TEST-083/084; supersede la orientación absoluta y el ajuste CR-019 | 2026-10-24 | Approved / in execution |
 | — | `video_config` por sesión: resolución/fps/calidad JPEG en caliente desde el drawer de la app (parser del server + VM) | 2026-10-09 | Applied (owner-requested) |
 | CR-002 | SPEC-003 v1.2.0: patches JPEG por tiles de 64 px, base_fn y keyframes periódicos; DES-003 y TEST-027/028 | 2026-10-17 | Applied |

@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-022 |
+| CR | CR-023 |
 
 ## Open / In review
 
@@ -18,6 +18,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-022 | Un único mapeo de ejes AndroidDSU (en Android) y ruta Cemu idéntica a DSU | SPEC-004, DES-002/004 | 2026-10-26 | [CR-022-motion-axis-mapping-single-source.md](CR-022-motion-axis-mapping-single-source.md) |
 | CR-021 | Alimentar la fusión VPAD con muestras de sensores AndroidDSU | SPEC-004, DES-002/004 | 2026-10-24 | [CR-021-androiddsu-motion-fusion.md](CR-021-androiddsu-motion-fusion.md) |
 | CR-020 | Aceleración por hardware del encoder H.264 de Cemu | SPEC-003, ARCH, DES-004 | 2026-10-23 | [CR-020-hardware-video-encoding.md](CR-020-hardware-video-encoding.md) |
 | CR-019 | Reducir al 50% la sensibilidad gyro de Cemu en VPAD | SPEC-004, DES-004 (superseded by CR-021) | 2026-10-22 | [CR-019-cemu-gyro-sensitivity.md](CR-019-cemu-gyro-sensitivity.md) |

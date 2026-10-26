@@ -7,6 +7,14 @@ import kotlin.math.max
 private const val SENSOR_AXIS_COUNT = 3
 private const val NANOS_PER_MICROSECOND = 1_000L
 
+/** Maps native accelerometer axes to the AndroidDSU reference frame (accX=-x, accY=-z, accZ=y). */
+internal fun remapAccelerationVector(values: FloatArray): FloatArray =
+    floatArrayOf(-values[0], -values[2], values[1])
+
+/** Maps native gyroscope axes to the AndroidDSU reference frame (P=x, Y=-z, R=y). */
+internal fun remapGyroscopeVector(values: FloatArray): FloatArray =
+    floatArrayOf(values[0], -values[2], values[1])
+
 /** Combines the latest Android accelerometer and gyroscope events into one DSU motion sample. */
 internal class ProfileGyroController(
     private val onMotionChanged: (MotionInput?) -> Unit,
@@ -27,7 +35,7 @@ internal class ProfileGyroController(
         ) {
             return
         }
-        acceleration = values.take(SENSOR_AXIS_COUNT)
+        acceleration = remapAccelerationVector(values.take(SENSOR_AXIS_COUNT).toFloatArray()).toList()
         accelerationTimestampNanos = timestampNanos
         publishLatestIfDue(timestampNanos)
     }
@@ -42,7 +50,7 @@ internal class ProfileGyroController(
         ) {
             return
         }
-        angularVelocity = values.take(SENSOR_AXIS_COUNT)
+        angularVelocity = remapGyroscopeVector(values.take(SENSOR_AXIS_COUNT).toFloatArray()).toList()
         angularVelocityTimestampNanos = timestampNanos
         publishLatestIfDue(timestampNanos)
     }

@@ -7,7 +7,7 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.3.2 |
+| Version | 0.3.3 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
@@ -16,7 +16,7 @@
 
 ## 1. Overview
 
-La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El acelerómetro y el giroscopio capturados a `SENSOR_DELAY_GAME` forman el snapshot wire `motion` con timestamp monotónico; el sensor de orientación remapeado a pantalla alimenta solo el monitor local (CR-021).
+La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El acelerómetro y el giroscopio capturados a `SENSOR_DELAY_GAME` forman el snapshot wire `motion` con timestamp monotónico, remapeado al marco AndroidDSU de referencia (CR-022); el sensor de orientación remapeado a pantalla alimenta solo el monitor local (CR-021).
 
 ## 2. Fit with the architecture
 
@@ -181,3 +181,4 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | 0.3.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitor Android opt-in con preferencia persistente y render de orientación/ejes en vivo |
 | 0.3.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Envía la orientación absoluta mostrada y define colores semánticos compartidos para yaw/pitch/roll |
 | 0.3.2 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Separa orientación local del wire y captura ambos sensores como snapshot inercial timestamped |
+| 0.3.3 | 2026-10-26 | Product owner + Twinpad team (CR-022) | El snapshot inercial se envía ya en el marco AndroidDSU: accel `(-x, -z, y)`, gyro `(x, -z, y)` |

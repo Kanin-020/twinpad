@@ -4,7 +4,7 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
@@ -130,7 +130,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | Enmarcado NDJSON | acumular bytes, extraer cada línea LF y parsear JSON completo | O(n) bytes | TCP no preserva límites de mensaje |
 | Mapeo sticks | `int8 / 127.0f`, invertir Y para convención VPAD | O(1) | conserva rango −1…1 |
 | Mapeo de touch | escalar 0…65535 a rectángulo TP del VPAD; al soltar conservar posición | O(1) | coincide con el rango de touch definido |
-| Mapeo de muestras inerciales AndroidDSU a Cemu DSU | gyro rad/s ×0.9 y remapeo de ejes/signos; aceleración m/s² ×(9.8066/100) y remapeo X/Y/Z; `timestamp_us` determina Δt, que debe ser positivo y ≤200 ms. Se alimenta `WiiUMotionHandler`, que genera MotionSample fusionado para VPADStatus | O(1) por muestra | Reutiliza la cadena de fusión Mahony/VPAD de Cemu; si Twinpad no es input activo la ruta local queda intacta (CR-021) |
+| Mapeo de muestras inerciales AndroidDSU a Cemu DSU | Android envía el marco AndroidDSU (CR-022); Cemu aplica gyro rad/s ×0.9 y aceleración m/s² ×(9.8066/100), y niega accel Y/Z antes de `processMotionSample` como DSUControllerProvider; `timestamp_us` determina Δt, que debe ser positivo y ≤200 ms. Se alimenta `WiiUMotionHandler`, que genera MotionSample fusionado para VPADStatus | O(1) por muestra | Reutiliza la cadena de fusión Mahony/VPAD de Cemu; si Twinpad no es input activo la ruta local queda intacta (CR-021) |
 
 ## 11. Patterns applied
 
@@ -205,6 +205,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | 0.9.0 | 2026-10-20 | Product owner + Twinpad team (CR-014) | Añade encoder OpenH264 y canal H.264 TCP autenticado/cifrado; screenshot independiente intacto |
 | 1.0.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Mapea orientación absoluta a VPAD y añade monitor Cemu persistente, opt-in, solo overlay TV |
 | 1.1.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Sustituye el overlay TV por ventana wxWidgets externa y redimensionable |
+| 1.4.0 | 2026-10-26 | Product owner + Twinpad team (CR-022) | Mapeo de ejes AndroidDSU solo en Android; Cemu convierte unidades y niega accel Y/Z en la ruta Twinpad como en DSU |
 | 1.1.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Alinea los colores yaw/pitch/roll de Cemu con Android y documenta la orientación absoluta reportada |
 | 1.1.2 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Corrige el signo de pitch en la conversión de Cemu al VPAD y afirma el signo en TEST-077 |
 | 1.1.3 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Elimina el desfase gráfico de 90° en roll y añade aserción de roll cero hacia la derecha en TEST-079 |
