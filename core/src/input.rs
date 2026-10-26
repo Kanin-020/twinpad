@@ -33,6 +33,18 @@ pub const BUTTON_NAMES: [&str; 12] = [
     "button_extra_2",
 ];
 
+/// Muestra inercial opcional de Android (SPEC-004 §4, CR-021).
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MotionSample {
+    /// Tiempo monotónico del evento de sensor, en microsegundos.
+    pub timestamp_us: u64,
+    /// Aceleración Android en m/s², ejes X/Y/Z del sensor.
+    pub accel: [f32; GYRO_AXES],
+    /// Velocidad angular Android en rad/s, ejes X/Y/Z del sensor.
+    pub gyro: [f32; GYRO_AXES],
+}
+
 /// Mensaje de input del Gamepad (SPEC-004 §4). `type` es el discriminante wire.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -58,10 +70,9 @@ pub enum InputMsg {
         trigger_l2: u8,
         /// Trigger analógico R2 (0–255).
         trigger_r2: u8,
-        /// Giroscopio absoluto yaw/pitch/roll, vueltas en int16 (32767 ≈ +1 vuelta).
-        /// Ausente cuando el dispositivo no ofrece orientación absoluta.
+        /// Muestra de acelerómetro + giroscopio; ausente si ambos sensores no están disponibles.
         #[serde(skip_serializing_if = "Option::is_none")]
-        gyro: Option<[i16; GYRO_AXES]>,
+        motion: Option<MotionSample>,
         /// Posición X del toque sobre la imagen DRC, normalizada a 0…65535.
         touch_x: u16,
         /// Posición Y del toque sobre la imagen DRC, normalizada a 0…65535.
@@ -89,9 +100,19 @@ impl InputMsg {
     /// frontera del protocolo; el clamp es decisión del receptor).
     fn validate(&self) -> PairResult<()> {
         match self {
-            InputMsg::InputReport { dpad, .. } => {
+            InputMsg::InputReport { dpad, motion, .. } => {
                 if *dpad > DPAD_NEUTRAL {
                     return Err(PairError::MalformedMessage);
+                }
+                if let Some(motion) = motion {
+                    if motion
+                        .accel
+                        .iter()
+                        .chain(motion.gyro.iter())
+                        .any(|axis| !axis.is_finite())
+                    {
+                        return Err(PairError::MalformedMessage);
+                    }
                 }
                 Ok(())
             }
@@ -117,7 +138,7 @@ mod tests {
             buttons: 0,
             trigger_l2: 0,
             trigger_r2: 0,
-            gyro: None,
+            motion: None,
             touch_x: 0,
             touch_y: 0,
             touch_pressed: false,
@@ -136,7 +157,11 @@ mod tests {
             buttons: 0b1010_0000_0001,
             trigger_l2: 128,
             trigger_r2: 255,
-            gyro: Some([-100, 0, 32767]),
+            motion: Some(MotionSample {
+                timestamp_us: 123_456,
+                accel: [0.0, 9.8066, 0.0],
+                gyro: [0.1, -0.2, 0.3],
+            }),
             touch_x: 1234,
             touch_y: 65535,
             touch_pressed: true,
@@ -158,10 +183,22 @@ mod tests {
     }
 
     #[test]
-    fn gyro_omitted_is_valid() {
+    fn motion_omitted_is_valid() {
         let line = report(1).encode().unwrap();
         assert!(!line.contains("gyro"));
         assert_eq!(InputMsg::decode(&line).unwrap(), report(1));
+    }
+
+    #[test]
+    fn non_finite_motion_values_are_e4() {
+        let mut msg = report(1);
+        let InputMsg::InputReport { ref mut motion, .. } = msg;
+        *motion = Some(MotionSample {
+            timestamp_us: 1,
+            accel: [0.0, f32::NAN, 0.0],
+            gyro: [0.0; GYRO_AXES],
+        });
+        assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
     }
 
     #[test]
@@ -201,9 +238,9 @@ mod tests {
         assert_eq!(msg.validate(), Err(PairError::MalformedMessage));
     }
 
-    // TEST-043 — verifies SPEC-004 §4/CR-005 touch and absolute orientation wire fields.
+    // TEST-083 — verifies SPEC-004/CR-021 touch fields and timestamped inertial motion wire contract.
     #[test]
-    fn touch_and_absolute_orientation_roundtrip() {
+    fn touch_and_inertial_motion_roundtrip() {
         let msg = InputMsg::InputReport {
             seq: 12,
             stick_lx: 0,
@@ -214,7 +251,11 @@ mod tests {
             buttons: 0,
             trigger_l2: 0,
             trigger_r2: 0,
-            gyro: Some([16384, -8192, 32767]),
+            motion: Some(MotionSample {
+                timestamp_us: 987_654_321,
+                accel: [1.0, -2.5, 9.8066],
+                gyro: [0.25, -0.5, 1.25],
+            }),
             touch_x: 32768,
             touch_y: 65535,
             touch_pressed: true,
@@ -222,7 +263,9 @@ mod tests {
         let line = msg.encode().unwrap();
         assert_eq!(InputMsg::decode(&line).unwrap(), msg);
         assert!(line.contains("\"touch_pressed\":true"));
-        assert!(line.contains("\"gyro\":[16384,-8192,32767]"));
+        assert!(line.contains("\"motion\":{\"timestamp_us\":987654321,"));
+        assert!(line.contains("\"accel\":[1.0,-2.5,9.8066]"));
+        assert!(line.contains("\"gyro\":[0.25,-0.5,1.25]"));
     }
 
     #[test]

@@ -1120,7 +1120,7 @@ mod tests {
         ));
     }
 
-    // TEST-043 — verifies SPEC-004 §4/CR-005 touch and absolute orientation wire fields.
+    // TEST-083 — verifies SPEC-004/CR-021 touch fields and timestamped inertial motion wire contract.
     #[test]
     fn accepted_input_report_roundtrips_for_cemu_ipc() {
         let msg = twinpad_core::input::InputMsg::InputReport {
@@ -1133,7 +1133,11 @@ mod tests {
             buttons: 1,
             trigger_l2: 0,
             trigger_r2: 0,
-            gyro: Some([1, 2, 3]),
+            motion: Some(twinpad_core::input::MotionSample {
+                timestamp_us: 456_789,
+                accel: [1.0, -2.0, 9.8066],
+                gyro: [0.1, -0.2, 0.3],
+            }),
             touch_x: 65535,
             touch_y: 123,
             touch_pressed: true,
@@ -1141,6 +1145,7 @@ mod tests {
         let line = msg.encode().unwrap();
         assert_eq!(twinpad_core::input::InputMsg::decode(&line).unwrap(), msg);
         assert!(line.contains("\"touch_pressed\":true"));
+        assert!(line.contains("\"motion\":{\"timestamp_us\":456789,"));
     }
 
     // TEST-042 — verifies CR-005: solo el primer dispositivo controla Cemu hasta desconexión.

@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.5.2 |
+| Version | 1.6.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
-| Realized by | DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-077, TEST-078, TEST-079, TEST-080, TEST-081 |
-| Last updated | 2026-10-22 |
+| Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084 |
+| Last updated | 2026-10-24 |
 
 ## 1. Purpose
 
@@ -38,11 +38,14 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 | `dpad` | integer (uint8) | 0–7 (dirección) o 8 (neutro) | yes |
 | `buttons` | integer (uint16) | máscara de bits de los 12 botones canónicos (bit 0 = `button_a`, … bit 11 = `extra_2`) | yes |
 | `trigger_l2`, `trigger_r2` | integer (uint8) | 0–255 | yes |
-| `gyro` | array de 3 × int16 | opcional; orientación absoluta yaw/pitch/roll en el marco de coordenadas de la pantalla, −32768…32767 por eje | no |
+| `motion` | object | opcional; snapshot inercial descrito abajo; si aparece, ambos vectores y el timestamp son obligatorios; campos adicionales no permitidos | no |
+| `motion.timestamp_us` | integer (uint64) | máximo de los timestamps monotónicos de acelerómetro y giroscopio en microsegundos; estrictamente creciente entre snapshots de movimiento que Cemu integra | yes si `motion` está presente |
+| `motion.accel` | array de 3 × float32 finitos | aceleración Android en m/s², orden X/Y/Z del sensor; longitud exactamente 3 | yes si `motion` está presente |
+| `motion.gyro` | array de 3 × float32 finitos | velocidad angular Android en rad/s, orden X/Y/Z del sensor; longitud exactamente 3 | yes si `motion` está presente |
 | `touch_x`, `touch_y` | integer (uint16) | posición normalizada sobre la imagen DRC, 0…65535; al soltar se conserva la última coordenada | yes |
 | `touch_pressed` | boolean | true mientras hay contacto con la imagen DRC | yes |
 
-Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo. Bluetooth HID nativo sigue siendo el objetivo posterior de ADR-003. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad y touch se mapean directamente. Para Cemu, antes de convertir la orientación gyro al VPAD se escala cada ángulo yaw/pitch/roll por 0.5 (CR-019); el reporte recibido y ambos monitores conservan los valores absolutos originales.
+Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo. Bluetooth HID nativo sigue siendo el objetivo posterior de ADR-003. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad y touch se mapean directamente. Android captura TYPE_ACCELEROMETER y TYPE_GYROSCOPE a SENSOR_DELAY_GAME; cada actualización de sensor produce un reporte con las muestras más recientes de ambos sensores y `timestamp_us` igual al máximo timestamp monotónico de esos eventos, convertido de nanosegundos a microsegundos. `motion` se omite hasta disponer de una muestra válida de ambos sensores; si falta cualquiera de ellos, el estado anterior se invalida y se envía sin `motion`. Cada snapshot enviado contiene muestras finitas y completas. Cemu integra únicamente timestamps estrictamente crecientes; si el intervalo supera 200 ms, no integra esa muestra. Al aplicar el snapshot al VPAD Player 1 de Twinpad, Cemu adapta unidades, signos y ejes según la cadena AndroidDSU→DSU de referencia y alimenta `WiiUMotionHandler`; su salida fusionada actualiza los datos de movimiento del VPAD. La ruta local de movimiento Cemu permanece activa cuando Twinpad no es el input seleccionado. El monitor Android puede mostrar orientación local del sensor; el monitor Cemu muestra la muestra recibida y el resultado VPAD fusionado. CR-021 supersede la interpretación de orientación absoluta y la ganancia VPAD 0.5× de CR-019.
 
 ## 5. Outputs
 
@@ -70,7 +73,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 ## 7. Main flow
 
-1. El usuario toca un control (o mueve los sensores físicos): la app actualiza el estado del elemento.
+1. El usuario toca un control o mueve el dispositivo: la app actualiza el estado del elemento; si hay acelerómetro y giroscopio, captura el snapshot inercial más reciente con timestamp monotónico.
 2. La app compone el `input_report` con la instantánea completa y `seq` = último+1.
 3. El reporte viaja por la sesión autenticada LAN al Servidor PC; el Servidor retiene el snapshot más reciente y lo envía por IPC localhost solo al Plugin confirmado para esa sesión, conforme a SPEC-006.
 4. Para una sesión con Plugin seleccionado, el Plugin consume el snapshot más reciente mediante el polling de SPEC-006. La ruta Bluetooth HID nativa hacia el SO de la PC permanece como objetivo separado de ADR-003; no sustituye el contrato del Plugin de esta entrega.
@@ -102,9 +105,9 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 | App en segundo plano | los inputs cesan (SPEC-002 §8.3 cancela el intento; el gamepad se desconecta del SO o deja de enviar) |
 | Otro gamepad físico conectado a la PC | conviven: cada gamepad es un dispositivo HID independiente; el juego elige cuál usar |
 | Dispositivo sin HID device role (CTX-A2) | la app lo detecta y lo informa; no aparece como gamepad |
-| Gyro ausente en el dispositivo | el reporte se envía sin `gyro`; los ejes no llegan al juego |
-| Diagnóstico gyro Android/Cemu (CR-018) | el reporte contiene la misma orientación absoluta yaw/pitch/roll que Android muestra; ambos diagramas usan yaw verde, pitch rojo y roll azul |
-| CR-016/CR-017: diagnóstico visual del gyro | Android muestra la orientación absoluta que prepara para `input_report`; Cemu muestra en una ventana externa ampliable el yaw/pitch/roll recibido y su orientación mapeada a VPAD. Ambos monitores son opt-in, locales, apagados por defecto y no alteran el reporte |
+| Acelerómetro o giroscopio ausente | el reporte se envía sin `motion`; el VPAD no integra muestras inerciales incompletas |
+| Diagnóstico de movimiento Android/Cemu (CR-021) | Android muestra orientación local estimada; Cemu distingue aceleración/velocidad angular recibidas y orientación calculada por fusión VPAD; los diagramas conservan yaw verde, pitch rojo y roll azul |
+| CR-016/CR-017/CR-021: diagnóstico visual del movimiento | Android muestra su orientación local estimada; Cemu muestra las muestras inerciales recibidas y el estado fusionado del VPAD. Ambos monitores son opt-in, locales y no alteran el reporte |
 
 ## 11. Business rules
 
@@ -159,10 +162,10 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | Aspect | Verified by |
 |---|---|
 | Flujo táctil → juego (AC-2) y orden por `seq` | TEST-018 |
-| Campos touch normalizados y orientación absoluta extendida | TEST-043 |
-| Remapeo de ejes gyro al marco de pantalla en landscape fijo | TEST-059 |
-| Ganancia 0.5× del gyro aplicado al VPAD Cemu, sin alterar el reporte ni el diagnóstico visual | TEST-081 |
-| Mapper Twinpad a VPAD y monitor visual de orientación en ambos extremos (CR-016/CR-017/CR-018/CR-019) | TEST-077, TEST-078, TEST-079, TEST-080, TEST-081 |
+| Campos touch normalizados, roundtrip del snapshot inercial Android→Server | TEST-043, TEST-083 |
+| Remapeo de orientación local al marco de pantalla para monitor Android | TEST-059, TEST-060 |
+| Integración de muestras inerciales con la fusión VPAD de Cemu y aislamiento de la ruta local | TEST-084 |
+| Captura Android, wire de muestras inerciales y monitor local/fusionado (CR-021) | TEST-060, TEST-078, TEST-079, TEST-083, TEST-084 |
 | Rumble (AC-3) y edge cases de §10 | TEST-019 |
 | Latencia NFR-002 (p95 ≤ 15 ms) | pruebas de performance en banco físico con inyección HID sintética |
 | Snapshot input conservado y sondeable por Plugin | TEST-052 |
@@ -186,3 +189,4 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.5.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Mueve el monitor Cemu a una ventana externa redimensionable; sin cambio wire |
 | 1.5.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Aclara que Android envía la orientación absoluta mostrada y alinea los colores semánticos de ambos monitores; sin cambio wire |
 | 1.5.2 | 2026-10-22 | Product owner + Twinpad team (CR-019) | Reduce a 0.5× el gyro que Cemu aplica al VPAD, sin cambio del valor absoluto wire ni de los monitores |
+| 1.6.0 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Sustituye orientación absoluta wire por muestras gyro/acelerómetro con timestamp y fusión nativa WiiUMotionHandler→VPAD; CR-019 queda supersedido |

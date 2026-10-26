@@ -63,11 +63,9 @@ object ProtocolConstants {
     /** Máximo de las coordenadas táctiles DRC normalizadas. */
     const val TOUCH_MAX: Int = 65_535
 
-    /** Escala de una vuelta completa al convertir orientación int16. */
-    const val GYRO_TURN_SCALE: Float = 32_767f
-
-    /** Frecuencia de lectura de orientación enviada en input_report. */
+    /** Frecuencia de lectura de sensores enviada en input_report. */
     const val SENSOR_REPORT_INTERVAL_US: Int = 20_000
+    const val MAX_MOTION_SAMPLE_AGE_MS: Long = 200L
 
     // Detección de juegos (SPEC-006 §4; transporte ADR-008).
     const val GAME_ID_MAX: Int = 64

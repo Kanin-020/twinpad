@@ -12,6 +12,7 @@ import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
 import com.twinpad.android.app.wire.InputReport
+import com.twinpad.android.app.wire.MotionInput
 import kotlinx.coroutines.launch
 
 /** Editable touch surface that maps profile gestures to the Twinpad gamepad signature. */
@@ -24,11 +25,7 @@ class ProfileSurface(
     private val store = ControlProfileStore(context)
     private val renderer = ProfileSurfaceRenderer(context)
     private val touchController = ProfileTouchController(gamepadSurface, gamepad, onInput)
-    private val gyroController =
-        ProfileGyroController { orientation ->
-            gamepadSurface.setGyro(orientation)
-            emit()
-        }
+    private var motionSample: MotionInput? = null
     private var activeGameId = ""
     private var profileLoadGeneration = 0
     private var controlCounter = 0
@@ -43,7 +40,12 @@ class ProfileSurface(
         gamepad.onChannelReady()?.let(onInput)
     }
 
-    fun updateGyro(orientationTurns: List<Int>) = gyroController.update(orientationTurns)
+    fun updateMotion(sample: MotionInput?) {
+        if (sample == motionSample) return
+        motionSample = sample
+        gamepadSurface.setMotion(sample)
+        emit()
+    }
 
     fun loadProfile(gameId: String) {
         activeGameId = gameId

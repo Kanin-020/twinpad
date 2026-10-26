@@ -7,16 +7,16 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.3.1 |
+| Version | 0.3.2 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
 | Depends on | DES-001, ADR-001 (stack), ADR-002 (transporte), ADR-004 (QR + challenge) |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-24 |
 
 ## 1. Overview
 
-La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El sensor de orientación absoluta remapea su matriz al sistema de coordenadas de la pantalla antes de calcular yaw/pitch/roll (CR-011).
+La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El acelerómetro y el giroscopio capturados a `SENSOR_DELAY_GAME` forman el snapshot wire `motion` con timestamp monotónico; el sensor de orientación remapeado a pantalla alimenta solo el monitor local (CR-021).
 
 ## 2. Fit with the architecture
 
@@ -58,7 +58,8 @@ erDiagram
 | `PairingStateMachine.onEvent(e): List<Effect>` | eventos: `ScanRequested`, `CameraGranted/Denied`, `QrScanned(raw)`, `WireMessage(String?)`, `Cancelled`, `AppBackgrounded`, `Retry` | núcleo de SPEC-002 §6 |
 | `Effect` (sealed) | `RequestCamera`, `StartCamera`, `StopCamera`, `Connect(addr, port)`, `Disconnect`, `SendLine(String)`, `ShowMessage(resId)`, `ShowError(resId)` | la UI/capa Android los ejecuta |
 | `PairingViewModel` | une máquina + adaptador de red + cámara; expone `StateFlow<PairingUiState>` | único dueño del estado |
-| Sensor de orientación → `GyroMonitorView` y `input_report` | `SensorManager.TYPE_ROTATION_VECTOR` → remapeo CR-011 → yaw/pitch/roll absolutos de pantalla | La vista solo se dibuja si la preferencia opt-in está activa; el reporte envía los mismos valores absolutos (CR-018). Colores: yaw verde, pitch rojo, roll azul. |
+| Sensores de movimiento → `input_report` | `TYPE_ACCELEROMETER` + `TYPE_GYROSCOPE` a `SENSOR_DELAY_GAME` → `motion.timestamp_us`, `motion.accel` m/s² y `motion.gyro` rad/s; cada evento publica las muestras más recientes de ambos sensores. Si falta una muestra, omite `motion` hasta que ambas estén disponibles. | Snapshot independiente del monitor local; el timestamp es el máximo timestamp monotónico de sensores, convertido de ns a μs (CR-021). |
+| Sensor de orientación → `GyroMonitorView` | `SensorManager.TYPE_ROTATION_VECTOR` → remapeo CR-011 → yaw/pitch/roll de pantalla | Solo diagnóstico local; la vista opt-in dibuja colores yaw verde, pitch rojo, roll azul y no alimenta el wire. |
 
 ## 5. Data model and persistence
 
@@ -149,7 +150,7 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | §10 edge cases (cancelar, fondo, código desconocido, rotación de mensajes) | máquina | TEST-014 |
 | §11 R4 strings en recursos | `res/values/strings.xml` | revisión + TEST-013 (afirma resId/texto) |
 | CR-011: landscape inmersivo y marco gyro | Manifest + `PairingActivity` | TEST-059 (instrumentado en dispositivo Android) |
-| CR-016/CR-018: monitor Android opt-in, orientación absoluta reportada y colores semánticos de ejes | `PairingActivity`, `GyroMonitorView`, `ProfileGyroController`, `AndroidSettingsStore` | TEST-078, TEST-080 |
+| CR-016/CR-021: monitor Android opt-in local y captura/serialización de muestras inerciales | `PairingActivity`, `GyroMonitorView`, `ProfileGyroController`, `InputCodec` | TEST-060, TEST-078, TEST-083 |
 
 ## 13. Related decisions
 
@@ -179,3 +180,4 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | 0.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Documenta orientación landscape fija, modo inmersivo y remapeo gyro de pantalla |
 | 0.3.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitor Android opt-in con preferencia persistente y render de orientación/ejes en vivo |
 | 0.3.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Envía la orientación absoluta mostrada y define colores semánticos compartidos para yaw/pitch/roll |
+| 0.3.2 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Separa orientación local del wire y captura ambos sensores como snapshot inercial timestamped |

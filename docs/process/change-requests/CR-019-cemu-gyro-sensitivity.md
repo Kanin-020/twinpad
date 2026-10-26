@@ -63,6 +63,8 @@ El usuario pide reducir la sensibilidad del gyro aplicada por Cemu al juego y el
 
 ## 7. Execution checklist
 
+> El efecto sobre orientación absoluta documentado por este CR fue supersedido por CR-021 el 2026-10-24; el historial y la decisión aprobada se conservan.
+
 - [x] Owner aprueba la ganancia fija 0.5× en Cemu/VPAD.
 - [x] SPEC-004 y DES-004 actualizados con versión y changelog CR-019.
 - [x] TEST-081 añadido y registrado en trazabilidad.

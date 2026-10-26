@@ -1,6 +1,7 @@
 package com.twinpad.android.app.ui
 
 import com.twinpad.android.app.wire.InputReport
+import com.twinpad.android.app.wire.MotionInput
 import kotlin.math.roundToInt
 
 /**
@@ -28,7 +29,7 @@ class GamepadSurfaceState {
     private var touchX = 0
     private var touchY = 0
     private var touchPressed = false
-    private var gyro: List<Int>? = null
+    private var motion: MotionInput? = null
 
     private companion object {
         const val GYRO_AXIS_COUNT = 3
@@ -45,12 +46,9 @@ class GamepadSurfaceState {
         touchPressed = pressed
     }
 
-    /** Actualiza orientación absoluta yaw/pitch/roll en vueltas int16. */
-    fun setGyro(orientation: List<Int>?) {
-        gyro =
-            orientation
-                ?.takeIf { it.size == GYRO_AXIS_COUNT }
-                ?.map { it.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()) }
+    /** Actualiza la última muestra física de acelerómetro y giroscopio. */
+    fun setMotion(sample: MotionInput?) {
+        motion = sample?.takeIf { it.accel.size == GYRO_AXIS_COUNT && it.gyro.size == GYRO_AXIS_COUNT }
     }
 
     /** Mueve el stick indicado con ejes normalizados −1…1 (se clampean). */
@@ -105,7 +103,7 @@ class GamepadSurfaceState {
             buttons = buttons,
             triggerL2 = (triggerL2 * ProtocolRanges.TRIGGER_MAX).roundToInt(),
             triggerR2 = (triggerR2 * ProtocolRanges.TRIGGER_MAX).roundToInt(),
-            gyro = gyro,
+            motion = motion,
             touchX = touchX,
             touchY = touchY,
             touchPressed = touchPressed,

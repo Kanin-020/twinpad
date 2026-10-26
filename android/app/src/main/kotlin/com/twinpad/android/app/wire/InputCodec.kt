@@ -1,6 +1,7 @@
 package com.twinpad.android.app.wire
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -21,8 +22,8 @@ data class InputReport(
     val buttons: Int,
     val triggerL2: Int,
     val triggerR2: Int,
-    /** Orientación absoluta yaw/pitch/roll en vueltas int16; null si no está disponible. */
-    val gyro: List<Int>? = null,
+    /** Muestra inercial Android; null si no hay acelerómetro o giroscopio. */
+    val motion: MotionInput? = null,
     /** Posición sobre la imagen DRC normalizada a 0…65535. */
     val touchX: Int = 0,
     val touchY: Int = 0,
@@ -30,9 +31,16 @@ data class InputReport(
     val touchPressed: Boolean = false,
 )
 
+/** Aceleración y velocidad angular capturadas desde el mismo ciclo de sensores. */
+data class MotionInput(
+    val timestampUs: Long,
+    val accel: List<Float>,
+    val gyro: List<Float>,
+)
+
 /**
  * Codificador de `input_report` — paridad con `core::input` (SPEC-004 §4):
- * NDJSON con `type` como discriminante y `gyro` omitido cuando es `null`.
+ * NDJSON con `type` como discriminante y `motion` omitido cuando es `null`.
  */
 object InputCodec {
     private val json = Json
@@ -51,8 +59,20 @@ object InputCodec {
                 put("buttons", report.buttons)
                 put("trigger_l2", report.triggerL2)
                 put("trigger_r2", report.triggerR2)
-                report.gyro?.let { axes ->
-                    put("gyro", kotlinx.serialization.json.JsonArray(axes.map { JsonPrimitive(it) }))
+                report.motion?.takeIf {
+                    it.timestampUs >= 0L &&
+                        it.accel.size == ProtocolConstants.GYRO_AXES &&
+                        it.gyro.size == ProtocolConstants.GYRO_AXES &&
+                        it.accel.all(Float::isFinite) && it.gyro.all(Float::isFinite)
+                }?.let { motion ->
+                    put(
+                        "motion",
+                        buildJsonObject {
+                            put("timestamp_us", motion.timestampUs)
+                            put("accel", JsonArray(motion.accel.map { JsonPrimitive(it) }))
+                            put("gyro", JsonArray(motion.gyro.map { JsonPrimitive(it) }))
+                        },
+                    )
                 }
                 put("touch_x", report.touchX.coerceIn(0, ProtocolConstants.TOUCH_MAX))
                 put("touch_y", report.touchY.coerceIn(0, ProtocolConstants.TOUCH_MAX))

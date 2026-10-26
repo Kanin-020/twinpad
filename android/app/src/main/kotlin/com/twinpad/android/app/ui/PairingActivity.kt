@@ -47,9 +47,6 @@ private const val HUD_TICK_MS: Long = 1_000L
 /** Conversión kbps → Mbps. */
 private const val KBPS_PER_MBPS: Int = 1_000
 
-/** Número de ejes yaw/pitch/roll. */
-private const val GYRO_AXIS_COUNT = 3
-
 /** Resoluciones seleccionables (16:9, CR-001). */
 private const val RES_W_960 = 960
 private const val RES_H_540 = 540
@@ -106,26 +103,44 @@ class PairingActivity : AppCompatActivity() {
     private var rotationVector: Sensor? = null
     private val orientationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
-    private val sensorListener =
+    private val motionController =
+        ProfileGyroController { sample ->
+            surfaceRef?.updateMotion(sample)
+        }
+    private val accelerationListener =
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                motionController.updateAcceleration(event.values, event.timestamp)
+            }
+
+            override fun onAccuracyChanged(
+                sensor: Sensor?,
+                accuracy: Int,
+            ) = Unit
+        }
+    private val gyroscopeListener =
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                motionController.updateGyroscope(event.values, event.timestamp)
+            }
+
+            override fun onAccuracyChanged(
+                sensor: Sensor?,
+                accuracy: Int,
+            ) = Unit
+        }
+    private val orientationListener =
         object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
                 SensorManager.getRotationMatrixFromVector(orientationMatrix, event.values)
                 remapOrientationMatrix(orientationMatrix, display.rotation)
                 SensorManager.getOrientation(orientationMatrix, orientationAngles)
-                val orientationTurns =
-                    GyroOrientationMapper.toScreenTurns(
-                        orientationAngles,
-                        ProtocolConstants.GYRO_TURN_SCALE,
-                    )
-                surfaceRef?.updateGyro(orientationTurns)
-                if (orientationTurns.size == GYRO_AXIS_COUNT && gyroMonitorVisible) {
-                    val monitor = findViewById<GyroMonitorView>(R.id.gyro_monitor)
-                    monitor.setOrientationTurns(
-                        orientationTurns[0],
-                        orientationTurns[1],
-                        orientationTurns[2],
-                    )
-                    monitor.bringToFront()
+                if (gyroMonitorVisible) {
+                    val orientationTurns = GyroOrientationMapper.toScreenTurns(orientationAngles)
+                    findViewById<GyroMonitorView>(R.id.gyro_monitor).apply {
+                        setOrientationTurns(orientationTurns[0], orientationTurns[1], orientationTurns[2])
+                        bringToFront()
+                    }
                 }
             }
 
@@ -511,9 +526,26 @@ class PairingActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        motionController.reset()
         rotationVector?.let {
             sensorManager.registerListener(
-                sensorListener,
+                orientationListener,
+                it,
+                SensorManager.SENSOR_DELAY_GAME,
+                ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
+            )
+        }
+        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
+            sensorManager.registerListener(
+                accelerationListener,
+                it,
+                SensorManager.SENSOR_DELAY_GAME,
+                ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
+            )
+        }
+        sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let {
+            sensorManager.registerListener(
+                gyroscopeListener,
                 it,
                 SensorManager.SENSOR_DELAY_GAME,
                 ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
@@ -522,7 +554,10 @@ class PairingActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        sensorManager.unregisterListener(sensorListener)
+        sensorManager.unregisterListener(accelerationListener)
+        sensorManager.unregisterListener(gyroscopeListener)
+        sensorManager.unregisterListener(orientationListener)
+        motionController.reset()
         super.onPause()
         viewModel.onAppBackgrounded() // SPEC-002 §8.3
     }

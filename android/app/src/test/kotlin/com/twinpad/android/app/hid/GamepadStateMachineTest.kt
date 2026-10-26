@@ -109,6 +109,6 @@ class GamepadStateMachineTest {
         assert(line.contains("\"seq\":1"))
         assert(line.contains("\"buttons\":1"))
         assert(line.contains("\"stick_lx\":-127"))
-        assertFalse(line.contains("gyro")) // §10: sin gyro el campo no viaja
+        assertFalse(line.contains("motion")) // §10: sin sensores el campo es opcional
     }
 }

@@ -276,10 +276,11 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     fun onGamepadInput(report: com.twinpad.android.app.wire.InputReport) {
         val updated = gamepad.onElementChanged(report)
         if (updated != null) {
-            updated.gyro?.takeIf { updated.seq % GYRO_LOG_REPORT_INTERVAL == 0 }?.let { gyro ->
+            updated.motion?.takeIf { updated.seq % GYRO_LOG_REPORT_INTERVAL == 0 }?.let { motion ->
                 Log.i(
                     GYRO_LOG_TAG,
-                    "stage=android seq=${updated.seq} yaw=${gyro[0]} pitch=${gyro[1]} roll=${gyro[2]}",
+                    "stage=android seq=${updated.seq} timestamp_us=${motion.timestampUs} " +
+                        "accel=${motion.accel.joinToString(",")} gyro=${motion.gyro.joinToString(",")}",
                 )
             }
             network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
