@@ -201,6 +201,7 @@ jobs:
           fi
 
           gh_args=(release create "$release_tag" release-assets/*
+            --repo "$GITHUB_REPOSITORY"
             --target "$GITHUB_SHA"
             --title "Twinpad ${release_tag}"
             --generate-notes
