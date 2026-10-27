@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-086 |
+| TEST | TEST-088 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -64,6 +64,7 @@
 | REQ-006 | SPEC-006 | `-` | TEST-033 | Draft | Frames RGB publicados por el SDK se comparten sin clonar el buffer al seleccionar la fuente de stream |
 | REQ-004 | SPEC-003 | DES-003 | TEST-029 | Draft | Regresión instrumentada: Framebuffer publicado sigue legible tras reemplazo y reset (Bitmap en Android real) |
 | REQ-004 | SPEC-003 | DES-002 | TEST-086 | Draft | CR-025: `videoContentRect` — `contain` conserva la relación de aspecto con barras y `expand` ocupa todo el contenedor; unitario Android, prueba física pendiente |
+| REQ-003 | SPEC-004 | DES-002 | TEST-087 | Draft | CR-028: Test JVM `PhysicalGamepadAlgoTest` — mapper puro del mando físico conectado al teléfono (bits canónicos, triggers L2/R2, teclas D-pad con diagonales y anulaciones, hat 0–7, zona muerta 0.1) y fusión por elemento con la superficie táctil (reposo físico no pisa, buttons OR, touch/motion intactos); integración real de eventos requiere dispositivo físico |
 | REQ-004 | SPEC-003 | DES-003 | TEST-030 | Draft | FPS de render separado de FPS recibido; keyframes periódicos estáticos se contabilizan como presentación, no 0 FPS; al iniciar un stream nuevo se reinicia la época de `fn` sin perder métricas de audio |
 | REQ-004 | SPEC-003 | DES-003 | TEST-034 | Draft | Diagnósticos del stream: gaps de `fn`, rechazos y promedios de duración por etapa |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
@@ -81,8 +82,8 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-065 | Draft | `TwinpadClient_base64url_test`: casos de borde Base64URL y exactitud de framebuffer 720p contra encoder de referencia; agregado al binario debug recompilado. La ejecución del arranque GUI aislado no alcanzó UnitTests antes del timeout; assertions runtime pendientes |
 | REQ-008 | SPEC-008 | `-` | TEST-063 | Draft | Instrumentación Android `ProfileSurfaceRenderingTest`: crea y dibuja la superficie con perfil default y comprueba el control visible y el recurso XML editable `touch_button`; junto a TEST-023 (perfil/modelo) |
 | REQ-005 | SPEC-005 | `-` | TEST-066 | Draft | Test JVM `AudioPlaybackTest`: el volumen local se aplica al track activo y permanece efectivo al reproducir chunks/recrear la salida (no afecta el PCM wire) |
-| REQ-004 | SPEC-003 | DES-004 | TEST-068 | Draft | Test Rust `selected_game_stream_applies_runtime_resolution_and_fps_settings`: `video_config` runtime restringe el Framebuffer publicado y anuncia dimensiones/FPS configurados con fuente SDK real |
-| REQ-008 | SPEC-008 | `-` | TEST-069 | Draft | Test JVM `AndroidSettingsStoreTest`: contrato `video_config`, valores default y retención del porcentaje de volumen local; persistencia UI compartida con TEST-061 |
+| REQ-004 | SPEC-003 | DES-004 | TEST-068 | Draft | Test Rust `selected_game_stream_applies_runtime_resolution_and_fps_settings`: `video_config` runtime restringe el Framebuffer publicado y anuncia dimensiones/FPS configurados con fuente SDK real; CR-027 añade clamp/reenvío de `bitrate_kbps` (1.000–30.000, default 8.000, `TWINPAD_VIDEO_BITRATE_KBPS`) |
+| REQ-008 | SPEC-008 | `-` | TEST-069 | Draft | Test JVM `AndroidSettingsStoreTest`: contrato `video_config` (CR-027: incluye `bitrate_kbps`; slider del drawer 1.000–30.000), valores default y retención del porcentaje de volumen local; persistencia UI compartida con TEST-061 |
 | REQ-004 | SPEC-003 | DES-004 | TEST-070 | Draft | Test Rust `selected_stream_resolution_scales_rgb_and_preserves_aspect_ratio`: redimensionamiento al límite configurado manteniendo aspecto y tamaño RGB correcto |
 | REQ-004 | SPEC-003 | DES-003 | TEST-071 | Draft | Tests `core::media_crypto` y `MediaCryptoTest`: HMAC-SHA256/RFC4231, vectores compartidos HMAC/HKDF Rust↔Kotlin, framing length/counter, AES-GCM roundtrip, tag inválido, replay/salto y oversized record (CR-014) |
 | REQ-004 | SPEC-003 | DES-003 | TEST-072 | Draft | `server::media::tests`: loopback TCP con challenge-response HMAC, espera de selección/stream_start, relay de IDR+P autenticados en counters consecutivos y cierre con revocación; proof inválido se cierra sin respuesta (CR-014) |
@@ -141,6 +142,8 @@
 | CR-018 | SPEC-002/004 y DES-002/004: Android envía la orientación absoluta mostrada; ambos monitores usan yaw verde, pitch rojo, roll azul; TEST-078/080 | 2026-10-22 | Approved / in execution |
 | CR-019 | SPEC-004/DES-004: escala gyro Cemu→VPAD a 0.5×; comportamiento supersedido por CR-021; TEST-077/081 históricos | 2026-10-22 | Superseded by CR-021 |
 | CR-020 | SPEC-003 v1.5.0, ARCH y DES-004: preferencia Cemu opt-in para encoder H.264 hardware; fallback OpenH264 CPU, sin cambios de resolución ni wire; TEST-082 | 2026-10-23 | Approved / in execution |
+| CR-027 | SPEC-002 1.6.0 y SPEC-003 1.8.0: bitrate objetivo H.264 configurable (drawer 1.000–30.000 kbps, `TWINPAD_VIDEO_BITRATE_KBPS`, `video_config.bitrate_kbps` reenviado a Cemu, encoder reinicia); TEST-068/069 actualizados | 2026-10-27 | Applied |
+| CR-028 | SPEC-004 1.9.0: mando físico conectado al teléfono — mapper puro (keycodes/sticks/triggers/hat, zona muerta 0.1) y fusión por elemento con la superficie táctil; TEST-087 | 2026-10-27 | Applied (owner-requested) |
 | CR-024 | ADR-003 1.1.0 y decisions/_index.md: HID nativo diferido; giroscopio de terceros por SDK; sin tests ni cambio de código | 2026-10-27 | Applied |
 | CR-023 | REQ-007 0.2.0, SPEC-004 1.8.0 y SPEC-006 1.14.0: Config externa sin movimiento; giroscopio para terceros solo por SDK; sin tests ni cambio de código | 2026-10-27 | Applied |
 | CR-022 | SPEC-004 v1.7.0, DES-002 v0.3.3 y DES-004 v1.4.0: mapeo de ejes AndroidDSU solo en Android; Cemu convierte unidades y niega accel Y/Z como DSU; TEST-085 | 2026-10-26 | Applied |

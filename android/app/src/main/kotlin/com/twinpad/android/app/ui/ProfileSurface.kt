@@ -10,6 +10,8 @@ import androidx.lifecycle.lifecycleScope
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
+import com.twinpad.android.app.hid.PhysicalGamepadAlgo
+import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.wire.InputReport
 import com.twinpad.android.app.wire.MotionInput
 import kotlinx.coroutines.launch
@@ -20,10 +22,19 @@ class ProfileSurface(
     private val onInput: (InputReport) -> Unit,
 ) : View(context) {
     private val gamepadSurface = GamepadSurfaceState()
+
+    /** Mando físico conectado al teléfono (CR-028): su estado se fusiona
+     * con la superficie táctil al componer cada reporte (SPEC-004). */
+    private val physicalGamepad = PhysicalGamepadAlgo()
     private val store = ControlProfileStore(context)
     private val renderer = ProfileSurfaceRenderer(context)
     private val touchController =
-        ProfileTouchController(gamepadSurface, onInput) { videoContentRect }
+        ProfileTouchController(
+            gamepadSurface,
+            // CR-028: las emisiones táctiles también pasan por la fusión con
+            // el mando físico; mismo camino que las del movimiento.
+            { report -> onInput(physicalGamepad.fusedWith(report)) },
+        ) { videoContentRect }
     var videoContentRect: VideoContentRect = VideoContentRect(0f, 0f, 1f, 1f)
 
     /**
@@ -148,10 +159,30 @@ class ProfileSurface(
         invalidate()
     }
 
+    /** CR-028: tecla del mando físico en keycode de plataforma. Devuelve
+     * `true` solo si el elemento de la Signature cambió. */
+    fun onPhysicalKey(
+        keyCode: Int,
+        pressed: Boolean,
+    ): Boolean {
+        val changed = physicalGamepad.onKey(keyCode, pressed)
+        if (changed) emit()
+        return changed
+    }
+
+    /** CR-028: ejes y hat del mando físico (valores de `MotionEvent`). */
+    fun onPhysicalMotion(motion: PhysicalMotion) {
+        physicalGamepad.onMotion(motion)
+        emit()
+    }
+
+    /** CR-028: `true` si el keycode pertenece a la Signature. */
+    fun handlesPhysicalKey(keyCode: Int): Boolean = physicalGamepad.handlesKey(keyCode)
+
     private fun emit() {
         // Snapshot puro: la máquina que deduplica y asigna `seq` (SPEC-004 R2)
         // es la de PairingViewModel; aquí no hay segunda GamepadStateMachine.
-        onInput(gamepadSurface.snapshot())
+        onInput(physicalGamepad.fusedWith(gamepadSurface.snapshot()))
     }
 
     private fun viewLifecycleScope(): kotlinx.coroutines.CoroutineScope? = findViewTreeLifecycleOwner()?.lifecycleScope

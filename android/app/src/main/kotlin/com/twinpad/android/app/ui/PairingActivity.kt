@@ -6,6 +6,9 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.Gravity
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -36,7 +39,9 @@ import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
+import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.wire.ProtocolConstants
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -343,6 +348,56 @@ class PairingActivity : AppCompatActivity() {
             )
         }
     }
+
+    /** CR-028: mando físico conectado al teléfono durante la sesión (SPEC-004).
+     * La Activity traduce `KeyEvent`/`MotionEvent` de origen gamepad a los
+     * códigos y ejes del mapper puro; la fusión con la superficie táctil
+     * vive en [ProfileSurface]. Sin sesión linkeada no se consumen eventos. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val surface = sessionSurfaceWithPhysicalGamepad()
+            ?.takeIf { isGamepadSource(event.source) && it.handlesPhysicalKey(event.keyCode) }
+        if (surface != null) {
+            val pressed = event.action == KeyEvent.ACTION_DOWN
+            if (!pressed || event.repeatCount == 0) {
+                surface.onPhysicalKey(event.keyCode, pressed)
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** CR-028: sticks/triggers/hat del mando físico (`MotionEvent`). */
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val surface = sessionSurfaceWithPhysicalGamepad()?.takeIf { isGamepadSource(event.source) }
+        if (surface != null) {
+            surface.onPhysicalMotion(
+                PhysicalMotion(
+                    leftX = event.getAxisValue(MotionEvent.AXIS_X),
+                    leftY = event.getAxisValue(MotionEvent.AXIS_Y),
+                    rightX = event.getAxisValue(MotionEvent.AXIS_Z),
+                    rightY = event.getAxisValue(MotionEvent.AXIS_RZ),
+                    triggerL = maxOf(
+                        event.getAxisValue(MotionEvent.AXIS_BRAKE),
+                        event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
+                    ),
+                    triggerR = maxOf(
+                        event.getAxisValue(MotionEvent.AXIS_GAS),
+                        event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
+                    ),
+                    hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X).roundToInt(),
+                    hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y).roundToInt(),
+                ),
+            )
+            return true
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    private fun sessionSurfaceWithPhysicalGamepad(): ProfileSurface? =
+        surfaceRef?.takeIf { viewModel.uiState.value is PairingUiState.Linked }
+
+    private fun isGamepadSource(source: Int): Boolean =
+        source and InputDevice.SOURCE_GAMEPAD != 0 || source and InputDevice.SOURCE_JOYSTICK != 0
 
     /** U1 idle → U5 failure: visibilidad de cada sección (SPEC-002 §6). */
     private fun renderState(state: PairingUiState) {

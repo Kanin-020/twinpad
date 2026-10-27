@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-027 |
+| CR | CR-029 |
 
 ## Open / In review
 
@@ -35,6 +35,8 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-028 | Mando físico conectado al teléfono: mapper y fusión con la superficie táctil (aplicado en SPEC-004 y código Android) | SPEC-004 | 2026-10-27 | [CR-028-physical-gamepad-input.md](CR-028-physical-gamepad-input.md) |
+| CR-027 | Bitrate objetivo del encoder H.264 configurable: drawer, env y reenvío a Cemu (aplicado en SPEC-002 y SPEC-003) | SPEC-002, SPEC-003 | 2026-10-27 | [CR-027-video-bitrate-config.md](CR-027-video-bitrate-config.md) |
 | CR-026 | Pantalla limpia durante la transmisión: sin marco de controles ni textos superpuestos (aplicado en SPEC-002 y SPEC-003) | SPEC-002, SPEC-003 | 2026-10-27 | [CR-026-clean-overlay-during-stream.md](CR-026-clean-overlay-during-stream.md) |
 | CR-025 | Modo de escalado de la Segunda pantalla contain/expand y mapeo táctil sobre la imagen visible (aplicado en SPEC-002 y SPEC-003) | SPEC-002, SPEC-003, DES-002 | 2026-10-27 | [CR-025-video-fit-contain-expand.md](CR-025-video-fit-contain-expand.md) |
  | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |

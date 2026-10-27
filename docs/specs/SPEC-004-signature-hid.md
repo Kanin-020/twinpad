@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.8.0 |
+| Version | 1.9.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087 |
 | Last updated | 2026-10-24 |
 
 ## 1. Purpose
@@ -73,7 +73,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 ## 7. Main flow
 
-1. El usuario toca un control o mueve el dispositivo: la app actualiza el estado del elemento; si hay acelerómetro y giroscopio, captura el snapshot inercial más reciente con timestamp monotónico.
+1. El usuario toca un control, acciona un elemento del mando físico conectado al teléfono (CR-028, §8.1) o mueve el dispositivo: la app actualiza el estado del elemento (fusión por elemento cuando intervienen ambos orígenes); si hay acelerómetro y giroscopio, captura el snapshot inercial más reciente con timestamp monotónico.
 2. La app compone el `input_report` con la instantánea completa y `seq` = último+1.
 3. El reporte viaja por la sesión autenticada LAN al Servidor PC; el Servidor retiene el snapshot más reciente y lo envía por IPC localhost solo al Plugin confirmado para esa sesión, conforme a SPEC-006.
 4. Para una sesión con Plugin seleccionado, el Plugin consume el snapshot más reciente mediante el polling de SPEC-006. La ruta Bluetooth HID nativa hacia el SO de la PC permanece como objetivo separado de ADR-003; no sustituye el contrato del Plugin de esta entrega.
@@ -81,7 +81,13 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 ## 8. Alternative flows
 
-### 8.1 Rumble desde el juego (REQ-003 AC-3)
+### 8.1 Mando físico conectado al teléfono (CR-028)
+
+- **Trigger:** en `H1` se recibe una tecla o movimiento de un gamepad físico conectado al teléfono (fuentes `SOURCE_GAMEPAD`/`SOURCE_JOYSTICK` de Android).
+- **Flow:** `PairingActivity` traduce el evento a la Signature (keycodes canónicos de `android.view.KeyEvent`: A/B/X/Y, L1/R1, L2/R2 como trigger analógico, L3/R3, Start/Select, teclas D-pad y hat AXIS_HAT_X/HAT_Y; sticks X/Y y Z/RZ con zona muerta 0.1; triggers BRAKE/LTRIGGER y GAS/RTRIGGER) y un mapper puro produce los valores de la Signature. El mapper se fusiona con el estado de la superficie táctil por elemento: el elemento accionado físicamente manda (stick ≠ 0 tras la zona muerta, D-pad ≠ neutro, trigger > 0); en reposo manda la superficie táctil; `buttons` es el OR de ambas; touch e inercia viajan siempre desde la superficie. El reporte combinado entra al flujo único de §7 (mismo `seq`).
+- **Result:** el elemento del mando físico se refleja en el juego como input del gamepad estándar; keycodes fuera de la Signature no se consumen; sin sesión operativa los eventos se ignoran.
+
+### 8.2 Rumble desde el juego (REQ-003 AC-3)
 
 - **Trigger:** el juego dispara un evento de vibración.
 - **Flow:** el evento viaja en sentido PC → app por el canal HID (output report estándar del gamepad).
@@ -104,6 +110,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 | Stick en el centro exacto tras movimiento | reporte con valor 0 (no queda "pegado") |
 | App en segundo plano | los inputs cesan (SPEC-002 §8.3 cancela el intento; el gamepad se desconecta del SO o deja de enviar) |
 | Otro gamepad físico conectado a la PC | conviven: cada gamepad es un dispositivo HID independiente; el juego elige cuál usar |
+| Gamepad físico conectado al teléfono (CR-028) | sus elementos se fusionan con la superficie táctil por elemento (§8.1); reposo físico no pisa el valor táctil; `buttons` acumula ambos orígenes |
 | Dispositivo sin HID device role (CTX-A2) | la app lo detecta y lo informa; no aparece como gamepad |
 | Acelerómetro o giroscopio ausente | el reporte se envía sin `motion`; el VPAD no integra muestras inerciales incompletas |
 | Diagnóstico de movimiento Android/Cemu (CR-021) | Android muestra orientación local estimada; Cemu distingue aceleración/velocidad angular recibidas y orientación calculada por fusión VPAD; los diagramas conservan yaw verde, pitch rojo y roll azul |
@@ -116,6 +123,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 - **R3:** los inputs tienen prioridad sobre video/audio (ARCH §8): ningún buffer de stream puede retrasar un `input_report` por encima del presupuesto de NFR-002 (p95 ≤ 15 ms).
 - **R4:** todo elemento de la superficie táctil de REQ-008 debe mapear a exactamente un Elemento HID de la Signature; un control sin asignar no envía (ver SPEC-008 AC-3).
 - **R5:** el rumble nunca bloquea ni retrasa la ruta de inputs.
+- **R6 (CR-028):** el mando físico conectado al teléfono es una fuente adicional de los mismos elementos de la Signature, no un segundo gamepad: su estado se fusiona con la superficie táctil por elemento (§8.1) y viaja en el mismo reporte con `seq` único; keycodes fuera de la Signature no se consumen.
 
 ## 12. Contracts
 
@@ -192,3 +200,4 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.5.2 | 2026-10-22 | Product owner + Twinpad team (CR-019) | Reduce a 0.5× el gyro que Cemu aplica al VPAD, sin cambio del valor absoluto wire ni de los monitores |
 | 1.6.0 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Sustituye orientación absoluta wire por muestras gyro/acelerómetro con timestamp y fusión nativa WiiUMotionHandler→VPAD; CR-019 queda supersedido |
 | 1.8.0 | 2026-10-27 | Product owner + Twinpad team (CR-023) | Bluetooth HID nativo queda diferido; el giroscopio para terceros va por SDK Twinpad (SPEC-006); sin cambio wire |
+| 1.9.0 | 2026-10-27 | Product owner + Twinpad team (CR-028) | Mando físico conectado al teléfono: mapper puro (keycodes/sticks/triggers/hat) y fusión por elemento con la superficie táctil; sin cambio wire (§8.1, R6, TEST-087) |
