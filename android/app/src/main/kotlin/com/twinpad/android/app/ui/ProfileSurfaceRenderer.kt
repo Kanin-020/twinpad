@@ -49,29 +49,10 @@ internal class ProfileSurfaceRenderer(context: Context) {
         }
 
     fun draw(args: DrawArgs) {
-        drawGamepadShell(args.canvas, args.width, args.height)
         if (!args.showControls) return
         for ((index, control) in args.profile.controls.withIndex()) {
             drawControl(ControlFrame(args.canvas, index, control, args.state, args.width, args.height, NORMAL_ALPHA))
         }
-    }
-
-    private fun drawGamepadShell(
-        canvas: Canvas,
-        width: Float,
-        height: Float,
-    ) {
-        drawDrawable(
-            canvas,
-            surfaceDrawable,
-            DrawableFrame(
-                (width * GAMEPAD_SHELL_LEFT).roundToInt(),
-                (height * GAMEPAD_SHELL_TOP).roundToInt(),
-                (width * GAMEPAD_SHELL_RIGHT).roundToInt(),
-                (height * GAMEPAD_SHELL_BOTTOM).roundToInt(),
-                GAMEPAD_SHELL_ALPHA,
-            ),
-        )
     }
 
     private fun drawControl(frame: ControlFrame) {
@@ -266,11 +247,6 @@ private const val NORMAL_ALPHA = 204
 private const val CORNER_RADIUS_PX = 18f
 private const val DPAD_BAR_THICKNESS = 0.32f
 private const val JOYSTICK_KNOB_SCALE = 0.72f
-private const val GAMEPAD_SHELL_ALPHA = 36
-private const val GAMEPAD_SHELL_LEFT = 0.02f
-private const val GAMEPAD_SHELL_TOP = 0.28f
-private const val GAMEPAD_SHELL_RIGHT = 0.98f
-private const val GAMEPAD_SHELL_BOTTOM = 0.98f
 private const val GAMEPAD_LABEL_DARK = 0xFF263238.toInt()
 private const val TEXT_SIZE_SP = 14f
 private const val TEXT_SIZE_DIVISOR = 3

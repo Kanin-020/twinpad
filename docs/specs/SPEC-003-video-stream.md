@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.6.0 |
+| Version | 1.7.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
 | Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054 |
-| Last updated | 2026-10-23 |
+| Last updated | 2026-10-27 |
 
 ## 1. Purpose
 
@@ -71,6 +71,7 @@ Estados del stream, independientes del estado de sesión de SPEC-002:
 - `V0 Inactive`: sin stream; la vista muestra "sin segunda pantalla activa".
 - `V1 Streaming`: canal media autenticado, AU válidas y presentación activa.
 - `V2 Interrupted`: socket media caído o sin AU durante ≥2 s; Pairing puede seguir U4.
+- `V1`/`V2`: la imagen se presenta sin texto superpuesto; solo `V0` muestra el mensaje de estado inactivo (CR-026).
 
 | From | Event | To | Side effects |
 |---|---|---|---|
@@ -247,3 +248,4 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.4.0 | 2026-10-20 | Product owner (CR-014) | Sustituye JPEG/tiles por AVC; OpenH264 en Cemu, relay TCP 8425 cifrado AES-256-GCM y MediaCodec SurfaceView |
 | 1.5.0 | 2026-10-23 | Product owner (CR-020) | Añade encoder hardware H.264 opt-in en Cemu con fallback OpenH264 CPU; wire y perfil invariantes |
 | 1.6.0 | 2026-10-27 | Product owner (CR-025) | R9: modo de escalado contain/expand como presentación local de Android |
+| 1.7.0 | 2026-10-27 | Product owner (CR-026) | Pantalla limpia en V1/V2: sin texto superpuesto ni marco de controles |

@@ -259,18 +259,19 @@ class PairingActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             viewModel.streamState.collectLatest { s ->
-                // SPEC-003 §5: STREAMING = segunda pantalla activa (TX visible);
-                // INTERRUPTED = reconectando; el resto (INACTIVE/STOP) = sin
-                // pantalla. Antes STREAMING caía en el else y la app mostraba
-                // "Sin segunda pantalla activa" CON imagen viva.
-                findViewById<TextView>(R.id.txt_session_message).text =
-                    when (s.state) {
-                        StreamState.STREAMING ->
-                            getString(R.string.second_screen_active)
-                        StreamState.INTERRUPTED ->
-                            getString(R.string.second_screen_reconnecting)
-                        else -> getString(R.string.second_screen_inactive)
-                    }
+                // CR-026: durante la transmisión (STREAMING/INTERRUPTED) la
+                // pantalla queda limpia: sin texto de estado ni de juegos
+                // compatibles. Los textos solo se muestran sin imagen viva.
+                val sessionMessage = findViewById<TextView>(R.id.txt_session_message)
+                val games = findViewById<TextView>(R.id.txt_games)
+                if (s.state == StreamState.STREAMING || s.state == StreamState.INTERRUPTED) {
+                    sessionMessage.isVisible = false
+                    games.isVisible = false
+                } else {
+                    sessionMessage.isVisible = true
+                    sessionMessage.text = getString(R.string.second_screen_inactive)
+                    games.isVisible = true
+                }
                 keepDisplayAwake(s.state)
             }
         }

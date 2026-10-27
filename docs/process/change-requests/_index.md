@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-026 |
+| CR | CR-027 |
 
 ## Open / In review
 
@@ -35,6 +35,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-026 | Pantalla limpia durante la transmisión: sin marco de controles ni textos superpuestos (aplicado en SPEC-002 y SPEC-003) | SPEC-002, SPEC-003 | 2026-10-27 | [CR-026-clean-overlay-during-stream.md](CR-026-clean-overlay-during-stream.md) |
 | CR-025 | Modo de escalado de la Segunda pantalla contain/expand y mapeo táctil sobre la imagen visible (aplicado en SPEC-002 y SPEC-003) | SPEC-002, SPEC-003, DES-002 | 2026-10-27 | [CR-025-video-fit-contain-expand.md](CR-025-video-fit-contain-expand.md) |
  | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
 | CR-002 | Actualizaciones parciales del Stream de video por tiles | SPEC-003 | 2026-10-16 | [CR-002-delta-video-tiles.md](CR-002-delta-video-tiles.md) |
