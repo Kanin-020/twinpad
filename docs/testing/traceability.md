@@ -63,6 +63,7 @@
 | REQ-004 | SPEC-003 | `-` | TEST-032 | Draft | Escalado RGB pre dimensionado preserva layouts de canal, nearest-neighbor y relleno negro ante buffer corto |
 | REQ-006 | SPEC-006 | `-` | TEST-033 | Draft | Frames RGB publicados por el SDK se comparten sin clonar el buffer al seleccionar la fuente de stream |
 | REQ-004 | SPEC-003 | DES-003 | TEST-029 | Draft | Regresión instrumentada: Framebuffer publicado sigue legible tras reemplazo y reset (Bitmap en Android real) |
+| REQ-004 | SPEC-003 | DES-002 | TEST-086 | Draft | CR-025: `videoContentRect` — `contain` conserva la relación de aspecto con barras y `expand` ocupa todo el contenedor; unitario Android, prueba física pendiente |
 | REQ-004 | SPEC-003 | DES-003 | TEST-030 | Draft | FPS de render separado de FPS recibido; keyframes periódicos estáticos se contabilizan como presentación, no 0 FPS; al iniciar un stream nuevo se reinicia la época de `fn` sin perder métricas de audio |
 | REQ-004 | SPEC-003 | DES-003 | TEST-034 | Draft | Diagnósticos del stream: gaps de `fn`, rechazos y promedios de duración por etapa |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |

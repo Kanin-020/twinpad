@@ -39,6 +39,7 @@ internal class ProfileTouchController(
     private val surface: GamepadSurfaceState,
     private val gamepad: com.twinpad.android.app.hid.GamepadStateMachine,
     private val onInput: (InputReport) -> Unit,
+    private val contentRect: () -> VideoContentRect = { VideoContentRect(0f, 0f, 1f, 1f) },
 ) {
     private val activePointers = linkedMapOf<Int, Int>()
     private val pointerPositions = linkedMapOf<Int, Pair<Float, Float>>()
@@ -130,9 +131,9 @@ internal class ProfileTouchController(
         view: View,
     ): Boolean {
         if (editing || drcPointerId != null) return false
+        if (!updateDrcTouch(nx, ny, true, view)) return false
         drcPointerId = pointerId
         drcTouchActive = true
-        updateDrcTouch(nx, ny, true, view)
         emit()
         return true
     }
@@ -273,13 +274,17 @@ internal class ProfileTouchController(
         emit()
     }
 
+    /**
+     * Mapea el toque al rectángulo donde se dibuja el video (CR-025). Devuelve false
+     * si el toque cae fuera de esa imagen (barras de `contain`) y no altera el estado.
+     */
     private fun updateDrcTouch(
         nx: Float,
         ny: Float,
         pressed: Boolean,
         view: View,
-    ) {
-        val videoSurface = videoSurfaceContainer(view) ?: return
+    ): Boolean {
+        val videoSurface = videoSurfaceContainer(view) ?: return false
         val viewWidth = videoSurface.width.toFloat().coerceAtLeast(1f)
         val viewHeight = videoSurface.height.toFloat().coerceAtLeast(1f)
         val viewLocation = IntArray(2)
@@ -288,13 +293,16 @@ internal class ProfileTouchController(
         view.getLocationOnScreen(surfaceLocation)
         val pointerX = nx * view.width - (viewLocation[0] - surfaceLocation[0])
         val pointerY = ny * view.height - (viewLocation[1] - surfaceLocation[1])
-        val x = (pointerX / viewWidth).coerceIn(0f, 1f)
-        val y = (pointerY / viewHeight).coerceIn(0f, 1f)
+        val fraction = contentRect()
+        val imageX = (pointerX / viewWidth - fraction.left) / fraction.width
+        val imageY = (pointerY / viewHeight - fraction.top) / fraction.height
+        if (imageX !in 0f..1f || imageY !in 0f..1f) return false
         surface.setTouch(
-            (x * ProtocolConstants.TOUCH_MAX).roundToInt(),
-            (y * ProtocolConstants.TOUCH_MAX).roundToInt(),
+            (imageX * ProtocolConstants.TOUCH_MAX).roundToInt(),
+            (imageY * ProtocolConstants.TOUCH_MAX).roundToInt(),
             pressed,
         )
+        return true
     }
 
     private fun applyControl(

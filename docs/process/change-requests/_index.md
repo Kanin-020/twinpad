@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-025 |
+| CR | CR-026 |
 
 ## Open / In review
 
@@ -31,14 +31,12 @@
 | CR-015 | Añadir metadata de access units H.264 al IPC Plugin | SPEC-006, DES-004 | 2026-10-20 | [CR-015-game-frame-h264-metadata.md](CR-015-game-frame-h264-metadata.md) |
 | CR-014 | Migrar la Segunda pantalla de JPEG/tiles a H.264/AVC con canal media seguro | SPEC-003, ARCH, DES-003/004 | 2026-10-20 | [CR-014-video-codec-migration.md](CR-014-video-codec-migration.md) |
 | CR-011 | Landscape habitual inmersivo y ejes gyro relativos a pantalla | SPEC-002, SPEC-004, DES-002 | 2026-10-18 | [CR-011-android-landscape-immersive-gyro.md](CR-011-android-landscape-immersive-gyro.md) |
-| CR-013 | VPAD temporal automático de Jugador 1 en Cemu | SPEC-006, DES-004 | 2026-10-19 | [CR-013-cemu-temporary-vpad-player-one.md](CR-013-cemu-temporary-vpad-player-one.md) |
-
-| CR-024 | Corrección de ADR-003: HID nativo diferido, sin giroscopio comprometido (aplicado en ADR-003 1.1.0) | ADR-003, decisions/_index.md | 2026-10-27 | [CR-024-adr-003-hid-deferred.md](CR-024-adr-003-hid-deferred.md) |
-| CR-023 | Vía de giroscopio para terceros: SDK principal, Config externa sin movimiento, HID diferido (aplicado en REQ-007 0.2.0, SPEC-004 1.8.0, SPEC-006 1.14.0) | REQ-007, SPEC-004, SPEC-006 | 2026-10-27 | [CR-023-third-party-motion-via-sdk.md](CR-023-third-party-motion-via-sdk.md) |
-## Applied
+| CR-013 | VPAD temporal automático de Jugador 1 en Cemu | SPEC-006, DES-004 | 2026-10-19 | [CR-013-cemu-temporary-vpad-player-one.md](CR-013-cemu-temporary-vpad-player-one.md) |## Applied
 
 | ID | Title | Targets | Decided | File |
-|---|---|---|---|---| | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
+|---|---|---|---|---|
+| CR-025 | Modo de escalado de la Segunda pantalla contain/expand y mapeo táctil sobre la imagen visible (aplicado en SPEC-002 y SPEC-003) | SPEC-002, SPEC-003, DES-002 | 2026-10-27 | [CR-025-video-fit-contain-expand.md](CR-025-video-fit-contain-expand.md) |
+ | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
 | CR-002 | Actualizaciones parciales del Stream de video por tiles | SPEC-003 | 2026-10-16 | [CR-002-delta-video-tiles.md](CR-002-delta-video-tiles.md) |
 | CR-003 | PCM de audio del juego vía SDK: canal IPC separado, callback y prioridad video/drop-old | SPEC-005, SPEC-006, REQ-006 | 2026-10-17 | [CR-003-sdk-audio-pcm.md](CR-003-sdk-audio-pcm.md) |
 | CR-004 | Adaptador experimental Cemu para prueba semi-real de Twinpad | CTX, ARCH, SPEC-006 | 2026-10-17 | [CR-004-cemu-experimental-integration.md](CR-004-cemu-experimental-integration.md) |

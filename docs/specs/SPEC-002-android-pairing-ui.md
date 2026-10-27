@@ -7,7 +7,7 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.3.1 |
+| Version | 1.4.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
@@ -156,6 +156,8 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R8 (CR-010):** solo se aceptan medios tras `game_selected`; selección única automática y lista seleccionable para múltiples Plugins vivos.
 - **R9 (CR-011):** PairingActivity permanece en landscape habitual fijo, sin verticalidad ni autorrotación.
 - **R10 (CR-011):** las barras de estado y navegación se ocultan con immersive mode; Android puede revelarlas temporalmente mediante gesto y se vuelven a ocultar al recuperar foco.
+- **R12 (CR-025):** la Segunda pantalla ofrece el modo de escalado `contain` (conserva la relación de aspecto del video y deja barras negras) o `expand` (estira el video al contenedor completo). Es preferencia local persistente del drawer; por defecto `expand`.
+- **R13 (CR-025):** el mapeo táctil usa el rectángulo donde se dibuja el video. En `contain`, los toques sobre las barras negras se ignoran y no alteran `touch_x`, `touch_y` ni `touch_pressed`. En `expand`, el rectángulo es el contenedor completo. Las coordenadas 0…65535 cubren exactamente la imagen.
 - **R11 (CR-016/CR-018):** el monitor opcional de orientación se superpone tanto en la pantalla Pairing como durante la sesión, representa yaw/pitch/roll absoluto remapeado al marco de pantalla con ejes X/Y/Z etiquetados, y se actualiza con las lecturas del sensor. Yaw es verde, pitch rojo y roll azul. No cambia el reporte ni la experiencia de input; está apagado si no hay preferencia y conserva la activación local elegida.
 
 ## 12. Contracts
@@ -241,7 +243,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
+| 1.4.0 | 2026-10-27 | Product owner (CR-025) | R12/R13: modo de escalado contain/expand local y toque filtrado a la imagen visible || 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |
 | 1.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Landscape habitual fijo y modo inmersivo sin barras de estado/navegación |

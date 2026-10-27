@@ -24,7 +24,9 @@ class ProfileSurface(
     private val gamepad = GamepadStateMachine()
     private val store = ControlProfileStore(context)
     private val renderer = ProfileSurfaceRenderer(context)
-    private val touchController = ProfileTouchController(gamepadSurface, gamepad, onInput)
+    private val touchController =
+        ProfileTouchController(gamepadSurface, gamepad, onInput) { videoContentRect }
+    var videoContentRect: VideoContentRect = VideoContentRect(0f, 0f, 1f, 1f)
     private var motionSample: MotionInput? = null
     private var activeGameId = ""
     private var profileLoadGeneration = 0

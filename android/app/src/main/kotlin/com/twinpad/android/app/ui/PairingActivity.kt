@@ -6,6 +6,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.view.Gravity
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -13,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.RadioButton
 import android.widget.SeekBar
@@ -103,6 +105,30 @@ class PairingActivity : AppCompatActivity() {
     private var rotationVector: Sensor? = null
     private val orientationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
+
+    /** Aplica el modo de escalado CR-025: letterbox en `contain`, relleno en `expand`. */
+    private fun applyVideoScale(settings: AndroidSettings) {
+        val container = findViewById<ViewGroup>(R.id.video_surface_container)
+        val video = findViewById<SurfaceView>(R.id.video_view)
+        container.post {
+            val rect =
+                videoContentRect(
+                    settings.scaleMode,
+                    container.width.toFloat(),
+                    container.height.toFloat(),
+                    settings.width,
+                    settings.height,
+                )
+            video.layoutParams =
+                (video.layoutParams as FrameLayout.LayoutParams).apply {
+                    width = (container.width * rect.width).toInt()
+                    height = (container.height * rect.height).toInt()
+                    gravity = Gravity.CENTER
+                }
+            video.requestLayout()
+            surfaceRef?.videoContentRect = rect
+        }
+    }
     private val motionController =
         ProfileGyroController { sample ->
             surfaceRef?.updateMotion(sample)
@@ -169,6 +195,9 @@ class PairingActivity : AppCompatActivity() {
             }
         wireViews()
         findViewById<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
+        findViewById<View>(R.id.video_surface_container).addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyVideoScale(AndroidSettingsStore(this).load())
+        }
         applyPersistedSettings()
         observeCameraEffects()
         observeStates()
@@ -318,6 +347,8 @@ class PairingActivity : AppCompatActivity() {
         findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = settings.showGyroMonitor
         findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
         findViewById<ViewGroup>(R.id.surface_container).isVisible = settings.showControls
+        findViewById<RadioButton>(if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand).isChecked = true
+        applyVideoScale(settings)
     }
 
     private fun hasConfiguredResolution(
@@ -330,6 +361,7 @@ class PairingActivity : AppCompatActivity() {
         val updated = transform(store.load())
         store.save(updated)
         viewModel.onStreamSettingsChanged(updated)
+        applyVideoScale(updated)
     }
 
     private fun wireDrawerControls() {
@@ -337,6 +369,12 @@ class PairingActivity : AppCompatActivity() {
             button.setOnCheckedChangeListener { _, checked ->
                 if (checked) saveSettings { it.copy(width = dims.first, height = dims.second, fps = currentFps()) }
             }
+        }
+        findViewById<RadioButton>(R.id.scale_contain).setOnCheckedChangeListener { _, checked ->
+            if (checked) saveSettings { it.copy(scaleMode = VideoScaleMode.CONTAIN) }
+        }
+        findViewById<RadioButton>(R.id.scale_expand).setOnCheckedChangeListener { _, checked ->
+            if (checked) saveSettings { it.copy(scaleMode = VideoScaleMode.EXPAND) }
         }
         fpsButtons().forEach { (button, fps) ->
             button.setOnCheckedChangeListener { _, checked ->

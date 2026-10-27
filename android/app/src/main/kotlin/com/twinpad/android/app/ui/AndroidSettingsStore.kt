@@ -23,6 +23,7 @@ data class AndroidSettings(
     val showGyroMonitor: Boolean = false,
     val showHud: Boolean = true,
     val showControls: Boolean = true,
+    val scaleMode: VideoScaleMode = VideoScaleMode.EXPAND,
 ) {
     fun videoConfigLine(): String =
         buildString {
@@ -61,6 +62,12 @@ internal class AndroidSettingsStore(context: Context) {
             showGyroMonitor = preferences.getBoolean(KEY_GYRO_MONITOR, false),
             showHud = preferences.getBoolean(KEY_HUD, true),
             showControls = preferences.getBoolean(KEY_CONTROLS, true),
+            scaleMode =
+                if (preferences.getString(KEY_SCALE_MODE, null) == VideoScaleMode.CONTAIN.name) {
+                    VideoScaleMode.CONTAIN
+                } else {
+                    VideoScaleMode.EXPAND
+                },
         )
 
     fun save(settings: AndroidSettings) {
@@ -76,6 +83,7 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_GYRO_MONITOR, settings.showGyroMonitor)
             .putBoolean(KEY_HUD, settings.showHud)
             .putBoolean(KEY_CONTROLS, settings.showControls)
+            .putString(KEY_SCALE_MODE, settings.scaleMode.name)
             .apply()
     }
 
@@ -89,5 +97,6 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_GYRO_MONITOR = "show_gyro_monitor"
         const val KEY_HUD = "show_hud"
         const val KEY_CONTROLS = "show_controls"
+        const val KEY_SCALE_MODE = "video_scale_mode"
     }
 }

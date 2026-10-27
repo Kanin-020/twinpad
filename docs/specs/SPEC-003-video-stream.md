@@ -4,7 +4,7 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.5.0 |
+| Version | 1.6.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
@@ -154,6 +154,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 - **R4:** ante corte < 10 s, la reanudación reutiliza la sesión autenticada y jamás exige re-pairing (REQ-005 AC-2).
 - **R5:** la degradación la decide siempre el Server (fps primero, resolución después); el Android nunca la solicita en v1.
 - **R6:** si no hay stream, la vista lo indica explícitamente; jamás muestra un Frame congelado como si estuviera vivo (REQ-004 AC-3).
+- **R9 (CR-025):** el modo de escalado `contain`/`expand` es presentación local de Android; no cambia resolución, fps, codec ni wire. Cambiarlo relayout el SurfaceView sin renegociar el stream ni reiniciar el decoder.
 
 ## 12. Contracts
 
@@ -245,3 +246,4 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Fuente exclusiva Plugin seleccionado; sin captura/demo Server y reinicio limpio al cambiar fuente |
 | 1.4.0 | 2026-10-20 | Product owner (CR-014) | Sustituye JPEG/tiles por AVC; OpenH264 en Cemu, relay TCP 8425 cifrado AES-256-GCM y MediaCodec SurfaceView |
 | 1.5.0 | 2026-10-23 | Product owner (CR-020) | Añade encoder hardware H.264 opt-in en Cemu con fallback OpenH264 CPU; wire y perfil invariantes |
+| 1.6.0 | 2026-10-27 | Product owner (CR-025) | R9: modo de escalado contain/expand como presentación local de Android |
