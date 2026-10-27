@@ -43,13 +43,7 @@
     <string name="settings_scale_expand">Estirar</string>
     <string name="settings_audio">Volumen GamePad local</string>
     <string name="editor_title">Editor de controles</string>
-    <string name="editor_add_button">+ Botón</string>
-    <string name="editor_add_stick">+ Stick</string>
-    <string name="editor_add_dpad">+ D-pad</string>
-    <string name="editor_assign">Asignar</string>
-    <string name="editor_delete">Eliminar</string>
     <string name="editor_save">Guardar</string>
-    <string name="editor_edit">Editar controles</string>
     <string name="editor_done">Listo</string>
     <string name="hud_chip_text">%1$s render · %2$s recibidos · %3$s Mbps</string>
 

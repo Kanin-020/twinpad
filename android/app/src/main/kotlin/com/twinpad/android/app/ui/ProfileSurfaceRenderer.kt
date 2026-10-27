@@ -44,8 +44,10 @@ internal class ProfileSurfaceRenderer(context: Context) {
         state: ProfileRenderState,
         width: Float,
         height: Float,
+        showControls: Boolean = true,
     ) {
         drawGamepadShell(canvas, width, height)
+        if (!showControls) return
         for ((index, control) in profile.controls.withIndex()) {
             drawControl(ControlFrame(canvas, index, control, state, width, height, NORMAL_ALPHA))
         }

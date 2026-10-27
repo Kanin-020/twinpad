@@ -170,43 +170,6 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_show_controls" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/editor_edit"
-            android:textAppearance="?attr/textAppearanceLabelLarge" />
-
-        <Button
-            android:id="@+id/editor_add_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/editor_add_button" />
-
-        <Button
-            android:id="@+id/editor_add_stick"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/editor_add_stick" />
-
-        <Button
-            android:id="@+id/editor_add_dpad"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/editor_add_dpad" />
-
-        <Button
-            android:id="@+id/editor_assign"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/editor_assign" />
-
-        <Button
-            android:id="@+id/editor_delete"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/editor_delete" />
-
         <Button
             android:id="@+id/btn_close_drawer"
             android:layout_width="match_parent"

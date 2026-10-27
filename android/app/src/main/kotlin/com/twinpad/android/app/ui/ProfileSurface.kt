@@ -27,6 +27,17 @@ class ProfileSurface(
     private val touchController =
         ProfileTouchController(gamepadSurface, gamepad, onInput) { videoContentRect }
     var videoContentRect: VideoContentRect = VideoContentRect(0f, 0f, 1f, 1f)
+
+    /**
+     * Oculta solo los botones táctiles. La superficie sigue recibiendo toques
+     * para la pantalla DRC (sin esto, ocultar la vista también dejaba de responder).
+     */
+    var showControls: Boolean = true
+        set(value) {
+            field = value
+            touchController.controlsVisible = value || editing
+            invalidate()
+        }
     private var motionSample: MotionInput? = null
     private var activeGameId = ""
     private var profileLoadGeneration = 0
@@ -92,6 +103,7 @@ class ProfileSurface(
     fun toggleEditing() {
         editing = !editing
         touchController.toggleEditing()
+        touchController.controlsVisible = showControls || editing
         if (!editing) {
             profile = profile.copy(game = activeGameId)
             viewLifecycleScope()?.launch { store.save(profile) }
@@ -114,6 +126,7 @@ class ProfileSurface(
             state = touchController.renderState(editing),
             width = width.toFloat(),
             height = height.toFloat(),
+            showControls = showControls || editing,
         )
     }
 

@@ -41,6 +41,8 @@ internal class ProfileTouchController(
     private val onInput: (InputReport) -> Unit,
     private val contentRect: () -> VideoContentRect = { VideoContentRect(0f, 0f, 1f, 1f) },
 ) {
+    /** Si es false, no hay botones táctiles: los toques van a la pantalla DRC. */
+    var controlsVisible: Boolean = true
     private val activePointers = linkedMapOf<Int, Int>()
     private val pointerPositions = linkedMapOf<Int, Pair<Float, Float>>()
     private var drcTouchActive = false
@@ -367,6 +369,7 @@ internal class ProfileTouchController(
         ny: Float,
         profile: ControlProfile,
     ): HitTarget? {
+        if (!controlsVisible) return null
         val index =
             profile.controls.indexOfFirst { control ->
                 nx >= control.x && nx <= control.x + control.w && ny >= control.y && ny <= control.y + control.h

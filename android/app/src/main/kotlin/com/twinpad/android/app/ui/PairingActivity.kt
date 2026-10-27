@@ -129,6 +129,7 @@ class PairingActivity : AppCompatActivity() {
             surfaceRef?.videoContentRect = rect
         }
     }
+
     private val motionController =
         ProfileGyroController { sample ->
             surfaceRef?.updateMotion(sample)
@@ -216,24 +217,6 @@ class PairingActivity : AppCompatActivity() {
         }
         findViewById<ImageButton>(R.id.btn_settings).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
-        }
-        findViewById<TextView>(R.id.editor_entry).setOnClickListener {
-            surfaceRef?.toggleEditing()
-        }
-        findViewById<Button>(R.id.editor_add_button).setOnClickListener { surfaceRef?.addControl("button") }
-        findViewById<Button>(R.id.editor_add_stick).setOnClickListener { surfaceRef?.addControl("stick") }
-        findViewById<Button>(R.id.editor_add_dpad).setOnClickListener { surfaceRef?.addControl("dpad") }
-        findViewById<Button>(R.id.editor_delete).setOnClickListener { surfaceRef?.deleteSelectedControl() }
-        findViewById<Button>(R.id.editor_assign).setOnClickListener {
-            val assignments = surfaceRef?.availableAssignments().orEmpty()
-            if (assignments.isNotEmpty()) {
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(R.string.editor_assign)
-                    .setItems(assignments.toTypedArray()) { _, index ->
-                        surfaceRef?.assignSelected(assignments[index])
-                    }
-                    .show()
-            }
         }
         findViewById<Button>(R.id.btn_close_drawer).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
@@ -346,8 +329,9 @@ class PairingActivity : AppCompatActivity() {
         findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
         findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = settings.showGyroMonitor
         findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
-        findViewById<ViewGroup>(R.id.surface_container).isVisible = settings.showControls
-        findViewById<RadioButton>(if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand).isChecked = true
+        surfaceRef?.showControls = settings.showControls
+        val scaleButtonId = if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand
+        findViewById<RadioButton>(scaleButtonId).isChecked = true
         applyVideoScale(settings)
     }
 
@@ -437,7 +421,7 @@ class PairingActivity : AppCompatActivity() {
         }
         findViewById<SwitchMaterial>(R.id.switch_show_controls).setOnCheckedChangeListener { _, checked ->
             controlsVisible = checked
-            findViewById<ViewGroup>(R.id.surface_container).isVisible = checked
+            surfaceRef?.showControls = checked
             val store = AndroidSettingsStore(this)
             store.save(store.load().copy(showControls = checked))
         }
@@ -470,6 +454,7 @@ class PairingActivity : AppCompatActivity() {
     private fun attachProfileSurface() {
         if (surfaceRef == null) {
             val surface = ProfileSurface(this) { report -> viewModel.onGamepadInput(report) }
+            surface.showControls = controlsVisible
             surfaceRef = surface
             findViewById<ViewGroup>(R.id.surface_container).addView(
                 surface,
