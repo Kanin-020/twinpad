@@ -4,7 +4,7 @@
 |---|---|
 | ID | ADR-003 |
 | Title | Gamepad HID Bluetooth nativo |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | `Accepted` |
 | Date | 2026-10-07 |
 | Deciders | Twinpad team (entrevista de definición) |
@@ -39,6 +39,8 @@ La entrevista preguntó cómo el celular debe "aparecer como gamepad" en la PC: 
 
 Usaremos emulación HID Bluetooth nativa (Opción A): el celular actúa como dispositivo HID periférico y Windows lo reconoce como gamepad estándar, sin software adicional en la PC.
 
+Estado de implementación: diferido. La decisión de arquitectura (Opción A) se mantiene como meta final, pero no es alcance de la iteración actual. El giroscopio para terceros se entrega por el SDK Twinpad (CR-023, SPEC-006). El descriptor HID, incluido el campo de giroscopio de CTX-C5, se definirá en un CR posterior antes de implementarse.
+
 ## 5. Justification
 
 - CTX-C3 (decisión del usuario) lo fija explícitamente.
@@ -53,7 +55,7 @@ Usaremos emulación HID Bluetooth nativa (Opción A): el celular actúa como dis
 - Sin drivers ni traductores que firmar/mantener en la PC.
 
 **Negative / trade-offs accepted:**
-- Signature HID fija por conexión (2 sticks, 10–12 botones, triggers L/R, gyro — CTX-C5): cambios futuros requieren re-emparejamiento.
+- Signature HID fija por conexión (2 sticks, 10–12 botones, triggers L/R, gyro — CTX-C5): cambios futuros requieren re-emparejamiento. El formato de giroscopio de un descriptor HID no está especificado todavía; no se considera garantizado para terceros hasta su CR.
 - Dispositivos sin HID device role quedan fuera (CTX-A2).
 
 **Neutral:**
@@ -72,10 +74,11 @@ Usaremos emulación HID Bluetooth nativa (Opción A): el celular actúa como dis
 | Superseded by | - |
 | Relates to | REQ-003, CTX-C1, CTX-C3, CTX-C5 |
 | Contextualized in | ARCH §2, §6 |
-| Changed by CR | - |
+| Changed by CR | CR-024 |
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0.0 | 2026-10-07 | Twinpad team | Accepted (decisión de la entrevista) |
+| 1.1.0 | 2026-10-27 | Buffy (agente) | Implementación diferida; giroscopio de terceros por SDK (CR-023, CR-024) |

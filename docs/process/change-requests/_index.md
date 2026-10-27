@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-023 |
+| CR | CR-025 |
 
 ## Open / In review
 
@@ -18,6 +18,8 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-024 | Corrección de ADR-003: HID nativo diferido, sin giroscopio comprometido (aplicado en ADR-003 1.1.0) | ADR-003, decisions/_index.md | 2026-10-27 | [CR-024-adr-003-hid-deferred.md](CR-024-adr-003-hid-deferred.md) |
+| CR-023 | Vía de giroscopio para terceros: SDK principal, Config externa sin movimiento, HID diferido (aplicado en REQ-007 0.2.0, SPEC-004 1.8.0, SPEC-006 1.14.0) | REQ-007, SPEC-004, SPEC-006 | 2026-10-27 | [CR-023-third-party-motion-via-sdk.md](CR-023-third-party-motion-via-sdk.md) |
 | CR-022 | Un único mapeo de ejes AndroidDSU (en Android) y ruta Cemu idéntica a DSU | SPEC-004, DES-002/004 | 2026-10-26 | [CR-022-motion-axis-mapping-single-source.md](CR-022-motion-axis-mapping-single-source.md) |
 | CR-021 | Alimentar la fusión VPAD con muestras de sensores AndroidDSU | SPEC-004, DES-002/004 | 2026-10-24 | [CR-021-androiddsu-motion-fusion.md](CR-021-androiddsu-motion-fusion.md) |
 | CR-020 | Aceleración por hardware del encoder H.264 de Cemu | SPEC-003, ARCH, DES-004 | 2026-10-23 | [CR-020-hardware-video-encoding.md](CR-020-hardware-video-encoding.md) |
@@ -31,11 +33,12 @@
 | CR-011 | Landscape habitual inmersivo y ejes gyro relativos a pantalla | SPEC-002, SPEC-004, DES-002 | 2026-10-18 | [CR-011-android-landscape-immersive-gyro.md](CR-011-android-landscape-immersive-gyro.md) |
 | CR-013 | VPAD temporal automático de Jugador 1 en Cemu | SPEC-006, DES-004 | 2026-10-19 | [CR-013-cemu-temporary-vpad-player-one.md](CR-013-cemu-temporary-vpad-player-one.md) |
 
+| CR-024 | Corrección de ADR-003: HID nativo diferido, sin giroscopio comprometido (aplicado en ADR-003 1.1.0) | ADR-003, decisions/_index.md | 2026-10-27 | [CR-024-adr-003-hid-deferred.md](CR-024-adr-003-hid-deferred.md) |
+| CR-023 | Vía de giroscopio para terceros: SDK principal, Config externa sin movimiento, HID diferido (aplicado en REQ-007 0.2.0, SPEC-004 1.8.0, SPEC-006 1.14.0) | REQ-007, SPEC-004, SPEC-006 | 2026-10-27 | [CR-023-third-party-motion-via-sdk.md](CR-023-third-party-motion-via-sdk.md) |
 ## Applied
 
 | ID | Title | Targets | Decided | File |
-|---|---|---|---|---|
-| CR-001 | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
+|---|---|---|---|---| | Stream de video v1 con compresión JPEG (`fmt=jpeg`) | SPEC-003 | 2026-10-08 | [CR-001-video-jpeg-compression.md](CR-001-video-jpeg-compression.md) |
 | CR-002 | Actualizaciones parciales del Stream de video por tiles | SPEC-003 | 2026-10-16 | [CR-002-delta-video-tiles.md](CR-002-delta-video-tiles.md) |
 | CR-003 | PCM de audio del juego vía SDK: canal IPC separado, callback y prioridad video/drop-old | SPEC-005, SPEC-006, REQ-006 | 2026-10-17 | [CR-003-sdk-audio-pcm.md](CR-003-sdk-audio-pcm.md) |
 | CR-004 | Adaptador experimental Cemu para prueba semi-real de Twinpad | CTX, ARCH, SPEC-006 | 2026-10-17 | [CR-004-cemu-experimental-integration.md](CR-004-cemu-experimental-integration.md) |

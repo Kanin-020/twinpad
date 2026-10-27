@@ -3,7 +3,7 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.13.0 |
+| Version | 1.14.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
@@ -14,6 +14,8 @@
 ## 1. Purpose
 
 Define el registro de Plugins vivos, su selección por sesión Android y el relay de audio/video e inputs entre el Plugin y el Android device. El Servidor PC solo retransmite/adapta medios publicados por el Plugin; no captura escritorio ni genera demo. Implementa detección y salida audiovisual de REQ-006.
+
+Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `input_report` con `motion` llega al Plugin mediante `poll_input()`. Las Config externas y el gamepad estándar no transportan giroscopio.
 
 ## 2. Definitions
 
@@ -236,3 +238,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.11.0 | 2026-10-20 | Product owner (CR-015) | Define `ts_capture_us` e `idr` obligatorios en `game_frame(fmt=h264)` para preservar metadata del encoder en el relay |
 | 1.12.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitor Cemu opt-in de orientación recibida y mapeada a VPAD, sin cambio del protocolo |
 | 1.13.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Mueve el monitor Cemu a ventana wxWidgets independiente y ampliable; sin cambio wire |
+| 1.14.0 | 2026-10-27 | Product owner + Twinpad team (CR-023) | SDK Twinpad como vía principal del giroscopio para terceros; Config externa y gamepad estándar sin giroscopio; sin cambio wire |

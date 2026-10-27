@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | ADR-001 | Android nativo (Kotlin) + Rust para las rutas críticas | 2026-10-07 | ARCH §2, ADR-002 | [ADR-001-kotlin-rust-stack.md](ADR-001-kotlin-rust-stack.md) |
 | ADR-002 | Conectividad v1: WiFi LAN + Bluetooth (sin internet) | 2026-10-07 | ARCH §1, §6 | [ADR-002-lan-bluetooth-transport.md](ADR-002-lan-bluetooth-transport.md) |
-| ADR-003 | El celular se emula como Gamepad HID Bluetooth nativo | 2026-10-07 | ARCH §2, §6 | [ADR-003-bluetooth-hid-gamepad.md](ADR-003-bluetooth-hid-gamepad.md) |
+| ADR-003 | El celular se emula como Gamepad HID Bluetooth nativo (meta diferida, CR-024) | 2026-10-07 | ARCH §2, §6 | [ADR-003-bluetooth-hid-gamepad.md](ADR-003-bluetooth-hid-gamepad.md) |
 | ADR-004 | Pairing por QR con autenticación mutua | 2026-10-07 | ARCH §4, §7 | [ADR-004-qr-pairing.md](ADR-004-qr-pairing.md) |
 | ADR-005 | Segunda pantalla por framebuffers (no HTML/UI) | 2026-10-07 | ARCH §2, §4 | [ADR-005-framebuffer-second-screen.md](ADR-005-framebuffer-second-screen.md) |
 | ADR-006 | Plugins: SDK Twinpad (B) + Config externa (C) | 2026-10-07 | ARCH §2, §6 | [ADR-006-plugin-models-sdk-and-config.md](ADR-006-plugin-models-sdk-and-config.md) |

@@ -140,6 +140,8 @@
 | CR-018 | SPEC-002/004 y DES-002/004: Android envía la orientación absoluta mostrada; ambos monitores usan yaw verde, pitch rojo, roll azul; TEST-078/080 | 2026-10-22 | Approved / in execution |
 | CR-019 | SPEC-004/DES-004: escala gyro Cemu→VPAD a 0.5×; comportamiento supersedido por CR-021; TEST-077/081 históricos | 2026-10-22 | Superseded by CR-021 |
 | CR-020 | SPEC-003 v1.5.0, ARCH y DES-004: preferencia Cemu opt-in para encoder H.264 hardware; fallback OpenH264 CPU, sin cambios de resolución ni wire; TEST-082 | 2026-10-23 | Approved / in execution |
+| CR-024 | ADR-003 1.1.0 y decisions/_index.md: HID nativo diferido; giroscopio de terceros por SDK; sin tests ni cambio de código | 2026-10-27 | Applied |
+| CR-023 | REQ-007 0.2.0, SPEC-004 1.8.0 y SPEC-006 1.14.0: Config externa sin movimiento; giroscopio para terceros solo por SDK; sin tests ni cambio de código | 2026-10-27 | Applied |
 | CR-022 | SPEC-004 v1.7.0, DES-002 v0.3.3 y DES-004 v1.4.0: mapeo de ejes AndroidDSU solo en Android; Cemu convierte unidades y niega accel Y/Z como DSU; TEST-085 | 2026-10-26 | Applied |
 | CR-021 | SPEC-004 y DES-002/004: muestras inerciales timestamped AndroidDSU→fusión `WiiUMotionHandler`/VPAD; TEST-083/084; supersede la orientación absoluta y el ajuste CR-019 | 2026-10-24 | Approved / in execution |
 | — | `video_config` por sesión: resolución/fps/calidad JPEG en caliente desde el drawer de la app (parser del server + VM) | 2026-10-09 | Applied (owner-requested) |

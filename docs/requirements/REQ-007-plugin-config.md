@@ -4,7 +4,7 @@
 |---|---|
 | ID | REQ-007 |
 | Title | Config externa para juegos no integrados (modelo C) |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Draft` |
 | Priority | `Should` |
 | Owner | Eng lead |
@@ -19,6 +19,8 @@ No todos los juegos pueden o quieren integrar el SDK Twinpad (REQ-006). La decis
 ## 2. Description
 
 Twinpad debe poder operar sobre un Juego / Aplicación huesped que NO integra el SDK, a partir de una Config externa provista por la comunidad o el usuario. La Config externa declara, como mínimo, los controles a activar y, cuando el juego lo permite, el origen del contenido de Segunda pantalla. El alcance de lo que puede lograrse sin integración es menor que con SDK (ver notas y limitaciones).
+
+La Config externa no transporta datos de movimiento (acelerómetro ni giroscopio). El giroscopio para terceros se entrega únicamente mediante la integración con SDK Twinpad (SPEC-006, modelo B).
 
 ## 3. Actors
 
@@ -88,3 +90,4 @@ Twinpad debe poder operar sobre un Juego / Aplicación huesped que NO integra el
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
+| 0.2.0 | 2026-10-27 | Buffy (agente) | CR-023: la Config externa no transporta movimiento; giroscopio para terceros solo por SDK |
