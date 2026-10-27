@@ -37,7 +37,7 @@
     <string name="settings_controls">Controles</string>
     <string name="settings_show_controls">Mostrar botones</string>
     <string name="settings_close">Cerrar</string>
-    <string name="settings_quality">Calidad JPEG</string>
+    <string name="settings_bitrate">Bitrate de video</string>
     <string name="settings_scale">Escalado de pantalla</string>
     <string name="settings_scale_contain">Contener</string>
     <string name="settings_scale_expand">Estirar</string>

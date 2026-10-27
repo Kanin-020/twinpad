@@ -20,7 +20,7 @@ class SettingsDrawerTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val store = AndroidSettingsStore(context)
         val original = store.load()
-        val updated = original.copy(width = 960, height = 540, fps = 60, jpegQuality = 73, audioVolumePercent = 42)
+        val updated = original.copy(width = 960, height = 540, fps = 60, videoBitrateKbps = 12_500, audioVolumePercent = 42)
         try {
             store.save(updated)
             assertEquals(updated, store.load())

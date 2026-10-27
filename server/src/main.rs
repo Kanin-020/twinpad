@@ -394,11 +394,11 @@ fn main() {
                                                 .as_deref()
                                                 == Some("cemu")
                                             {
-                                                games_ref.send_cemu_video_fps(cfg.fps);
+                                                games_ref.send_cemu_video_config(cfg.fps, cfg.bitrate_kbps);
                                             }
                                             println!(
-                                                "Video config actualizada por la app: {}×{} @ {} fps, JPEG {}.",
-                                                cfg.width, cfg.height, cfg.fps, cfg.jpeg_quality
+                                                "Video config actualizada por la app: {}×{} @ {} fps, {} kbps.",
+                                                cfg.width, cfg.height, cfg.fps, cfg.bitrate_kbps
                                             );
                                         }
                                         continue;
@@ -425,7 +425,7 @@ fn main() {
 
                                                 if game_id == "cemu" {
                                                     if let Ok(config) = reader_cfg.lock() {
-                                                        games_ref.send_cemu_video_fps(config.fps);
+                                                        games_ref.send_cemu_video_config(config.fps, config.bitrate_kbps);
                                                     }
                                                 }
                                                 if let Some(snapshot) =
@@ -554,9 +554,10 @@ fn parse_video_config(
                 ) as u8
             })
             .unwrap_or(current.fps),
-        jpeg_quality: extract("jpeg_quality")
-            .map(|v| v.clamp(1, 100) as u8)
-            .unwrap_or(current.jpeg_quality),
+        // CR-027: bitrate objetivo del encoder H.264 del Plugin (kbps).
+        bitrate_kbps: extract("bitrate_kbps")
+            .map(|v| v.clamp(1_000, 30_000))
+            .unwrap_or(current.bitrate_kbps),
     })
 }
 

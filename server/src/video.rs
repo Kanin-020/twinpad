@@ -125,21 +125,28 @@ pub const CAPTURE_HEIGHT: u16 = 360;
 /// con pérdida visual imperceptible para contenido de juego.
 pub const DEFAULT_JPEG_QUALITY: u8 = 80;
 
+/// Bitrate objetivo del encoder H.264 del Plugin (kbps; CR-027): la válvula
+/// real de calidad de imagen en la era AVC. 8 Mbps a 720p/30 es el valor de
+/// referencia de CR-014/CR-020; el rango 1–30 Mbps cubre de esbozo a nítido.
+pub const DEFAULT_VIDEO_BITRATE_KBPS: u32 = 8_000;
+
 /// Objetivos de calidad del stream que el owner puede ajustar por variable
-/// de entorno (720p/1080p, 30/60 fps; CR-001). Los valores caen a lo que la
-/// máquina sostenga: el stream no se congela (SPEC-003 R3/R5).
+/// de entorno (720p/1080p, 30/60 fps; CR-001, CR-027). Los valores caen a lo
+/// que la máquina sostenga: el stream no se congela (SPEC-003 R3/R5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VideoConfig {
     pub width: u16,
     pub height: u16,
     pub fps: u8,
-    pub jpeg_quality: u8,
+    /// Bitrate objetivo del encoder H.264 del Plugin, en kbps (CR-027).
+    pub bitrate_kbps: u32,
 }
 
 impl VideoConfig {
-    /// Lee `TWINPAD_WIDTH`/`TWINPAD_HEIGHT`/`TWINPAD_FPS`/`TWINPAD_JPEG_QUALITY`
-    /// (720p×30 por defecto). Los valores fuera de rango de SPEC-003 §4 se
-    /// clampean (16–3840×16–2160, 1–60 fps, 1–100 calidad).
+    /// Lee `TWINPAD_WIDTH`/`TWINPAD_HEIGHT`/`TWINPAD_FPS`/
+    /// `TWINPAD_VIDEO_BITRATE_KBPS` (720p×30 por defecto). Los valores fuera
+    /// de rango de SPEC-003 §4 se clampean (16–3840×16–2160, 1–60 fps,
+    /// 1000–30000 kbps).
     #[must_use]
     pub fn from_env() -> Self {
         Self {
@@ -147,7 +154,8 @@ impl VideoConfig {
             height: clamp_env_u16("TWINPAD_HEIGHT", 720),
             fps: clamp_env_u8("TWINPAD_FPS", 30)
                 .clamp(twinpad_core::stream::MIN_FPS, twinpad_core::stream::MAX_FPS),
-            jpeg_quality: clamp_env_u8("TWINPAD_JPEG_QUALITY", DEFAULT_JPEG_QUALITY).clamp(1, 100),
+            bitrate_kbps: clamp_env_u32("TWINPAD_VIDEO_BITRATE_KBPS", DEFAULT_VIDEO_BITRATE_KBPS)
+                .clamp(1_000, 30_000),
         }
     }
 }
@@ -167,6 +175,13 @@ fn clamp_env_u8(name: &str, default: u8) -> u8 {
     std::env::var(name)
         .ok()
         .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(default)
+}
+
+fn clamp_env_u32(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(default)
 }
 
@@ -212,7 +227,8 @@ pub fn run_desktop_stream(
         sink,
         frames,
         fps,
-        OutputFormat::Jpeg(config.jpeg_quality),
+        // Fuente demo JPEG (CR-001): conserva su calidad fija local.
+        OutputFormat::Jpeg(DEFAULT_JPEG_QUALITY),
         &mut source,
     )
 }
@@ -466,7 +482,7 @@ mod tests {
             width: 1280,
             height: 720,
             fps: 30,
-            jpeg_quality: DEFAULT_JPEG_QUALITY,
+            bitrate_kbps: DEFAULT_VIDEO_BITRATE_KBPS,
         };
         assert_eq!(cfg.width, 1280);
         assert_eq!(cfg.height, 720);
@@ -682,7 +698,7 @@ mod tests {
             width: 1280,
             height: 720,
             fps: 60,
-            jpeg_quality: DEFAULT_JPEG_QUALITY,
+            bitrate_kbps: DEFAULT_VIDEO_BITRATE_KBPS,
         };
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
         run_selected_game_stream(&mut sink, &running, &mut config, &mut source).unwrap();

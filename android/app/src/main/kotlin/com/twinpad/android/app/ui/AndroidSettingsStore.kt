@@ -8,8 +8,8 @@ private const val MIN_STREAM_HEIGHT = 540
 private const val MAX_STREAM_HEIGHT = 1080
 private const val MIN_STREAM_FPS = 30
 private const val MAX_STREAM_FPS = 60
-private const val MIN_JPEG_QUALITY = 1
-private const val MAX_JPEG_QUALITY = 100
+private const val MIN_VIDEO_BITRATE_KBPS = 1_000
+private const val MAX_VIDEO_BITRATE_KBPS = 30_000
 private const val MIN_AUDIO_VOLUME_PERCENT = 0
 private const val MAX_AUDIO_VOLUME_PERCENT = 100
 
@@ -18,7 +18,7 @@ data class AndroidSettings(
     val width: Int = DEFAULT_WIDTH,
     val height: Int = DEFAULT_HEIGHT,
     val fps: Int = DEFAULT_FPS,
-    val jpegQuality: Int = DEFAULT_JPEG_QUALITY,
+    val videoBitrateKbps: Int = DEFAULT_VIDEO_BITRATE_KBPS,
     val audioVolumePercent: Int = DEFAULT_AUDIO_VOLUME_PERCENT,
     val showGyroMonitor: Boolean = false,
     val showHud: Boolean = true,
@@ -33,8 +33,8 @@ data class AndroidSettings(
             append(height)
             append(",\"fps\":")
             append(fps)
-            append(",\"jpeg_quality\":")
-            append(jpegQuality)
+            append(",\"bitrate_kbps\":")
+            append(videoBitrateKbps)
             append('}')
         }
 
@@ -42,7 +42,7 @@ data class AndroidSettings(
         const val DEFAULT_WIDTH = 1280
         const val DEFAULT_HEIGHT = 720
         const val DEFAULT_FPS = 30
-        const val DEFAULT_JPEG_QUALITY = 80
+        const val DEFAULT_VIDEO_BITRATE_KBPS = 8_000
         const val DEFAULT_AUDIO_VOLUME_PERCENT = 100
     }
 }
@@ -56,7 +56,8 @@ internal class AndroidSettingsStore(context: Context) {
             width = preferences.getInt(KEY_WIDTH, AndroidSettings.DEFAULT_WIDTH),
             height = preferences.getInt(KEY_HEIGHT, AndroidSettings.DEFAULT_HEIGHT),
             fps = preferences.getInt(KEY_FPS, AndroidSettings.DEFAULT_FPS),
-            jpegQuality = preferences.getInt(KEY_QUALITY, AndroidSettings.DEFAULT_JPEG_QUALITY),
+            videoBitrateKbps =
+                preferences.getInt(KEY_VIDEO_BITRATE, AndroidSettings.DEFAULT_VIDEO_BITRATE_KBPS),
             audioVolumePercent =
                 preferences.getInt(KEY_AUDIO_VOLUME, AndroidSettings.DEFAULT_AUDIO_VOLUME_PERCENT),
             showGyroMonitor = preferences.getBoolean(KEY_GYRO_MONITOR, false),
@@ -75,7 +76,10 @@ internal class AndroidSettingsStore(context: Context) {
             .putInt(KEY_WIDTH, settings.width.coerceIn(MIN_STREAM_WIDTH, MAX_STREAM_WIDTH))
             .putInt(KEY_HEIGHT, settings.height.coerceIn(MIN_STREAM_HEIGHT, MAX_STREAM_HEIGHT))
             .putInt(KEY_FPS, settings.fps.coerceIn(MIN_STREAM_FPS, MAX_STREAM_FPS))
-            .putInt(KEY_QUALITY, settings.jpegQuality.coerceIn(MIN_JPEG_QUALITY, MAX_JPEG_QUALITY))
+            .putInt(
+                KEY_VIDEO_BITRATE,
+                settings.videoBitrateKbps.coerceIn(MIN_VIDEO_BITRATE_KBPS, MAX_VIDEO_BITRATE_KBPS),
+            )
             .putInt(
                 KEY_AUDIO_VOLUME,
                 settings.audioVolumePercent.coerceIn(MIN_AUDIO_VOLUME_PERCENT, MAX_AUDIO_VOLUME_PERCENT),
@@ -92,7 +96,7 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_WIDTH = "stream_width"
         const val KEY_HEIGHT = "stream_height"
         const val KEY_FPS = "stream_fps"
-        const val KEY_QUALITY = "jpeg_quality"
+        const val KEY_VIDEO_BITRATE = "video_bitrate_kbps"
         const val KEY_AUDIO_VOLUME = "audio_volume_percent"
         const val KEY_GYRO_MONITOR = "show_gyro_monitor"
         const val KEY_HUD = "show_hud"

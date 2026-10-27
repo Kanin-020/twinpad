@@ -7,12 +7,12 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.5.0 |
+| Version | 1.6.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-078 (registrados en `testing/traceability.md`) |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078 (registrados en `testing/traceability.md`) |
 | Last updated | 2026-10-27 |
 
 ## 1. Purpose
@@ -159,6 +159,7 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R12 (CR-025):** la Segunda pantalla ofrece el modo de escalado `contain` (conserva la relación de aspecto del video y deja barras negras) o `expand` (estira el video al contenedor completo). Es preferencia local persistente del drawer; por defecto `expand`.
 - **R13 (CR-025):** el mapeo táctil usa el rectángulo donde se dibuja el video. En `contain`, los toques sobre las barras negras se ignoran y no alteran `touch_x`, `touch_y` ni `touch_pressed`. En `expand`, el rectángulo es el contenedor completo. Las coordenadas 0…65535 cubren exactamente la imagen.
 - **R14 (CR-026):** durante la presentación del stream de video (V1/V2 de SPEC-003) la app no muestra ningún texto superpuesto sobre la imagen ni el marco de la superficie de controles. El mensaje de estado y la lista de juegos compatibles reaparecen cuando la vista vuelve a un estado sin stream (V0). El chip HUD y los controles editables siguen sus reglas propias (preferencia local y SPEC-008).
+- **R15 (CR-027):** el drawer de ajustes sustituye el slider de calidad JPEG por uno de bitrate objetivo del encoder H.264: 1.000–30.000 kbps (por defecto 8.000). Es preferencia local persistente; al cambiarlo, la app conserva el valor y lo envía en caliente dentro de `video_config` como `bitrate_kbps` (reenvío a Cemu según SPEC-003 §3/§8.1). El ajuste de calidad JPEG queda discontinuado.
 - **R11 (CR-016/CR-018):** el monitor opcional de orientación se superpone tanto en la pantalla Pairing como durante la sesión, representa yaw/pitch/roll absoluto remapeado al marco de pantalla con ejes X/Y/Z etiquetados, y se actualiza con las lecturas del sensor. Yaw es verde, pitch rojo y roll azul. No cambia el reporte ni la experiencia de input; está apagado si no hay preferencia y conserva la activación local elegida.
 
 ## 12. Contracts
@@ -245,7 +246,8 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.4.0 | 2026-10-27 | Product owner (CR-025) | R12/R13: modo de escalado contain/expand local y toque filtrado a la imagen visible |
-| 1.5.0 | 2026-10-27 | Product owner (CR-026) | R14: pantalla limpia durante V1/V2, sin textos superpuestos ni marco de controles || 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
+| 1.5.0 | 2026-10-27 | Product owner (CR-026) | R14: pantalla limpia durante V1/V2, sin textos superpuestos ni marco de controles || 1.6.0 | 2026-10-27 | Product owner (CR-027) | R15: el drawer cambia el slider de calidad JPEG por bitrate objetivo (1.000–30.000 kbps, default 8.000) enviado en `video_config.bitrate_kbps` |
+| 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |
 | 1.2.0 | 2026-10-18 | Product owner + Twinpad team (CR-011) | Landscape habitual fijo y modo inmersivo sin barras de estado/navegación |

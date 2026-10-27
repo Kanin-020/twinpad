@@ -239,15 +239,17 @@ impl GameRegistry {
         Self::write_input(entry, line)
     }
 
-    /// Envía al adaptador Cemu los fps configurados en la sesión Android.
-    pub fn send_cemu_video_fps(&self, fps: u8) -> bool {
+    /// Envía al adaptador Cemu el fps y el bitrate configurados en la sesión
+    /// Android (CR-027: el encoder H.264 del Plugin aplica el bitrate).
+    pub fn send_cemu_video_config(&self, fps: u8, bitrate_kbps: u32) -> bool {
         let mut games = lock_or_reset(&self.games);
         let Some(entry) = games.get_mut("cemu") else {
             return false;
         };
         let fps = fps.clamp(1, 60);
         set_cemu_capture_fps(fps);
-        let line = format!("{{\"type\":\"video_config\",\"fps\":{fps}}}");
+        let bitrate_kbps = bitrate_kbps.clamp(1_000, 30_000);
+        let line = format!("{{\"type\":\"video_config\",\"fps\":{fps},\"bitrate_kbps\":{bitrate_kbps}}}");
         Self::write_input(entry, &line)
     }
 

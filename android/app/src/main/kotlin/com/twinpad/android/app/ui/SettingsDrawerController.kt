@@ -20,6 +20,9 @@ private const val FPS_60 = 60
 private const val AUDIO_VOLUME_PERCENT_MAX = 100
 private const val JOG_WHEEL_PERCENT_SCALE = 100
 
+/** Rango del seek de bitrate: slider 0…29000 + offset = 1000…30000 kbps. */
+private const val BITRATE_SEEK_KBPS_MIN = 1_000
+
 /** Efectos que exceden al drawer y ejecuta el host (PairingActivity). */
 internal interface SettingsDrawerHost {
     fun applyVideoScale(settings: AndroidSettings)
@@ -67,7 +70,8 @@ internal class SettingsDrawerController(
             activity.findViewById<RadioButton>(R.id.resolution_1280x720).isChecked = true
         }
         activity.findViewById<RadioButton>(if (settings.fps == FPS_30) R.id.fps_30 else R.id.fps_60).isChecked = true
-        activity.findViewById<SeekBar>(R.id.jpeg_quality_seek).progress = settings.jpegQuality
+        activity.findViewById<SeekBar>(R.id.bitrate_seek).progress =
+            settings.videoBitrateKbps - BITRATE_SEEK_KBPS_MIN
         activity.findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
         activity.findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
         activity.findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
@@ -105,14 +109,16 @@ internal class SettingsDrawerController(
                 }
             }
         }
-        activity.findViewById<SeekBar>(R.id.jpeg_quality_seek).setOnSeekBarChangeListener(
+        activity.findViewById<SeekBar>(R.id.bitrate_seek).setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(
                     bar: SeekBar,
                     value: Int,
                     fromUser: Boolean,
                 ) {
-                    if (fromUser) updateStreamSettings { it.copy(jpegQuality = value) }
+                    if (fromUser) {
+                        updateStreamSettings { it.copy(videoBitrateKbps = value + BITRATE_SEEK_KBPS_MIN) }
+                    }
                 }
 
                 override fun onStartTrackingTouch(bar: SeekBar) = Unit

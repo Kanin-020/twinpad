@@ -4,7 +4,7 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.7.0 |
+| Version | 1.8.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
@@ -40,7 +40,7 @@ Define transporte y presentación del Stream de video de la Segunda pantalla, pu
 | `stream_start` | `w`,`h`,`fmt`,`fps`,`media_port` | `fmt="h264"`; dimensiones 16–3840 × 16–2160; fps 1–60; `media_port=8425` |
 | `stream_stop` | `reason` | `plugin_stopped` \| `server_shutdown` |
 
-El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo para la fuente seleccionada y cuando existe una AU IDR disponible. Una actualización de encoder/dimensiones genera `stream_stop`, `stream_start` nuevo y una IDR; no se envían medios sin un start vigente. `video_frame`, `video_patch` y `stream_gap` no forman parte de v1.5.0.
+El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo para la fuente seleccionada y cuando existe una AU IDR disponible. Una actualización de encoder/dimensiones genera `stream_stop`, `stream_start` nuevo y una IDR; no se envían medios sin un start vigente. La línea `video_config` de sesión (drawer de la app, SPEC-002 R15) puede incluir `bitrate_kbps` (1.000–30.000, por defecto 8.000; clamp idéntico en server y adaptador): el Servidor conserva el valor vigente y lo reenvía a Cemu junto con fps; Cemu reinicia su encoder cuando cambia (CR-027). `video_frame`, `video_patch` y `stream_gap` no forman parte de v1.5.0.
 
 ### 4.2 Handshake del canal media TCP
 
@@ -99,7 +99,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 
 ### 8.1 Cambio de resolución
 
-- **Trigger:** Cemu recibe `video_config` con dimensión o fps nuevos.
+- **Trigger:** Cemu recibe `video_config` con dimensión, fps o bitrate_kbps nuevos.
 - **Flow:** Cemu reinicia el encoder; el servidor envía `stream_stop` y después `stream_start` con `fmt="h264"`, nueva configuración y `media_port=8425`. El primer AU es IDR con SPS/PPS; `fn` reinicia en cero.
 - **Result:** Android reinicia MediaCodec/surface; no mezcla resoluciones ni requiere Pairing nuevo.
 
@@ -240,6 +240,7 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.8.0 | 2026-10-27 | Product owner (CR-027) | `video_config` admite y reenvía `bitrate_kbps` (1.000–30.000, default 8.000); trigger §8.1 incluye el cambio de bitrate |
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |
@@ -247,5 +248,6 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Fuente exclusiva Plugin seleccionado; sin captura/demo Server y reinicio limpio al cambiar fuente |
 | 1.4.0 | 2026-10-20 | Product owner (CR-014) | Sustituye JPEG/tiles por AVC; OpenH264 en Cemu, relay TCP 8425 cifrado AES-256-GCM y MediaCodec SurfaceView |
 | 1.5.0 | 2026-10-23 | Product owner (CR-020) | Añade encoder hardware H.264 opt-in en Cemu con fallback OpenH264 CPU; wire y perfil invariantes |
-| 1.6.0 | 2026-10-27 | Product owner (CR-025) | R9: modo de escalado contain/expand como presentación local de Android |
-| 1.7.0 | 2026-10-27 | Product owner (CR-026) | Pantalla limpia en V1/V2: sin texto superpuesto ni marco de controles |
+| 1.6.0 | 2026-10-27 | Product owner (CR-025) | R9: modo de escalado contain/expand como presentación local de Android || 1.7.0 | 2026-10-27 | Product owner (CR-026) | Pantalla limpia en V1/V2: sin texto superpuesto ni marco de controles |
+
+
