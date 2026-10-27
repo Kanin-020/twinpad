@@ -8,6 +8,16 @@ import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.TouchControl
 import kotlin.math.roundToInt
 
+/** Argumentos de un frame: agrupados para respetar el límite de parámetros (ENG P4). */
+internal data class DrawArgs(
+    val canvas: Canvas,
+    val profile: ControlProfile,
+    val state: ProfileRenderState,
+    val width: Float,
+    val height: Float,
+    val showControls: Boolean,
+)
+
 internal data class ProfileRenderState(
     val selectedIndex: Int,
     val draggingIndex: Int,
@@ -38,18 +48,11 @@ internal class ProfileSurfaceRenderer(context: Context) {
             textAlign = Paint.Align.CENTER
         }
 
-    fun draw(
-        canvas: Canvas,
-        profile: ControlProfile,
-        state: ProfileRenderState,
-        width: Float,
-        height: Float,
-        showControls: Boolean = true,
-    ) {
-        drawGamepadShell(canvas, width, height)
-        if (!showControls) return
-        for ((index, control) in profile.controls.withIndex()) {
-            drawControl(ControlFrame(canvas, index, control, state, width, height, NORMAL_ALPHA))
+    fun draw(args: DrawArgs) {
+        drawGamepadShell(args.canvas, args.width, args.height)
+        if (!args.showControls) return
+        for ((index, control) in args.profile.controls.withIndex()) {
+            drawControl(ControlFrame(args.canvas, index, control, args.state, args.width, args.height, NORMAL_ALPHA))
         }
     }
 

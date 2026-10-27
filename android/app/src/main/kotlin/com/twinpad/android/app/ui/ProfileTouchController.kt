@@ -37,7 +37,6 @@ private const val DIAGONAL_SOUTH_WEST_SECTOR = 5
 /** Routes touch gestures to the current profile and gamepad snapshot. */
 internal class ProfileTouchController(
     private val surface: GamepadSurfaceState,
-    private val gamepad: com.twinpad.android.app.hid.GamepadStateMachine,
     private val onInput: (InputReport) -> Unit,
     private val contentRect: () -> VideoContentRect = { VideoContentRect(0f, 0f, 1f, 1f) },
 ) {
@@ -401,7 +400,9 @@ internal class ProfileTouchController(
     }
 
     private fun emit() {
-        gamepad.onElementChanged(surface.snapshot())?.let(onInput)
+        // Snapshot puro; la deduplicación y el `seq` los asigna la única
+        // GamepadStateMachine, en PairingViewModel (SPEC-004 §6/R2).
+        onInput(surface.snapshot())
     }
 
     private data class HitTarget(val index: Int, val nx: Float, val ny: Float)

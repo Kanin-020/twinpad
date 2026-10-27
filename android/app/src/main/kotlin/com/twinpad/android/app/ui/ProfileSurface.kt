@@ -7,7 +7,6 @@ import android.view.MotionEvent
 import android.view.View
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.twinpad.android.app.hid.GamepadStateMachine
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
@@ -21,11 +20,10 @@ class ProfileSurface(
     private val onInput: (InputReport) -> Unit,
 ) : View(context) {
     private val gamepadSurface = GamepadSurfaceState()
-    private val gamepad = GamepadStateMachine()
     private val store = ControlProfileStore(context)
     private val renderer = ProfileSurfaceRenderer(context)
     private val touchController =
-        ProfileTouchController(gamepadSurface, gamepad, onInput) { videoContentRect }
+        ProfileTouchController(gamepadSurface, onInput) { videoContentRect }
     var videoContentRect: VideoContentRect = VideoContentRect(0f, 0f, 1f, 1f)
 
     /**
@@ -48,10 +46,6 @@ class ProfileSurface(
 
     var editing = false
         private set
-
-    init {
-        gamepad.onChannelReady()?.let(onInput)
-    }
 
     fun updateMotion(sample: MotionInput?) {
         if (sample == motionSample) return
@@ -121,12 +115,14 @@ class ProfileSurface(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         renderer.draw(
-            canvas = canvas,
-            profile = profile,
-            state = touchController.renderState(editing),
-            width = width.toFloat(),
-            height = height.toFloat(),
-            showControls = showControls || editing,
+            DrawArgs(
+                canvas = canvas,
+                profile = profile,
+                state = touchController.renderState(editing),
+                width = width.toFloat(),
+                height = height.toFloat(),
+                showControls = showControls || editing,
+            ),
         )
     }
 
@@ -153,7 +149,9 @@ class ProfileSurface(
     }
 
     private fun emit() {
-        gamepad.onElementChanged(gamepadSurface.snapshot())?.let(onInput)
+        // Snapshot puro: la máquina que deduplica y asigna `seq` (SPEC-004 R2)
+        // es la de PairingViewModel; aquí no hay segunda GamepadStateMachine.
+        onInput(gamepadSurface.snapshot())
     }
 
     private fun viewLifecycleScope(): kotlinx.coroutines.CoroutineScope? = findViewTreeLifecycleOwner()?.lifecycleScope

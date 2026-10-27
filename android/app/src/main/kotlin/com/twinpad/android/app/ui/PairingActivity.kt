@@ -16,8 +16,6 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
-import android.widget.RadioButton
-import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -31,7 +29,6 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.switchmaterial.SwitchMaterial
 import com.twinpad.android.app.R
 import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
@@ -49,20 +46,6 @@ private const val HUD_TICK_MS: Long = 1_000L
 /** Conversión kbps → Mbps. */
 private const val KBPS_PER_MBPS: Int = 1_000
 
-/** Resoluciones seleccionables (16:9, CR-001). */
-private const val RES_W_960 = 960
-private const val RES_H_540 = 540
-private const val RES_W_1280 = 1280
-private const val RES_H_720 = 720
-private const val RES_W_1920 = 1920
-private const val RES_H_1080 = 1080
-
-/** fps seleccionables. */
-private const val FPS_30 = 30
-private const val FPS_60 = 60
-private const val AUDIO_VOLUME_PERCENT_MAX = 100
-private const val JOG_WHEEL_PERCENT_SCALE = 100
-
 /**
  * Pantalla de Pairing (SPEC-002 §6) sobre Views clásicas: layouts XML +
  * drawables XML editables en Android Studio (pedido del owner: mantener la
@@ -72,6 +55,7 @@ private const val JOG_WHEEL_PERCENT_SCALE = 100
 class PairingActivity : AppCompatActivity() {
     private lateinit var viewModel: PairingViewModel
     private lateinit var cameraController: PairingCameraController
+    private lateinit var drawer: SettingsDrawerController
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
@@ -182,6 +166,42 @@ class PairingActivity : AppCompatActivity() {
             viewModel.onCameraPermissionResult(granted)
         }
 
+    /** Efectos del drawer que exceden sus vistas: hardware y estado propio. */
+    private val drawerHost =
+        object : SettingsDrawerHost {
+            override fun applyVideoScale(settings: AndroidSettings) {
+                this@PairingActivity.applyVideoScale(settings)
+            }
+
+            override fun onStreamSettingsChanged(settings: AndroidSettings) {
+                viewModel.onStreamSettingsChanged(settings)
+            }
+
+            override fun updateAudioVolume(volume: Float) {
+                viewModel.setAudioVolume(volume)
+            }
+
+            override fun onHudToggled(visible: Boolean) {
+                hudVisible = visible
+                renderHudChip()
+            }
+
+            override fun onHudRestored(visible: Boolean) {
+                hudVisible = visible
+            }
+
+            override fun onGyroMonitorToggled(visible: Boolean) {
+                gyroMonitorVisible = visible
+                findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = visible
+                findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
+            }
+
+            override fun onControlsToggled(visible: Boolean) {
+                controlsVisible = visible
+                surfaceRef?.showControls = visible
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -194,12 +214,13 @@ class PairingActivity : AppCompatActivity() {
             PairingCameraController(this) { raw ->
                 viewModel.onEvent(PairingEvent.QrScanned(raw))
             }
+        drawer = SettingsDrawerController(this, drawerHost)
         wireViews()
         findViewById<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
         findViewById<View>(R.id.video_surface_container).addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            applyVideoScale(AndroidSettingsStore(this).load())
+            applyVideoScale(drawer.load())
         }
-        applyPersistedSettings()
+        drawer.applyPersistedSettings()
         observeCameraEffects()
         observeStates()
     }
@@ -229,7 +250,7 @@ class PairingActivity : AppCompatActivity() {
             viewModel.uiState.collectLatest { state ->
                 renderState(state)
                 if (state is PairingUiState.Linked && !sessionConfigSent) {
-                    viewModel.onStreamSettingsChanged(AndroidSettingsStore(this@PairingActivity).load())
+                    viewModel.onStreamSettingsChanged(drawer.load())
                     sessionConfigSent = true
                 } else if (state !is PairingUiState.Linked) {
                     sessionConfigSent = false
@@ -280,7 +301,8 @@ class PairingActivity : AppCompatActivity() {
                 renderHudChip()
             }
         }
-        wireDrawerControls()
+        drawer.bind()
+        attachProfileSurface()
     }
 
     private fun gamesText(games: List<com.twinpad.android.app.wire.GameInfo>): String =
@@ -307,148 +329,6 @@ class PairingActivity : AppCompatActivity() {
             )
         chip.isVisible = true
     }
-
-    /** Drawer de ajustes: resolución/fps/calidad/HUD/controles → ViewModel. */
-    private fun applyPersistedSettings() {
-        val settings = AndroidSettingsStore(this).load()
-        viewModel.setAudioVolume(settings.audioVolumePercent / AUDIO_VOLUME_PERCENT_MAX.toFloat())
-        resolutionButtons().forEach { (button, dims) ->
-            if (dims.first == settings.width && dims.second == settings.height) button.isChecked = true
-        }
-        if (!hasConfiguredResolution(settings.width, settings.height)) {
-            findViewById<RadioButton>(R.id.resolution_1280x720).isChecked = true
-        }
-        findViewById<RadioButton>(if (settings.fps == FPS_30) R.id.fps_30 else R.id.fps_60).isChecked = true
-        findViewById<SeekBar>(R.id.jpeg_quality_seek).progress = settings.jpegQuality
-        findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
-        hudVisible = settings.showHud
-        controlsVisible = settings.showControls
-        findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
-        findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
-        gyroMonitorVisible = settings.showGyroMonitor
-        findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
-        findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = settings.showGyroMonitor
-        findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
-        surfaceRef?.showControls = settings.showControls
-        val scaleButtonId = if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand
-        findViewById<RadioButton>(scaleButtonId).isChecked = true
-        applyVideoScale(settings)
-    }
-
-    private fun hasConfiguredResolution(
-        width: Int,
-        height: Int,
-    ): Boolean = resolutionButtons().values.any { dims -> dims.first == width && dims.second == height }
-
-    private fun saveSettings(transform: (AndroidSettings) -> AndroidSettings) {
-        val store = AndroidSettingsStore(this)
-        val updated = transform(store.load())
-        store.save(updated)
-        viewModel.onStreamSettingsChanged(updated)
-        applyVideoScale(updated)
-    }
-
-    private fun wireDrawerControls() {
-        resolutionButtons().forEach { (button, dims) ->
-            button.setOnCheckedChangeListener { _, checked ->
-                if (checked) saveSettings { it.copy(width = dims.first, height = dims.second, fps = currentFps()) }
-            }
-        }
-        findViewById<RadioButton>(R.id.scale_contain).setOnCheckedChangeListener { _, checked ->
-            if (checked) saveSettings { it.copy(scaleMode = VideoScaleMode.CONTAIN) }
-        }
-        findViewById<RadioButton>(R.id.scale_expand).setOnCheckedChangeListener { _, checked ->
-            if (checked) saveSettings { it.copy(scaleMode = VideoScaleMode.EXPAND) }
-        }
-        fpsButtons().forEach { (button, fps) ->
-            button.setOnCheckedChangeListener { _, checked ->
-                if (checked) {
-                    val (width, height) = currentResolution()
-                    saveSettings { it.copy(width = width, height = height, fps = fps) }
-                }
-            }
-        }
-        findViewById<SeekBar>(R.id.jpeg_quality_seek).setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(
-                    bar: SeekBar,
-                    value: Int,
-                    fromUser: Boolean,
-                ) {
-                    if (fromUser) saveSettings { it.copy(jpegQuality = value) }
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar) = Unit
-
-                override fun onStopTrackingTouch(bar: SeekBar) = Unit
-            },
-        )
-        val audioVolume = findViewById<SeekBar>(R.id.audio_volume_seek)
-        audioVolume.max = AUDIO_VOLUME_PERCENT_MAX
-        audioVolume.progress = AndroidSettingsStore(this).load().audioVolumePercent
-        audioVolume.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(
-                    bar: SeekBar,
-                    value: Int,
-                    fromUser: Boolean,
-                ) {
-                    if (fromUser) {
-                        val percent = if (bar.max == 0) 0 else value * JOG_WHEEL_PERCENT_SCALE / bar.max
-                        val settingsStore = AndroidSettingsStore(this@PairingActivity)
-                        settingsStore.save(settingsStore.load().copy(audioVolumePercent = percent))
-                        viewModel.setAudioVolume(percent / AUDIO_VOLUME_PERCENT_MAX.toFloat())
-                    }
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar) = Unit
-
-                override fun onStopTrackingTouch(bar: SeekBar) = Unit
-            },
-        )
-        findViewById<SwitchMaterial>(R.id.switch_show_fps).setOnCheckedChangeListener { _, checked ->
-            hudVisible = checked
-            val store = AndroidSettingsStore(this)
-            store.save(store.load().copy(showHud = checked))
-            renderHudChip()
-        }
-        findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).setOnCheckedChangeListener { _, checked ->
-            gyroMonitorVisible = checked
-            findViewById<GyroMonitorView>(R.id.gyro_monitor).isVisible = checked
-            findViewById<GyroMonitorView>(R.id.gyro_monitor).bringToFront()
-            val store = AndroidSettingsStore(this)
-            store.save(store.load().copy(showGyroMonitor = checked))
-        }
-        findViewById<SwitchMaterial>(R.id.switch_show_controls).setOnCheckedChangeListener { _, checked ->
-            controlsVisible = checked
-            surfaceRef?.showControls = checked
-            val store = AndroidSettingsStore(this)
-            store.save(store.load().copy(showControls = checked))
-        }
-        attachProfileSurface()
-    }
-
-    private fun resolutionButtons(): Map<RadioButton, Pair<Int, Int>> =
-        mapOf(
-            findViewById<RadioButton>(R.id.resolution_960x540) to (RES_W_960 to RES_H_540),
-            findViewById<RadioButton>(R.id.resolution_1280x720) to (RES_W_1280 to RES_H_720),
-            findViewById<RadioButton>(R.id.resolution_1920x1080) to (RES_W_1920 to RES_H_1080),
-        )
-
-    private fun fpsButtons(): Map<RadioButton, Int> =
-        mapOf(
-            findViewById<RadioButton>(R.id.fps_30) to FPS_30,
-            findViewById<RadioButton>(R.id.fps_60) to FPS_60,
-        )
-
-    private fun currentFps(): Int = if (findViewById<RadioButton>(R.id.fps_30).isChecked) FPS_30 else FPS_60
-
-    private fun currentResolution(): Pair<Int, Int> =
-        when {
-            findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked -> RES_W_1920 to RES_H_1080
-            findViewById<RadioButton>(R.id.resolution_1280x720).isChecked -> RES_W_1280 to RES_H_720
-            else -> RES_W_960 to RES_H_540
-        }
 
     /** Superficie táctil: instanciar el editor/uso una sola vez. */
     private fun attachProfileSurface() {
