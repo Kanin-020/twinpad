@@ -128,27 +128,9 @@ class PairingActivity : AppCompatActivity() {
             surfaceRef?.updateMotion(sample)
         }
     private val accelerationListener =
-        object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                motionController.updateAcceleration(event.values, event.timestamp)
-            }
-
-            override fun onAccuracyChanged(
-                sensor: Sensor?,
-                accuracy: Int,
-            ) = Unit
-        }
+        sensorListener { values, timestamp -> motionController.updateAcceleration(values, timestamp) }
     private val gyroscopeListener =
-        object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                motionController.updateGyroscope(event.values, event.timestamp)
-            }
-
-            override fun onAccuracyChanged(
-                sensor: Sensor?,
-                accuracy: Int,
-            ) = Unit
-        }
+        sensorListener { values, timestamp -> motionController.updateGyroscope(values, timestamp) }
     private val orientationListener =
         object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
@@ -507,25 +489,19 @@ class PairingActivity : AppCompatActivity() {
         super.onResume()
         hideSystemBars()
         motionController.reset()
-        rotationVector?.let {
+        registerSensor(rotationVector, orientationListener)
+        registerSensor(sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), accelerationListener)
+        registerSensor(sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE), gyroscopeListener)
+    }
+
+    /** Registra el listener solo si el sensor existe en el dispositivo. */
+    private fun registerSensor(
+        sensor: Sensor?,
+        listener: SensorEventListener,
+    ) {
+        sensor?.let {
             sensorManager.registerListener(
-                orientationListener,
-                it,
-                SensorManager.SENSOR_DELAY_GAME,
-                ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
-            )
-        }
-        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-            sensorManager.registerListener(
-                accelerationListener,
-                it,
-                SensorManager.SENSOR_DELAY_GAME,
-                ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
-            )
-        }
-        sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let {
-            sensorManager.registerListener(
-                gyroscopeListener,
+                listener,
                 it,
                 SensorManager.SENSOR_DELAY_GAME,
                 ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
@@ -558,6 +534,19 @@ private fun PairingActivity.keepDisplayAwake(state: StreamState) {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }
+
+/** Listener de sensor que solo reenvía valores y marca de tiempo; la precisión no se usa. */
+private fun sensorListener(onValues: (FloatArray, Long) -> Unit): SensorEventListener =
+    object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            onValues(event.values, event.timestamp)
+        }
+
+        override fun onAccuracyChanged(
+            sensor: Sensor?,
+            accuracy: Int,
+        ) = Unit
+    }
 
 /** Reorienta la referencia de ejes del sensor para que siga las coordenadas visibles de la pantalla. */
 internal fun remapOrientationMatrix(
