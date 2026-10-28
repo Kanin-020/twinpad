@@ -29,11 +29,15 @@ class AndroidSettingsStoreTest {
 
     @Test
     fun stream_settings_have_stable_defaults() {
-        assertEquals(
-            AndroidSettings.DEFAULT_WIDTH to AndroidSettings.DEFAULT_HEIGHT,
-            AndroidSettings().width to AndroidSettings().height,
-        )
-        assertEquals(AndroidSettings.DEFAULT_VIDEO_BITRATE_KBPS, AndroidSettings().videoBitrateKbps)
-        assertEquals(AndroidSettings.DEFAULT_AUDIO_VOLUME_PERCENT, AndroidSettings().audioVolumePercent)
+        // CR-031: fábrica = 1080p, bitrate máximo (30.000 kbps), escalado
+        // "contener" y HUD fps / botones visibles.
+        val defaults = AndroidSettings()
+        assertEquals(1920, defaults.width)
+        assertEquals(1080, defaults.height)
+        assertEquals(30_000, defaults.videoBitrateKbps)
+        assertEquals(AndroidSettings.DEFAULT_AUDIO_VOLUME_PERCENT, defaults.audioVolumePercent)
+        assertEquals(VideoScaleMode.CONTAIN, defaults.scaleMode)
+        assertEquals(true, defaults.showHud)
+        assertEquals(true, defaults.showControls)
     }
 }

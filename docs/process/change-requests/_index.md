@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-031 |
+| CR | CR-032 |
 
 ## Open / In review
 
@@ -35,6 +35,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-031 | Ajustes por defecto: 1080p, escalado contener, bitrate máximo, HUD fps y botones visibles (aplicado en SPEC-002 y código Android) | SPEC-002 | 2026-10-28 | [CR-031-default-stream-settings.md](CR-031-default-stream-settings.md) |
 | CR-030 | Resolución efectiva del GamePad: `video_config` reenvía w/h, escala del DRC antes del encode (aplicado en SPEC-002/003/006 y código server/Cemu) | SPEC-002, SPEC-003, SPEC-006 | 2026-10-28 | [CR-030-effective-gamepad-resolution.md](CR-030-effective-gamepad-resolution.md) |
 | CR-029 | FPS unlimited: sin tope 30/60 ni pacing por fps; `stream_start.fps` como metadata (aplicado en SPEC-002/003/006, core, server, Cemu y Android) | SPEC-002, SPEC-003, SPEC-006 | 2026-10-28 | [CR-029-unlimited-fps.md](CR-029-unlimited-fps.md) |
 | CR-028 | Mando físico conectado al teléfono: mapper y fusión con la superficie táctil (aplicado en SPEC-004 y código Android) | SPEC-004 | 2026-10-27 | [CR-028-physical-gamepad-input.md](CR-028-physical-gamepad-input.md) |

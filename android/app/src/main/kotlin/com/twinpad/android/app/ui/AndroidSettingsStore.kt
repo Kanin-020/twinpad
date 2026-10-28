@@ -20,7 +20,7 @@ data class AndroidSettings(
     val showGyroMonitor: Boolean = false,
     val showHud: Boolean = true,
     val showControls: Boolean = true,
-    val scaleMode: VideoScaleMode = VideoScaleMode.EXPAND,
+    val scaleMode: VideoScaleMode = VideoScaleMode.CONTAIN,
 ) {
     fun videoConfigLine(): String =
         buildString {
@@ -35,9 +35,10 @@ data class AndroidSettings(
         }
 
     companion object {
-        const val DEFAULT_WIDTH = 1280
-        const val DEFAULT_HEIGHT = 720
-        const val DEFAULT_VIDEO_BITRATE_KBPS = 8_000
+        // CR-031: defaults de fábrica 1080p, bitrate máximo, pantalla "contener".
+        const val DEFAULT_WIDTH = 1920
+        const val DEFAULT_HEIGHT = 1080
+        const val DEFAULT_VIDEO_BITRATE_KBPS = 30_000
         const val DEFAULT_AUDIO_VOLUME_PERCENT = 100
     }
 }
@@ -57,11 +58,12 @@ internal class AndroidSettingsStore(context: Context) {
             showGyroMonitor = preferences.getBoolean(KEY_GYRO_MONITOR, false),
             showHud = preferences.getBoolean(KEY_HUD, true),
             showControls = preferences.getBoolean(KEY_CONTROLS, true),
+            // CR-031: el default pasa a CONTAIN; EXPAND solo si quedó persistido.
             scaleMode =
-                if (preferences.getString(KEY_SCALE_MODE, null) == VideoScaleMode.CONTAIN.name) {
-                    VideoScaleMode.CONTAIN
-                } else {
+                if (preferences.getString(KEY_SCALE_MODE, null) == VideoScaleMode.EXPAND.name) {
                     VideoScaleMode.EXPAND
+                } else {
+                    VideoScaleMode.CONTAIN
                 },
         )
 

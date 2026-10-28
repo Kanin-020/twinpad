@@ -64,7 +64,8 @@ internal class SettingsDrawerController(
         val knownResolution =
             resolutionButtons().values.any { dims -> dims.first == settings.width && dims.second == settings.height }
         if (!knownResolution) {
-            activity.findViewById<RadioButton>(R.id.resolution_1280x720).isChecked = true
+            // CR-031: el default del drawer es 1080p.
+            activity.findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked = true
         }
         activity.findViewById<SeekBar>(R.id.bitrate_seek).progress =
             settings.videoBitrateKbps - BITRATE_SEEK_KBPS_MIN
