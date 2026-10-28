@@ -16,6 +16,8 @@ import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
 import com.twinpad.android.app.wire.GameListCodec
+import com.twinpad.android.app.wire.RumbleCodec
+import com.twinpad.android.app.wire.RumbleMessage
 import com.twinpad.android.app.wire.StreamCodec
 import com.twinpad.android.app.wire.StreamMessage
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +64,7 @@ class PairingViewModel(
     private val gamepad = collaborators.gamepad
     private val playback = collaborators.playback
     val streamStats = collaborators.streamStats
+    private val rumblePlayer = RumblePlayer(app)
     private val selection = PairingSelectionState()
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para
@@ -157,6 +160,7 @@ class PairingViewModel(
             "audio_start", "audio_chunk", "audio_stop" -> handleAudioLine(line)
             "stream_start", "stream_stop" -> handleStreamControlLine(line)
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
+            "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
             else -> Unit
         }
     }
@@ -177,6 +181,7 @@ class PairingViewModel(
         playback.stop()
         _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
         streamStats.reset()
+        rumblePlayer.play(RumbleMessage(ByteArray(0)))
     }
 
     private fun handleAudioLine(line: String) {

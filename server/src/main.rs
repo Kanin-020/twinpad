@@ -693,6 +693,22 @@ fn spawn_game_audio_forwarding(
                 }
             }
             if let Some(game_id) = current_game.as_deref() {
+                // CR-033: patrones de vibración del mismo juego seleccionado.
+                while let Some(pattern) = games.pop_rumble(game_id) {
+                    use base64::Engine as _;
+                    let length = u8::try_from(pattern.len()).unwrap_or(u8::MAX);
+                    let msg = twinpad_core::game::GameMsg::Rumble {
+                        length,
+                        data: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(pattern),
+                    };
+                    if let Ok(line) = msg.encode() {
+                        if !sink.send_line(&line) {
+                            return;
+                        }
+                    }
+                }
+            }
+            if let Some(game_id) = current_game.as_deref() {
                 if let Some((_, pcm)) = games.pop_audio(game_id) {
                     use base64::Engine as _;
                     let chunk = twinpad_core::audio::AudioMsg::AudioChunk {

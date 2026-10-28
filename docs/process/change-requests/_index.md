@@ -4,13 +4,15 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-033 |
+| CR | CR-037 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| CR-034 | Cámara del teléfono hacia Cemu (alcance por definir) | SPEC-005, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-034-phone-camera-to-cemu.md](CR-034-phone-camera-to-cemu.md) |
+| CR-035 | Micrófono del teléfono hacia Cemu | SPEC-005, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-035-phone-microphone-to-cemu.md](CR-035-phone-microphone-to-cemu.md) |
+| CR-036 | Continuidad del video al cambiar de escena | SPEC-003, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-036-video-continuity-scene-changes.md](CR-036-video-continuity-scene-changes.md) |
 
 > CR-009 y CR-010 fueron aprobados por el Product owner; CR-009 se aplicó en su iteración. CR-010 está implementado en código y contratos; permanece abierto únicamente el gate físico Cemu/Android de ±150 ms A/V y hasta 60 fps.
 
@@ -35,6 +37,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-033 | Vibración del VPAD de Cemu hacia el teléfono (aplicado en SPEC-006 1.17.0, servidor, Cemu y Android) | SPEC-006, SPEC-002, DES-004 | 2026-10-28 | [CR-033-cemu-vpad-rumble-to-phone.md](CR-033-cemu-vpad-rumble-to-phone.md) |
 | CR-032 | Switch «Distribución Nintendo» en el drawer: botones de cara táctiles y mando físico (aplicado en SPEC-002/SPEC-008 y código Android) | SPEC-002, SPEC-008 | 2026-10-28 | [CR-032-nintendo-button-layout.md](CR-032-nintendo-button-layout.md) |
 | CR-031 | Ajustes por defecto: 1080p, escalado contener, bitrate máximo, HUD fps y botones visibles (aplicado en SPEC-002 y código Android) | SPEC-002 | 2026-10-28 | [CR-031-default-stream-settings.md](CR-031-default-stream-settings.md) |
 | CR-030 | Resolución efectiva del GamePad: `video_config` reenvía w/h, escala del DRC antes del encode (aplicado en SPEC-002/003/006 y código server/Cemu) | SPEC-002, SPEC-003, SPEC-006 | 2026-10-28 | [CR-030-effective-gamepad-resolution.md](CR-030-effective-gamepad-resolution.md) |
@@ -65,6 +68,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 0 |
+| Open | 3 |
 | Median time open → applied | — |
 | Last reviewed | 2026-10-20 |

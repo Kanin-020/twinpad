@@ -55,6 +55,8 @@ struct GameEntry {
     audio_start: Option<(u32, u8)>,
     audio_chunks: std::collections::VecDeque<Vec<u8>>,
     audio_connection_active: bool,
+    /// Patrones de vibración pendientes (CR-033), acotados como el audio.
+    rumble_queue: std::collections::VecDeque<Vec<u8>>,
 }
 
 /// Registro en memoria de juegos compatibles vivos (§6: D0/D1 por juego).
@@ -87,6 +89,7 @@ impl GameRegistry {
                 audio_start: None,
                 audio_chunks: std::collections::VecDeque::new(),
                 audio_connection_active: false,
+                rumble_queue: std::collections::VecDeque::new(),
             },
         );
         Ok(())
@@ -182,6 +185,28 @@ impl GameRegistry {
         }
         entry.audio_chunks.push_back(pcm);
         true
+    }
+
+    /// Encola un patrón de vibración de un juego vivo (CR-033). Al
+    /// saturar descarta los más antiguos: solo importa el último estado.
+    pub fn push_rumble(&self, game_id: &str, pattern: Vec<u8>) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        while entry.rumble_queue.len() >= 8 {
+            entry.rumble_queue.pop_front();
+        }
+        entry.rumble_queue.push_back(pattern);
+        true
+    }
+
+    /// Siguiente patrón de vibración pendiente del juego (CR-033).
+    pub fn pop_rumble(&self, game_id: &str) -> Option<Vec<u8>> {
+        lock_or_reset(&self.games)
+            .get_mut(game_id)?
+            .rumble_queue
+            .pop_front()
     }
 
     /// Retira una fuente de audio al recibir stop o perder su conexión.
@@ -484,6 +509,16 @@ fn handle_game_connection(
                 }
                 Err(_) => println!("game_frame inválido de '{}' descartado.", game.game_id),
             },
+            Ok(GameMsg::Rumble { length, data }) => {
+                use base64::Engine as _;
+                if let Ok(pattern) =
+                    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&data)
+                {
+                    if pattern.len() == usize::from(length) {
+                        registry.push_rumble(&game.game_id, pattern);
+                    }
+                }
+            }
             Ok(_) => {} // otro mensaje sobre la conexión viva: ignorado en v1
             Err(_) => println!("Línea inválida de '{}' descartada (E4).", game.game_id),
         }

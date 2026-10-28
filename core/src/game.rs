@@ -15,6 +15,7 @@
 
 use crate::error::{PairError, PairResult};
 use crate::stream::{FrameFormat, validate_dims};
+use base64::Engine as _;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -90,7 +91,15 @@ pub enum GameMsg {
         /// Framebuffer crudo o access unit en base64url.
         data: String,
     },
+    /// juego → server → Android (CR-033): patrón de vibración de
+    /// `VPADControlMotor`. `length` = bytes del patrón (0 = parar); `data`
+    /// es el patrón en base64url de exactamente `length` bytes.
+    #[serde(rename = "rumble")]
+    Rumble { length: u8, data: String },
 }
+
+/// Máximo de bytes de un patrón de vibración (`VPADControlMotor`, CR-033).
+pub const RUMBLE_MAX_BYTES: u8 = 120;
 
 impl GameMsg {
     /// Serializa a su línea NDJSON canónica (sin `\n` final).
@@ -117,6 +126,18 @@ impl GameMsg {
             }
             GameMsg::GameSelect { game_id } | GameMsg::GameSelected { game_id } => {
                 validate_game_id(game_id)
+            }
+            GameMsg::Rumble { length, data } => {
+                if *length > RUMBLE_MAX_BYTES {
+                    return Err(PairError::MalformedMessage);
+                }
+                let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(data)
+                    .map_err(|_| PairError::MalformedMessage)?;
+                if decoded.len() != usize::from(*length) {
+                    return Err(PairError::MalformedMessage);
+                }
+                Ok(())
             }
             GameMsg::GameFrame {
                 w,
@@ -305,6 +326,48 @@ mod tests {
         );
         assert_eq!(
             GameMsg::decode("{\"type\":\"game_announce\",\"game_id\":\"x\"}"),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-092 — verifies SPEC-006 (CR-033): `rumble` round-trip and strict validation.
+    #[test]
+    fn rumble_round_trips_and_rejects_bad_length_or_data() {
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let pattern = vec![0xAAu8, 0x55, 0x0F];
+        let msg = GameMsg::Rumble {
+            length: 3,
+            data: engine.encode(&pattern),
+        };
+        assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
+
+        // Parar: longitud 0 sin datos.
+        let stop = GameMsg::Rumble {
+            length: 0,
+            data: String::new(),
+        };
+        assert_eq!(GameMsg::decode(&stop.encode().unwrap()).unwrap(), stop);
+
+        // Longitud declarada distinta de los bytes decodificados.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"rumble","length":2,"data":"{}"}}"#,
+                engine.encode(&pattern)
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Longitud por encima del máximo de 120 bytes.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"rumble","length":121,"data":"{}"}}"#,
+                engine.encode(vec![0u8; 121])
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Base64 inválido.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"rumble","length":1,"data":"!!"}"#),
             Err(PairError::MalformedMessage)
         );
     }
