@@ -25,12 +25,12 @@ class GyroMonitorView
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = 0xFFB8C7D9.toInt()
                 style = Paint.Style.STROKE
-                strokeWidth = dp(1.5f)
+                strokeWidth = dpToPx(1.5f)
             }
         private val gridPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = 0x668E9AAA
-                strokeWidth = dp(1f)
+                strokeWidth = dpToPx(1f)
             }
         private val yawPaint = axisPaint(0xFF65D681.toInt())
         private val pitchPaint = axisPaint(0xFFFF5B5B.toInt())
@@ -38,7 +38,7 @@ class GyroMonitorView
         private val textPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = 0xFFFFFFFF.toInt()
-                textSize = dp(11f)
+                textSize = dpToPx(11f)
             }
         private val orientationTurns = IntArray(3)
 
@@ -60,22 +60,18 @@ class GyroMonitorView
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val bounds = RectF(0f, 0f, width.toFloat(), height.toFloat())
-            canvas.drawRoundRect(bounds, dp(CORNER_RADIUS_DP), dp(CORNER_RADIUS_DP), framePaint)
-            canvas.drawRoundRect(bounds, dp(CORNER_RADIUS_DP), dp(CORNER_RADIUS_DP), borderPaint)
+            canvas.drawRoundRect(bounds, dpToPx(CORNER_RADIUS_DP), dpToPx(CORNER_RADIUS_DP), framePaint)
+            canvas.drawRoundRect(bounds, dpToPx(CORNER_RADIUS_DP), dpToPx(CORNER_RADIUS_DP), borderPaint)
 
-            val padding = dp(GRAPH_PADDING_DP)
-            val graphTop = dp(GRAPH_TOP_DP)
-            val graphBottom = height - dp(GRAPH_BOTTOM_MARGIN_DP)
+            val padding = dpToPx(GRAPH_PADDING_DP)
+            val graphTop = dpToPx(GRAPH_TOP_DP)
+            val graphBottom = height - dpToPx(GRAPH_BOTTOM_MARGIN_DP)
             val centerX = width / 2f
             val centerY = (graphTop + graphBottom) / 2f
-            canvas.drawLine(padding, centerY, width - padding, centerY, gridPaint)
-            canvas.drawLine(centerX, graphTop, centerX, graphBottom, gridPaint)
-            canvas.drawLine(padding, graphTop, padding, graphBottom, gridPaint)
-            canvas.drawLine(width - padding, graphTop, width - padding, graphBottom, gridPaint)
-            canvas.drawText(context.getString(R.string.gyro_monitor_title), padding, dp(TITLE_BASELINE_DP), textPaint)
+            drawGridAndTitle(canvas, padding, graphTop, graphBottom)
 
-            val extentX = width / 2f - padding - dp(GRAPH_EDGE_INSET_DP)
-            val extentY = (graphBottom - graphTop) / 2f - dp(GRAPH_EDGE_INSET_DP)
+            val extentX = width / 2f - padding - dpToPx(GRAPH_EDGE_INSET_DP)
+            val extentY = (graphBottom - graphTop) / 2f - dpToPx(GRAPH_EDGE_INSET_DP)
             val angles = FloatArray(AXIS_COUNT) { index -> orientationTurns[index] / INT16_TURNS_SCALE * TWO_PI }
             val startX = centerX
             val startY = centerY
@@ -91,7 +87,7 @@ class GyroMonitorView
             canvas.drawLine(startX, startY, endPoints[YAW_END_X], endPoints[YAW_END_Y], yawPaint)
             canvas.drawLine(startX, startY, endPoints[PITCH_END_X], endPoints[PITCH_END_Y], pitchPaint)
             canvas.drawLine(startX, startY, endPoints[ROLL_END_X], endPoints[ROLL_END_Y], rollPaint)
-            canvas.drawCircle(centerX, centerY, dp(CENTER_MARKER_RADIUS_DP), borderPaint)
+            canvas.drawCircle(centerX, centerY, dpToPx(CENTER_MARKER_RADIUS_DP), borderPaint)
             val axisLabels =
                 arrayOf(
                     context.getString(R.string.gyro_axis_pitch),
@@ -102,11 +98,11 @@ class GyroMonitorView
             for (axis in axisLabels.indices) {
                 val coordinateOffset = axis * COORDINATE_COUNT
                 val x =
-                    (endPoints[coordinateOffset + X_COORDINATE] + dp(LABEL_OFFSET_DP))
-                        .coerceIn(padding, width - dp(LABEL_RIGHT_MARGIN_DP))
+                    (endPoints[coordinateOffset + X_COORDINATE] + dpToPx(LABEL_OFFSET_DP))
+                        .coerceIn(padding, width - dpToPx(LABEL_RIGHT_MARGIN_DP))
                 val y =
-                    (endPoints[coordinateOffset + Y_COORDINATE] - dp(LABEL_OFFSET_DP))
-                        .coerceIn(graphTop + dp(LABEL_TOP_INSET_DP), graphBottom - dp(LABEL_BOTTOM_INSET_DP))
+                    (endPoints[coordinateOffset + Y_COORDINATE] - dpToPx(LABEL_OFFSET_DP))
+                        .coerceIn(graphTop + dpToPx(LABEL_TOP_INSET_DP), graphBottom - dpToPx(LABEL_BOTTOM_INSET_DP))
                 canvas.drawText(axisLabels[axis], x, y, axisPaints[axis])
             }
 
@@ -117,17 +113,37 @@ class GyroMonitorView
                     orientationTurns[1],
                     orientationTurns[2],
                 )
-            canvas.drawText(valueText, padding, height - dp(VALUE_BASELINE_MARGIN_DP), textPaint)
+            canvas.drawText(valueText, padding, height - dpToPx(VALUE_BASELINE_MARGIN_DP), textPaint)
         }
 
         private fun axisPaint(color: Int) =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 this.color = color
-                strokeWidth = dp(AXIS_STROKE_WIDTH_DP)
+                strokeWidth = dpToPx(AXIS_STROKE_WIDTH_DP)
                 strokeCap = Paint.Cap.ROUND
             }
 
-        private fun dp(value: Float): Float = value * resources.displayMetrics.density
+        private fun drawGridAndTitle(
+            canvas: Canvas,
+            padding: Float,
+            graphTop: Float,
+            graphBottom: Float,
+        ) {
+            val centerX = width / 2f
+            val centerY = (graphTop + graphBottom) / 2f
+            canvas.drawLine(padding, centerY, width - padding, centerY, gridPaint)
+            canvas.drawLine(centerX, graphTop, centerX, graphBottom, gridPaint)
+            canvas.drawLine(padding, graphTop, padding, graphBottom, gridPaint)
+            canvas.drawLine(width - padding, graphTop, width - padding, graphBottom, gridPaint)
+            canvas.drawText(
+                context.getString(R.string.gyro_monitor_title),
+                padding,
+                dpToPx(TITLE_BASELINE_DP),
+                textPaint,
+            )
+        }
+
+        private fun dpToPx(value: Float): Float = value * resources.displayMetrics.density
 
         private companion object {
             const val AXIS_COUNT = 3
