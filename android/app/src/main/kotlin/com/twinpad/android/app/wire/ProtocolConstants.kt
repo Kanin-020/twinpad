@@ -15,6 +15,7 @@ object ProtocolConstants {
     const val MIN_DIM: Int = 16
     const val MAX_WIDTH: Int = 3840
     const val MAX_HEIGHT: Int = 2160
+
     // CR-029: `stream_start.fps` es metadata informativa (u8); 0 = unlimited.
     const val MIN_FPS: Int = 0
     const val MAX_FPS: Int = 255

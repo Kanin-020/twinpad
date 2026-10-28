@@ -23,7 +23,6 @@ private const val MEDIA_RECOVERY_WINDOW_MS = 10_000L
 private const val MEDIA_RECONNECT_INITIAL_DELAY_MS = 250L
 private const val MEDIA_RECONNECT_MAX_DELAY_MS = 2_000L
 
-
 /** Owns the authenticated H.264 media socket and its Surface decoder. */
 internal class PairingMediaSession(
     private val dependencies: PairingMediaDependencies,

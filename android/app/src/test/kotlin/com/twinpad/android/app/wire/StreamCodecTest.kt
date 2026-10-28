@@ -47,10 +47,14 @@ class StreamCodecTest {
         assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":30}""")
         // CR-029: `fps` es metadata (u8; 0 = unlimited) y ya no se valida en 1–60.
         val unlimited =
-            StreamCodec.decode("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":0,"media_port":8425}""") as StreamMessage.Start
+            StreamCodec.decode(
+                """{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":0,"media_port":8425}""",
+            ) as StreamMessage.Start
         assertEquals(0, unlimited.fps)
         val maxMeta =
-            StreamCodec.decode("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":255,"media_port":8425}""") as StreamMessage.Start
+            StreamCodec.decode(
+                """{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":255,"media_port":8425}""",
+            ) as StreamMessage.Start
         assertEquals(255, maxMeta.fps)
         assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":-1,"media_port":8425}""")
         assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":256,"media_port":8425}""")

@@ -170,11 +170,4 @@ internal class SettingsDrawerController(
             activity.findViewById<RadioButton>(R.id.resolution_1280x720) to (RES_W_1280 to RES_H_720),
             activity.findViewById<RadioButton>(R.id.resolution_1920x1080) to (RES_W_1920 to RES_H_1080),
         )
-
-    private fun currentResolution(): Pair<Int, Int> =
-        when {
-            activity.findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked -> RES_W_1920 to RES_H_1080
-            activity.findViewById<RadioButton>(R.id.resolution_1280x720).isChecked -> RES_W_1280 to RES_H_720
-            else -> RES_W_960 to RES_H_540
-        }
 }
