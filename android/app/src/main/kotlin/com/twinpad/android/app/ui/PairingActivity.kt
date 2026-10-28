@@ -6,10 +6,10 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.Gravity
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -36,14 +36,14 @@ import com.twinpad.android.app.R
 import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingUiState
+import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
-import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.wire.ProtocolConstants
-import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
@@ -354,8 +354,11 @@ class PairingActivity : AppCompatActivity() {
      * códigos y ejes del mapper puro; la fusión con la superficie táctil
      * vive en [ProfileSurface]. Sin sesión linkeada no se consumen eventos. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val surface = sessionSurfaceWithPhysicalGamepad()
-            ?.takeIf { isGamepadSource(event.source) && it.handlesPhysicalKey(event.keyCode) }
+        val surface =
+            sessionSurfaceWithPhysicalGamepad()
+                ?.takeIf {
+                    isGamepadSource(event.source) && it.handlesPhysicalKey(event.keyCode)
+                }
         if (surface != null) {
             val pressed = event.action == KeyEvent.ACTION_DOWN
             if (!pressed || event.repeatCount == 0) {
@@ -368,7 +371,10 @@ class PairingActivity : AppCompatActivity() {
 
     /** CR-028: sticks/triggers/hat del mando físico (`MotionEvent`). */
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        val surface = sessionSurfaceWithPhysicalGamepad()?.takeIf { isGamepadSource(event.source) }
+        val surface =
+            sessionSurfaceWithPhysicalGamepad()?.takeIf {
+                isGamepadSource(event.source)
+            }
         if (surface != null) {
             surface.onPhysicalMotion(
                 PhysicalMotion(
@@ -376,14 +382,16 @@ class PairingActivity : AppCompatActivity() {
                     leftY = event.getAxisValue(MotionEvent.AXIS_Y),
                     rightX = event.getAxisValue(MotionEvent.AXIS_Z),
                     rightY = event.getAxisValue(MotionEvent.AXIS_RZ),
-                    triggerL = maxOf(
-                        event.getAxisValue(MotionEvent.AXIS_BRAKE),
-                        event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
-                    ),
-                    triggerR = maxOf(
-                        event.getAxisValue(MotionEvent.AXIS_GAS),
-                        event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
-                    ),
+                    triggerL =
+                        maxOf(
+                            event.getAxisValue(MotionEvent.AXIS_BRAKE),
+                            event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
+                        ),
+                    triggerR =
+                        maxOf(
+                            event.getAxisValue(MotionEvent.AXIS_GAS),
+                            event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
+                        ),
                     hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X).roundToInt(),
                     hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y).roundToInt(),
                 ),

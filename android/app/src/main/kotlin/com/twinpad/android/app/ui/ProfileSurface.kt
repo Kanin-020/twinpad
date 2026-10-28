@@ -7,11 +7,11 @@ import android.view.MotionEvent
 import android.view.View
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.twinpad.android.app.hid.PhysicalGamepadAlgo
+import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
-import com.twinpad.android.app.hid.PhysicalGamepadAlgo
-import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.wire.InputReport
 import com.twinpad.android.app.wire.MotionInput
 import kotlinx.coroutines.launch

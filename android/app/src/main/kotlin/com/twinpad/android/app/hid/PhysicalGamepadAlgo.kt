@@ -208,11 +208,9 @@ class PhysicalGamepadAlgo {
         return (clamped * ProtocolConstants.STICK_MAX).roundToInt()
     }
 
-    private fun triggerFromAxis(axis: Float): Int =
-        (axis.coerceIn(0f, 1f) * ProtocolConstants.TRIGGER_MAX).roundToInt()
+    private fun triggerFromAxis(axis: Float): Int = (axis.coerceIn(0f, 1f) * ProtocolConstants.TRIGGER_MAX).roundToInt()
 
-    private fun keyToButton(keyCode: Int): Button? =
-        Button.entries.find { it.keyCode == keyCode }
+    private fun keyToButton(keyCode: Int): Button? = Button.entries.find { it.keyCode == keyCode }
 
     /** Botones de la Signature en orden de bits de SPEC-004 §4, con su
      * keycode de `android.view.KeyEvent` (−1 = sin keycode estándar).

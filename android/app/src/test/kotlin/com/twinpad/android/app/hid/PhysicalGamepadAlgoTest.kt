@@ -5,11 +5,11 @@ package com.twinpad.android.app.hid
 import com.twinpad.android.app.hid.PhysicalGamepadAlgo.KeyCodes
 import com.twinpad.android.app.wire.InputReport
 import com.twinpad.android.app.wire.ProtocolConstants
-import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.roundToInt
 
 class PhysicalGamepadAlgoTest {
     /** Fábrica compacta para mantener las líneas del test bajo el máximo;
@@ -25,7 +25,16 @@ class PhysicalGamepadAlgoTest {
         hatX: Int = 0,
         hatY: Int = 0,
     ): PhysicalMotion =
-        PhysicalMotion(leftX, leftY, rightX, rightY, triggerL, triggerR, hatX, hatY)
+        PhysicalMotion(
+            leftX,
+            leftY,
+            rightX,
+            rightY,
+            triggerL,
+            triggerR,
+            hatX,
+            hatY,
+        )
 
     private fun touchSnapshot(
         stickLx: Int = 0,
