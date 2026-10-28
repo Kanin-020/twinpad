@@ -224,7 +224,7 @@ class PairingActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
         setContentView(R.layout.activity_pairing)
-        viewModel = ViewModelProvider(this)[PairingViewModel::class.java]
+        viewModel = ViewModelProvider(this, PairingViewModel.factory(application))[PairingViewModel::class.java]
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         cameraController =

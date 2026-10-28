@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.twinpad.android.app.audio.AudioPlayback
 import com.twinpad.android.app.core.Effect
@@ -27,21 +29,43 @@ private const val GYRO_LOG_REPORT_INTERVAL = 10
 private const val GYRO_LOG_TAG = "TwinpadGyro"
 
 /**
+ * Colaboradores del [PairingViewModel]. Los valores por defecto son las
+ * instancias de producción; los tests pueden sustituir cualquiera.
+ */
+data class PairingCollaborators(
+    val machine: PairingStateMachine = PairingStateMachine(),
+    val network: TcpPairingClient = TcpPairingClient(),
+    val streamMachine: com.twinpad.android.app.stream.StreamStateMachine =
+        com.twinpad.android.app.stream.StreamStateMachine(),
+    val audioMachine: com.twinpad.android.app.audio.AudioStateMachine =
+        com.twinpad.android.app.audio.AudioStateMachine(),
+    val gamepad: com.twinpad.android.app.hid.GamepadStateMachine =
+        com.twinpad.android.app.hid.GamepadStateMachine(),
+    val playback: AudioPlayback = AudioPlayback(),
+    val streamStats: com.twinpad.android.app.stream.StreamStats =
+        com.twinpad.android.app.stream.StreamStats(),
+)
+
+/**
  * Único dueño del estado de la Pantalla de Pairing (DES-002 §4).
  * Alimenta la máquina con eventos y ejecuta sus [Effect]s: permisos,
  * conexión TCP y señales de cámara para la Activity.
  */
-class PairingViewModel(app: Application) : AndroidViewModel(app) {
-    private val machine = PairingStateMachine()
-    private val network = TcpPairingClient()
-    private val streamMachine = com.twinpad.android.app.stream.StreamStateMachine()
-    private val audioMachine = com.twinpad.android.app.audio.AudioStateMachine()
-    private val gamepad = com.twinpad.android.app.hid.GamepadStateMachine()
+class PairingViewModel(
+    app: Application,
+    collaborators: PairingCollaborators = PairingCollaborators(),
+) : AndroidViewModel(app) {
+    private val machine = collaborators.machine
+    private val network = collaborators.network
+    private val streamMachine = collaborators.streamMachine
+    private val audioMachine = collaborators.audioMachine
+    private val gamepad = collaborators.gamepad
+    private val playback = collaborators.playback
+    val streamStats = collaborators.streamStats
     private val selection = PairingSelectionState()
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para
      * preservar la cadena base_fn de los patches (SPEC-003/CR-002). */
-    val streamStats = com.twinpad.android.app.stream.StreamStats()
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
 
@@ -75,7 +99,6 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     /** Plugin confirmado para esta sesión (SPEC-006). */
     private val _selectedGameId = MutableStateFlow<String?>(null)
     val selectedGameId: StateFlow<String?> = _selectedGameId
-    val profileSelection: StateFlow<String?> = selectedGameId
 
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
@@ -85,9 +108,6 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     private val _audioState =
         MutableStateFlow(com.twinpad.android.app.audio.AudioState.INACTIVE)
     val audioState: StateFlow<com.twinpad.android.app.audio.AudioState> = _audioState
-
-    /** Adaptador de reproducción (AudioTrack). */
-    private val playback = com.twinpad.android.app.audio.AudioPlayback()
 
     init {
         // Las líneas de sesión (video: 30 líneas/s de ~350 KB) se procesan
@@ -111,13 +131,13 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
             while (true) {
                 kotlinx.coroutines.delay(com.twinpad.android.app.wire.ProtocolConstants.STREAM_TICK_MS)
                 val now = System.currentTimeMillis()
-                val s = streamMachine.tick(now)
-                if (s != _streamState.value.state) {
-                    _streamState.value = _streamState.value.copy(state = s)
+                val streamStatus = streamMachine.tick(now)
+                if (streamStatus != _streamState.value.state) {
+                    _streamState.value = _streamState.value.copy(state = streamStatus)
                 }
-                val a = audioMachine.tick(now)
-                if (a != _audioState.value) {
-                    _audioState.value = a
+                val audioStatus = audioMachine.tick(now)
+                if (audioStatus != _audioState.value) {
+                    _audioState.value = audioStatus
                 }
             }
         }
@@ -339,6 +359,19 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
         mediaSession.close()
         playback.release()
         network.shutdown()
+    }
+
+    companion object {
+        /** Factory de producción: el ViewModel usa sus colaboradores por defecto. */
+        fun factory(application: Application): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    require(modelClass.isAssignableFrom(PairingViewModel::class.java)) {
+                        "Clase de ViewModel no soportada: ${modelClass.name}"
+                    }
+                    return modelClass.cast(PairingViewModel(application, PairingCollaborators()))
+                }
+            }
     }
 }
 
