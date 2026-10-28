@@ -4,27 +4,27 @@ package com.twinpad.android.app.core
  * Errores de la vinculación — códigos exactos de SPEC-001 §9 y SPEC-002 §9.
  * No se inventan errores observables nuevos.
  */
-enum class PairingError(val wireCode: String?) {
+enum class PairingError {
     /** E1: conexión TCP rechazada o sin respuesta en 5 s. */
-    ServerUnavailable("E1"),
+    ServerUnavailable,
 
     /** E2: QR expirado según el servidor (SPEC-001 R3). */
-    QrExpired("E2"),
+    QrExpired,
 
     /** E3: vinculación rechazada (token consumido/desconocido o proof inválido). */
-    Rejected("E3"),
+    Rejected,
 
     /** E4: mensaje del servidor no parseable o fuera de constraints. */
-    InvalidResponse("E4"),
+    InvalidResponse,
 
     /** E5: payload del QR no conforme a SPEC-001 §4.1. */
-    QrInvalid(null),
+    QrInvalid,
 
     /** PERMISO: cámara denegada (SPEC-002 §8.1). */
-    CameraDenied(null),
+    CameraDenied,
 
     /** SESIÓN: corte de conexión estando vinculado (SPEC-002 §9). */
-    SessionEnded(null),
+    SessionEnded,
 }
 
 /**

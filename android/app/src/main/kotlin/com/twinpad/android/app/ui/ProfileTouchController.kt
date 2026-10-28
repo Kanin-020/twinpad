@@ -105,10 +105,10 @@ internal class ProfileTouchController(
     ): Boolean {
         val index = event.actionIndex
         val pointerId = event.getPointerId(index)
-        val nx = event.getX(index) / view.width
-        val ny = event.getY(index) / view.height
-        val target = hitTest(nx, ny, profile)
-        if (target == null) return beginDrcTouch(pointerId, nx, ny, editing, view)
+        val normalizedX = event.getX(index) / view.width
+        val normalizedY = event.getY(index) / view.height
+        val target = hitTest(normalizedX, normalizedY, profile)
+        if (target == null) return beginDrcTouch(pointerId, normalizedX, normalizedY, editing, view)
         if (!canStartControlPointer(target.index, profile)) return false
         activePointers[pointerId] = target.index
         pointerPositions[pointerId] = target.nx to target.ny

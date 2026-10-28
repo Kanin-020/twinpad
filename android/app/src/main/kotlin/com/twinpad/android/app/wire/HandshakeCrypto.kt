@@ -62,17 +62,6 @@ object HandshakeCrypto {
         val nonceC: ByteArray,
     )
 
-    /** Verificación del proof (lado app: solo se usa en tests de paridad;
-     * el servidor es quien verifica). Comparación constante vía HMAC. */
-    fun verifyProof(
-        context: ProofContext,
-        proof: ByteArray,
-    ): Boolean =
-        with(context) {
-            computeProof(sessionKey, requestLine, challengeLine, nonceS, nonceC)
-                .contentEquals(proof)
-        }
-
     /** Decodifica base64url sin relleno; E4 si es inválido (causa preservada). */
     fun decodeB64(value: String): ByteArray =
         try {

@@ -28,16 +28,12 @@ object ProtocolConstants {
     /** Periodo del chequeo de frescura del stream (ms). */
     const val STREAM_TICK_MS: Long = 500L
 
-    /** Sin frames en este lapso → V2 Interrupted (SPEC-003 §6). */
-    const val STREAM_IDLE_TIMEOUT_MS: Long = 2_000L
-
     // Signature HID (SPEC-004 §2/§4; transporte inicial ADR-007).
     const val STICK_MIN: Int = -127
     const val STICK_MAX: Int = 127
     const val TRIGGER_MAX: Int = 255
     const val DPAD_NEUTRAL: Int = 8
     const val BUTTON_COUNT: Int = 12
-    const val BUTTON_A_BIT: Int = 0
 
     /** Direcciones del D-pad (SPEC-004 §4: 0–7 en sentido horario desde el norte). */
     const val DPAD_UP: Int = 0
@@ -67,7 +63,6 @@ object ProtocolConstants {
 
     /** Frecuencia de lectura de sensores enviada en input_report. */
     const val SENSOR_REPORT_INTERVAL_US: Int = 20_000
-    const val MAX_MOTION_SAMPLE_AGE_MS: Long = 200L
 
     // Detección de juegos (SPEC-006 §4; transporte ADR-008).
     const val GAME_ID_MAX: Int = 64
@@ -78,5 +73,4 @@ object ProtocolConstants {
 
     /** Parámetros v1 del audio demo del server (OQ §17: PCM s16le). */
     const val AUDIO_DEMO_RATE: Int = 44_100
-    const val AUDIO_DEMO_CHANNELS: Int = 2
 }

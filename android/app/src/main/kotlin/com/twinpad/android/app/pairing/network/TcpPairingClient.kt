@@ -57,14 +57,14 @@ class TcpPairingClient {
         readerJob =
             scope.launch {
                 try {
-                    val s = Socket()
-                    s.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
-                    s.soTimeout = FIVE_SECONDS_MS // sin respuesta en 5 s → E1
-                    socket = s
+                    val pairingSocket = Socket()
+                    pairingSocket.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
+                    pairingSocket.soTimeout = FIVE_SECONDS_MS // sin respuesta en 5 s → E1
+                    socket = pairingSocket
                     connectedHost = addr
-                    startWriter(s)
-                    val reader = s.getInputStream().bufferedReader()
-                    readSessionLines(s, reader)
+                    startWriter(pairingSocket)
+                    val reader = pairingSocket.getInputStream().bufferedReader()
+                    readSessionLines(pairingSocket, reader)
                 } catch (e: java.io.IOException) {
                     // Conexión rechazada o cortada: el `finally` entrega `null`
                     // y la máquina lo interpreta como E1 (SPEC-002 §9).
