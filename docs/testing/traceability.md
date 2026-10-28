@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-093 |
+| TEST | TEST-097 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -101,6 +101,10 @@
 | REQ-003 | SPEC-004 | DES-004 | TEST-084 | Draft | `TwinpadMotionMapper_test` afirma el mapeo de gyro/aceleración y delta timestamp AndroidDSU→DSU; `TwinpadGyroMonitor_test` verifica muestras recibidas y estado de fusión. Build Cemu verificado; ejecución de las aserciones integradas y prueba física del VPAD pendientes |
 | REQ-008 | SPEC-002/008 | `-` | TEST-089 | Draft | CR-032: Test JVM `AndroidSettingsStoreTest` — la preferencia «Distribución Nintendo» arranca apagada por defecto y no altera el contrato `video_config`; compartir persistencia del drawer con el patrón de TEST-061 |
 | REQ-008 | SPEC-008 | `-` | TEST-090 | Draft | CR-032: Test JVM `FaceDistributionTest` — `applyFaceDistribution` recoloca solo A/B/X/Y (Nintendo: A derecha, B abajo, X arriba, Y izquierda; apagar vuelve al canónico Xbox/Play del §10; idempotente; el resto del perfil viaja intacto) y `PhysicalGamepadAlgoTest` — swap A↔B/X↔Y en el mando físico (L1/señalización y fusión táctil intactos; Signature de SPEC-004 sin cambios) |
+| REQ-006 | SPEC-006 | DES-004 | TEST-093 | Draft | CR-034: Test Rust `camera_frame_round_trips_and_rejects_bad_geometry` (core) — ida y vuelta, rechazo de dimensiones distintas de 320x240, datos vacíos o campos faltantes |
+| REQ-006 | SPEC-006 | DES-004 | TEST-094 | Draft | CR-034: Test Rust `camera_frame_routes_only_to_selected_cemu` (servidor) — `camera_frame` solo llega al Plugin Cemu seleccionado y no se persiste |
+| REQ-006 | SPEC-006 | DES-004 | TEST-095 | Draft | CR-034: Test JVM `CameraFrameCodecTest` (Android) — codifica y decodifica `camera_frame` con H.264 320x240 y valida el marco IDR |
+| REQ-006 | SPEC-006 | DES-004 | TEST-096 | Draft | CR-034: Test C++ `TwinpadCameraDecoder_camera_frame_test` (Cemu, binario debug) — rechazo de `camera_frame` con geometría distinta de 320x240, base64 inválido o tipo distinto; `ConvertToNv12` convierte planos YUV420P con stride a Y completo + UV intercalado 2x2 y rechaza geometría impar. Compilado; ejecución pendiente (la GUI de debug aborta antes en `TwinpadGyroMonitor_test`, TEST-079/084) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-092 | Draft | CR-033: Test Rust `rumble_round_trips_and_rejects_bad_length_or_data` (core) — ida y vuelta, longitud 0 = parar, rechazo de longitud incoherente, longitud > 120 y base64 inválido; Test JVM `RumbleCodecTest` — decodificación y traducción de bits a 60 Hz idéntica al bucle de `VPADController::push_rumble` (4 casos, ejecutados); reproducción física en teléfono pendiente de smoke test |
 | REQ-002 | SPEC-002 | DES-002 | TEST-091 | Draft | `PairingViewModelTest` (Robolectric) — el ViewModel usa la `PairingStateMachine` inyectada por `PairingCollaborators` (permiso de cámara → Scanning) y expone el `StreamStats` inyectado |
 | REQ-004 | SPEC-003 | DES-004 | TEST-088 | Draft | `TwinpadClient_drc_scale_test` (Cemu, TEST binario debug): `ScaleRgb` nearest-neighbor (identity 2×2→2×2, shrunk 2×2→1×1 muestrea top-left, sin upscale a 4×4, inválido w×h×3 → vacío) y `SetCaptureResolution` (impar → par inferior, 0/0 → nativo); CR-030. Integración en el pipeline real (`FrameLoop`) pendiente de banco físico |
@@ -143,6 +147,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-034 | SPEC-006 1.18.0: mensaje `camera_frame` Android→Servidor→Cemu (H.264 320x240, 30 fps, cámara frontal); Cemu decodifica y rellena la superficie CAM en NV12; TEST-093/094/095/096 | 2026-10-28 | Approved (owner-decided) |
 | CR-033 | SPEC-006 1.17.0: mensaje `rumble` Cemu→Servidor→Android con patrones de `VPADControlMotor` del Jugador 1 (máx. 120 bytes; longitud 0 = parar); no persistido; TEST-092 | 2026-10-28 | Applied (owner-approved) |
 | CR-032 | SPEC-002 1.10.0 y SPEC-008 0.2.0: switch «Distribución Nintendo» en el drawer (preferencia local persistente, off por defecto): recoloca A/B/X/Y de la superficie táctil y hace intercambio A↔B/X↔Y en el mando físico; wire sin cambios; TEST-089/090 | 2026-10-28 | Applied (owner-requested) |
 | CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |

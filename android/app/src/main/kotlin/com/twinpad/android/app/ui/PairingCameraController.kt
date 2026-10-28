@@ -5,6 +5,8 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
@@ -13,6 +15,8 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.twinpad.android.app.wire.CAMERA_HEIGHT
+import com.twinpad.android.app.wire.CAMERA_WIDTH
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -20,8 +24,9 @@ import java.util.concurrent.Executors
  * Adaptador de cámara (DES-002 §4): ejecuta los efectos `StartCamera` /
  * `StopCamera` con CameraX y decodifica QRs con ML Kit (SPEC-002 §6 U2:
  * cada payload crudo llega al evento `QrScanned` para su validación §4.1).
- */
-class PairingCameraController(
+ */class PairingCameraController(
+
+
     private val context: Context,
     private val onQrScanned: (String) -> Unit,
 ) {
@@ -69,6 +74,62 @@ class PairingCameraController(
 
     fun stop() {
         cameraProvider?.unbindAll()
+        encoder?.stop()
+        encoder = null
+    }
+
+    private var encoder: CameraStreamEncoder? = null
+
+    /** Para el envío de la cámara frontal (CR-034) sin tocar el QR. */
+    fun stopFrontStream() {
+        encoder?.stop()
+        encoder = null
+    }
+
+    /**
+     * CR-034: envía la cámara frontal a 320x240 / 30 fps como `camera_frame`.
+     * Usa el mismo proveedor de CameraX que el QR; la superficie de entrada
+     * del codificador es el destino de la vista previa.
+     */
+    fun startFrontStream(
+        lifecycleOwner: LifecycleOwner,
+        onLine: (String) -> Unit,
+    ) {
+        if (encoder != null) return
+        val future = ProcessCameraProvider.getInstance(context)
+        future.addListener({
+            try {
+                val provider = future.get()
+                cameraProvider = provider
+                val streamEncoder = CameraStreamEncoder(onLine)
+                val surface = streamEncoder.start()
+                encoder = streamEncoder
+                val preview =
+                    Preview.Builder()
+                        .setResolutionSelector(
+                            ResolutionSelector.Builder()
+                                .setResolutionStrategy(
+                                    ResolutionStrategy(
+                                        android.util.Size(CAMERA_WIDTH, CAMERA_HEIGHT),
+                                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                                    ),
+                                )
+                                .build(),
+                        )
+                        .build()
+                        .also {
+                            it.setSurfaceProvider { request ->
+                                request.provideSurface(surface, cameraExecutor) { }
+                            }
+                        }
+                provider.unbindAll()
+                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, preview)
+            } catch (e: Exception) {
+                android.util.Log.w("PairingCamera", "Cámara frontal no disponible", e)
+                encoder?.stop()
+                encoder = null
+            }
+        }, ContextCompat.getMainExecutor(context))
     }
 
     fun release() {

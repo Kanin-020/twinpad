@@ -243,6 +243,22 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
+    /** Carga el perfil del juego y, solo para Cemu, activa la cámara frontal (CR-034). */
+    private fun observeSelectedGame() {
+        lifecycleScope.launch {
+            viewModel.selectedGameId.collectLatest { gameId ->
+                surfaceRef?.loadProfile(gameId.orEmpty())
+                if (gameId == "cemu") {
+                    cameraController.startFrontStream(this@PairingActivity) { line ->
+                        viewModel.sendCameraFrame(line)
+                    }
+                } else {
+                    cameraController.stopFrontStream()
+                }
+            }
+        }
+    }
+
     /** Observa la sesión completa (video por frame, HUD por tick). */
     private fun observeStates() {
         lifecycleScope.launch {
@@ -279,11 +295,7 @@ class PairingActivity : AppCompatActivity() {
                 findViewById<TextView>(R.id.txt_games).text = gamesText(games)
             }
         }
-        lifecycleScope.launch {
-            viewModel.selectedGameId.collectLatest { gameId ->
-                surfaceRef?.loadProfile(gameId.orEmpty())
-            }
-        }
+        observeSelectedGame()
         lifecycleScope.launch {
             viewModel.selectionRequest.collectLatest { games ->
                 val options = games.map { it.gameName }.toTypedArray()

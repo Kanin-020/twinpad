@@ -406,6 +406,19 @@ fn main() {
                                         }
                                         continue;
                                     }
+                                    // CR-034: cámara del teléfono hacia Cemu.
+                                    if trimmed.starts_with("{\"type\":\"camera_frame\"") {
+                                        if let Ok(msg) =
+                                            twinpad_core::game::GameMsg::decode(trimmed)
+                                        {
+                                            if let Ok(line) = msg.encode() {
+                                                games_ref.send_cemu_camera_frame(&line);
+                                            }
+                                        } else {
+                                            println!("camera_frame inválido descartado.");
+                                        }
+                                        continue;
+                                    }
                                     if let Ok(twinpad_core::game::GameMsg::GameSelect { game_id }) =
                                         twinpad_core::game::GameMsg::decode(trimmed)
                                     {

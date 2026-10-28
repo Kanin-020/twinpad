@@ -291,6 +291,16 @@ impl GameRegistry {
         Self::write_input(entry, &line)
     }
 
+    /// Reenvía a Cemu una access unit de la cámara frontal (CR-034). No se
+    /// persiste: si Cemu no está vivo el frame se descarta.
+    pub fn send_cemu_camera_frame(&self, line: &str) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut("cemu") else {
+            return false;
+        };
+        Self::write_input(entry, line)
+    }
+
     /// Entrega el snapshot inicial a un Plugin recién seleccionado.
     pub fn send_input_snapshot(&self, game_id: &str, snapshot: &str) -> bool {
         let mut games = lock_or_reset(&self.games);
@@ -645,6 +655,37 @@ mod tests {
         assert_eq!(line, "{\"type\":\"input_report\",\"seq\":1}\n");
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_input("{}"));
+    }
+
+    // TEST-094 — verifies SPEC-006 (CR-034): `camera_frame` reaches only the live Cemu
+    // Plugin, is forwarded as-is, and is dropped (not stored) when Cemu is not live.
+    #[test]
+    fn camera_frame_routes_only_to_selected_cemu() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        let line = r#"{"type":"camera_frame","w":320,"h":240,"ts_capture_us":0,"idr":true,"data":"AAEC"}"#;
+        assert!(!registry.send_cemu_camera_frame(line));
+
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_camera_frame(line));
+        let mut received = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut received)
+            .unwrap();
+        assert_eq!(received, format!("{line}\n"));
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_camera_frame(line));
     }
 
     // TEST-068 — verifies SPEC-003/CR-030: the runtime video_config forwarded to Cemu

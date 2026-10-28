@@ -96,7 +96,21 @@ pub enum GameMsg {
     /// es el patrón en base64url de exactamente `length` bytes.
     #[serde(rename = "rumble")]
     Rumble { length: u8, data: String },
+    /// Android → server → Cemu (CR-034): access unit H.264 de la cámara
+    /// frontal del teléfono, 320x240. `data` es base64url no vacío.
+    #[serde(rename = "camera_frame")]
+    CameraFrame {
+        w: u16,
+        h: u16,
+        ts_capture_us: u64,
+        idr: bool,
+        data: String,
+    },
 }
+
+/// Geometría fija de la cámara del teléfono enviada a Cemu (CR-034).
+pub const CAMERA_WIDTH: u16 = 320;
+pub const CAMERA_HEIGHT: u16 = 240;
 
 /// Máximo de bytes de un patrón de vibración (`VPADControlMotor`, CR-033).
 pub const RUMBLE_MAX_BYTES: u8 = 120;
@@ -126,6 +140,15 @@ impl GameMsg {
             }
             GameMsg::GameSelect { game_id } | GameMsg::GameSelected { game_id } => {
                 validate_game_id(game_id)
+            }
+            GameMsg::CameraFrame { w, h, data, .. } => {
+                if *w != CAMERA_WIDTH || *h != CAMERA_HEIGHT || data.is_empty() {
+                    return Err(PairError::MalformedMessage);
+                }
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(data)
+                    .map_err(|_| PairError::MalformedMessage)?;
+                Ok(())
             }
             GameMsg::Rumble { length, data } => {
                 if *length > RUMBLE_MAX_BYTES {
@@ -368,6 +391,53 @@ mod tests {
         // Base64 inválido.
         assert_eq!(
             GameMsg::decode(r#"{"type":"rumble","length":1,"data":"!!"}"#),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-093 — verifies SPEC-006 (CR-034): `camera_frame` round-trip and strict geometry.
+    #[test]
+    fn camera_frame_round_trips_and_rejects_bad_geometry() {
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let au = vec![0x00u8, 0x00, 0x00, 0x01, 0x67];
+        let msg = GameMsg::CameraFrame {
+            w: CAMERA_WIDTH,
+            h: CAMERA_HEIGHT,
+            ts_capture_us: 33_000,
+            idr: true,
+            data: engine.encode(&au),
+        };
+        assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
+
+        // Geometría distinta de 320x240.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"camera_frame","w":640,"h":480,"ts_capture_us":0,"idr":false,"data":"{}"}}"#,
+                engine.encode(&au)
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Datos vacíos.
+        assert_eq!(
+            GameMsg::decode(
+                r#"{"type":"camera_frame","w":320,"h":240,"ts_capture_us":0,"idr":false,"data":""}"#
+            ),
+            Err(PairError::MalformedMessage)
+        );
+        // Campo obligatorio ausente.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"camera_frame","w":320,"h":240,"ts_capture_us":0,"data":"{}"}}"#,
+                engine.encode(&au)
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Base64 inválido.
+        assert_eq!(
+            GameMsg::decode(
+                r#"{"type":"camera_frame","w":320,"h":240,"ts_capture_us":0,"idr":true,"data":"!!"}"#
+            ),
             Err(PairError::MalformedMessage)
         );
     }
