@@ -12,6 +12,7 @@ import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
+import com.twinpad.android.app.surface.applyFaceDistribution
 import com.twinpad.android.app.wire.InputReport
 import com.twinpad.android.app.wire.MotionInput
 import kotlinx.coroutines.launch
@@ -72,9 +73,29 @@ class ProfileSurface(
         scope.launch {
             val loaded = if (gameId.isEmpty()) null else store.load(gameId)
             if (generation != profileLoadGeneration || editing) return@launch
-            profile = loaded ?: ControlProfileCodec.defaultProfile(gameId)
+            profile =
+                applyFaceDistribution(
+                    loaded ?: ControlProfileCodec.defaultProfile(gameId),
+                    nintendoFaceLayout,
+                )
             invalidate()
         }
+    }
+
+    /** CR-032: distribución Nintendo de los botones de cara (táctil y
+     * física): recoloca A derecha/B abajo/X arriba/Y izquierda en el
+     * perfil activo y activa el intercambio A↔B, X↔Y del mando físico;
+     * apagar devuelve la posición Xbox/Play canónica del perfil
+     * cargado. */
+    var nintendoFaceLayout: Boolean = false
+        private set
+
+    fun setNintendoFaceLayout(enabled: Boolean) {
+        if (enabled == nintendoFaceLayout) return
+        nintendoFaceLayout = enabled
+        physicalGamepad.nintendoFaceDistribution = enabled
+        profile = applyFaceDistribution(profile, enabled)
+        invalidate()
     }
 
     fun addControl(kind: String) {

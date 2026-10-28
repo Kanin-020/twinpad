@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-089 |
+| TEST | TEST-091 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -99,6 +99,8 @@
 | REQ-003 | SPEC-004 | DES-002/004 | TEST-083 | Draft | `ProfileGyroControllerTest` y `InputCodecTest`: combina las muestras más recientes de ambos sensores con timestamp monotónico, omite `motion` si falta una muestra y serializa el snapshot inercial de CR-021 desde Android |
 | REQ-003 | SPEC-004 | DES-002/004 | TEST-085 | Draft | `ProfileGyroControllerTest.sensor_vectors_use_reference_frame`: `remapAccelerationVector` y `remapGyroscopeVector` aplican el marco AndroidDSU (accel `(-x,-z,y)`, gyro `(x,-z,y)`) (CR-022). Ejecución unitaria Android; prueba física pendiente |
 | REQ-003 | SPEC-004 | DES-004 | TEST-084 | Draft | `TwinpadMotionMapper_test` afirma el mapeo de gyro/aceleración y delta timestamp AndroidDSU→DSU; `TwinpadGyroMonitor_test` verifica muestras recibidas y estado de fusión. Build Cemu verificado; ejecución de las aserciones integradas y prueba física del VPAD pendientes |
+| REQ-008 | SPEC-002/008 | `-` | TEST-089 | Draft | CR-032: Test JVM `AndroidSettingsStoreTest` — la preferencia «Distribución Nintendo» arranca apagada por defecto y no altera el contrato `video_config`; compartir persistencia del drawer con el patrón de TEST-061 |
+| REQ-008 | SPEC-008 | `-` | TEST-090 | Draft | CR-032: Test JVM `FaceDistributionTest` — `applyFaceDistribution` recoloca solo A/B/X/Y (Nintendo: A derecha, B abajo, X arriba, Y izquierda; apagar vuelve al canónico Xbox/Play del §10; idempotente; el resto del perfil viaja intacto) y `PhysicalGamepadAlgoTest` — swap A↔B/X↔Y en el mando físico (L1/señalización y fusión táctil intactos; Signature de SPEC-004 sin cambios) |
 | REQ-004 | SPEC-003 | DES-004 | TEST-088 | Draft | `TwinpadClient_drc_scale_test` (Cemu, TEST binario debug): `ScaleRgb` nearest-neighbor (identity 2×2→2×2, shrunk 2×2→1×1 muestrea top-left, sin upscale a 4×4, inválido w×h×3 → vacío) y `SetCaptureResolution` (impar → par inferior, 0/0 → nativo); CR-030. Integración en el pipeline real (`FrameLoop`) pendiente de banco físico |
 
 ## NFR verification
@@ -139,6 +141,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-032 | SPEC-002 1.10.0 y SPEC-008 0.2.0: switch «Distribución Nintendo» en el drawer (preferencia local persistente, off por defecto): recoloca A/B/X/Y de la superficie táctil y hace intercambio A↔B/X↔Y en el mando físico; wire sin cambios; TEST-089/090 | 2026-10-28 | Applied (owner-requested) |
 | CR-001 | SPEC-003 v1.1.0: `fmt=jpeg` (compresión del stream para 720p/1080p a 30/60 fps) | 2026-10-08 | Applied |
 | CR-018 | SPEC-002/004 y DES-002/004: Android envía la orientación absoluta mostrada; ambos monitores usan yaw verde, pitch rojo, roll azul; TEST-078/080 | 2026-10-22 | Approved / in execution |
 | CR-019 | SPEC-004/DES-004: escala gyro Cemu→VPAD a 0.5×; comportamiento supersedido por CR-021; TEST-077/081 históricos | 2026-10-22 | Superseded by CR-021 |

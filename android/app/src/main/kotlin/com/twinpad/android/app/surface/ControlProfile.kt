@@ -284,6 +284,58 @@ object ControlProfileCodec {
     fun defaultProfile(game: String = ""): ControlProfile = ControlProfile(game, defaultControls())
 }
 
+/** Elementos HID de los cuatro botones de cara (CR-032). */
+private val FACE_HIDS: Set<String> =
+    setOf("button_a", "button_b", "button_x", "button_y")
+
+/** Posiciones canónicas Xbox/Play (A abajo, B derecha, X izquierda, Y arriba). */
+private val XBOX_FACE_POSITIONS: Map<String, Pair<Float, Float>> =
+    mapOf(
+        "button_a" to (DEF_FACE_BOTTOM_X to DEF_FACE_BOTTOM_Y),
+        "button_b" to (DEF_FACE_RIGHT_X to DEF_FACE_SIDE_Y),
+        "button_x" to (DEF_FACE_LEFT_X to DEF_FACE_SIDE_Y),
+        "button_y" to (DEF_FACE_TOP_X to DEF_FACE_TOP_Y),
+    )
+
+/** Posiciones canónicas Nintendo (A derecha, B abajo, X arriba, Y izquierda). */
+private val NINTENDO_FACE_POSITIONS: Map<String, Pair<Float, Float>> =
+    mapOf(
+        "button_a" to (DEF_FACE_RIGHT_X to DEF_FACE_SIDE_Y),
+        "button_b" to (DEF_FACE_BOTTOM_X to DEF_FACE_BOTTOM_Y),
+        "button_x" to (DEF_FACE_TOP_X to DEF_FACE_TOP_Y),
+        "button_y" to (DEF_FACE_LEFT_X to DEF_FACE_SIDE_Y),
+    )
+
+/**
+ * Reposiciona los botones de cara según la distribución elegida
+ * (CR-032): Xbox/Play (default del §10: A abajo, B derecha, X
+ * izquierda, Y arriba) o Nintendo (A derecha, B abajo, X arriba,
+ * Y izquierda). Es una vista del perfil: solo mueve los controles
+ * cuyo `hid` es uno de los cuatro Elementos HID de cara; ids,
+ * etiquetas y asignaciones viajan con su control y el resto del
+ * perfil queda intacto. Determinista e idempotente ante toggles.
+ */
+fun applyFaceDistribution(
+    profile: ControlProfile,
+    nintendo: Boolean,
+): ControlProfile =
+    profile.copy(
+        controls =
+            profile.controls.map { control ->
+                val position =
+                    if (control.kind == ControlProfileCodec.KIND_BUTTON && control.hid in FACE_HIDS) {
+                        (if (nintendo) NINTENDO_FACE_POSITIONS else XBOX_FACE_POSITIONS)[control.hid]
+                    } else {
+                        null
+                    }
+                if (position != null) {
+                    control.copy(x = position.first, y = position.second)
+                } else {
+                    control
+                }
+            },
+    )
+
 /** Coordenadas del default (SPEC-008 §10; layout del gamepad genérico). */
 private const val DEF_STICK_W = 0.18f
 private const val DEF_STICK_H = 0.24f

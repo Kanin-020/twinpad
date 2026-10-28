@@ -33,6 +33,12 @@ data class PhysicalMotion(
  * touch/motion viajan siempre desde la superficie táctil.
  */
 class PhysicalGamepadAlgo {
+    /** CR-032: distribución Nintendo de los botones de cara. Activada,
+     * el mapeo física→Signature intercambia A↔B y X↔Y: el elemento en
+     * posición de Nintendo (A derecha, B abajo, X arriba, Y izquierda)
+     * es el que llega al juego. La Signature de SPEC-004 §4 no cambia. */
+    var nintendoFaceDistribution: Boolean = false
+
     var stickLx = 0
         private set
     var stickLy = 0
@@ -195,7 +201,7 @@ class PhysicalGamepadAlgo {
         pressed: Boolean,
     ): Boolean {
         val button = keyToButton(keyCode) ?: return false
-        val mask = 1 shl button.bit
+        val mask = 1 shl button.effectiveBit(nintendoFaceDistribution)
         val updated = if (pressed) buttons or mask else buttons and mask.inv()
         if (updated == buttons) return false
         buttons = updated
@@ -232,6 +238,20 @@ class PhysicalGamepadAlgo {
         SELECT(9, KeyCodes.BUTTON_SELECT),
         EXTRA_1(10, -1),
         EXTRA_2(11, -1),
+        ;
+
+        /** CR-032: con distribución Nintendo la tecla reportada como A
+         * (posición abajo en mandos Xbox/Play) envía B, y viceversa;
+         * ídem X↔Y. L1/R1/L3/R3/START/SELECT/EXTRA no participan del intercambio. */
+        fun effectiveBit(nintendoFaceDistribution: Boolean): Int =
+            when {
+                !nintendoFaceDistribution -> bit
+                this == A -> B.bit
+                this == B -> A.bit
+                this == X -> Y.bit
+                this == Y -> X.bit
+                else -> bit
+            }
     }
 
     /** Keycodes de `android.view.KeyEvent` usados por el mapper (CR-028).

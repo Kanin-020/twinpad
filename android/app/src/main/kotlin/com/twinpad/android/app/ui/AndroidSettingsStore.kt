@@ -21,6 +21,8 @@ data class AndroidSettings(
     val showHud: Boolean = true,
     val showControls: Boolean = true,
     val scaleMode: VideoScaleMode = VideoScaleMode.CONTAIN,
+    /** CR-032: distribución de los botones de cara; true = Nintendo. */
+    val nintendoDistribution: Boolean = false,
 ) {
     fun videoConfigLine(): String =
         buildString {
@@ -65,6 +67,7 @@ internal class AndroidSettingsStore(context: Context) {
                 } else {
                     VideoScaleMode.CONTAIN
                 },
+            nintendoDistribution = preferences.getBoolean(KEY_NINTENDO_DISTRIBUTION, false),
         )
 
     fun save(settings: AndroidSettings) {
@@ -83,6 +86,7 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_HUD, settings.showHud)
             .putBoolean(KEY_CONTROLS, settings.showControls)
             .putString(KEY_SCALE_MODE, settings.scaleMode.name)
+            .putBoolean(KEY_NINTENDO_DISTRIBUTION, settings.nintendoDistribution)
             .apply()
     }
 
@@ -96,5 +100,6 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_HUD = "show_hud"
         const val KEY_CONTROLS = "show_controls"
         const val KEY_SCALE_MODE = "video_scale_mode"
+        const val KEY_NINTENDO_DISTRIBUTION = "nintendo_distribution"
     }
 }

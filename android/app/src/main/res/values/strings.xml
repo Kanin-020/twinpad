@@ -40,6 +40,9 @@
     <string name="settings_scale">Escalado de pantalla</string>
     <string name="settings_scale_contain">Contener</string>
     <string name="settings_scale_expand">Estirar</string>
+    <!-- CR-032: título de grupo + interruptor de distribución de cara. -->
+    <string name="settings_distribution">Distribución</string>
+    <string name="settings_nintendo_distribution">Distribución Nintendo</string>
     <string name="settings_audio">Volumen GamePad local</string>
     <string name="editor_title">Editor de controles</string>
     <string name="editor_save">Guardar</string>

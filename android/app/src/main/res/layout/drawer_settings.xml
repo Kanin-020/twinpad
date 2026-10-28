@@ -145,6 +145,21 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_show_controls" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_distribution"
+            android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+        <!-- CR-032: distribución de los botones de cara; también el mando
+             físico (SPEC-002 R19). -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_nintendo_distribution"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_nintendo_distribution" />
+
         <Button
             android:id="@+id/btn_close_drawer"
             android:layout_width="match_parent"

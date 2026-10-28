@@ -71,6 +71,55 @@ class PhysicalGamepadAlgoTest {
     }
 
     @Test
+    fun `distribucion nintendo intercambia a b y x y y deja el resto igual`() {
+        // CR-032: con la distribución Nintendo activada, las teclas que el
+        // SO reporta como A/B/X/Y llegan al juego como B/A/Y/X (la tecla A
+        // tiene posición "abajo" en mandos Xbox/Play, que en Nintendo es B).
+        val algo = PhysicalGamepadAlgo()
+        algo.nintendoFaceDistribution = true
+        assertTrue(algo.onKey(KeyCodes.BUTTON_A, pressed = true))
+        assertEquals(ProtocolConstants.BUTTON_BIT_B, algo.buttons)
+        assertTrue(algo.onKey(KeyCodes.BUTTON_B, pressed = true))
+        assertEquals(ProtocolConstants.BUTTON_BIT_A or ProtocolConstants.BUTTON_BIT_B, algo.buttons)
+        assertTrue(algo.onKey(KeyCodes.BUTTON_X, pressed = true))
+        assertEquals(
+            ProtocolConstants.BUTTON_BIT_A or ProtocolConstants.BUTTON_BIT_B or ProtocolConstants.BUTTON_BIT_Y,
+            algo.buttons,
+        )
+        assertTrue(algo.onKey(KeyCodes.BUTTON_Y, pressed = true))
+        assertEquals(
+            ProtocolConstants.BUTTON_BIT_A or ProtocolConstants.BUTTON_BIT_B or
+                ProtocolConstants.BUTTON_BIT_X or ProtocolConstants.BUTTON_BIT_Y,
+            algo.buttons,
+        )
+        assertTrue(algo.onKey(KeyCodes.BUTTON_A, pressed = false))
+        // Quedan las teclas B/X/Y presionadas (bits A/X/Y tras el intercambio).
+        assertEquals(
+            ProtocolConstants.BUTTON_BIT_A or ProtocolConstants.BUTTON_BIT_X or ProtocolConstants.BUTTON_BIT_Y,
+            algo.buttons,
+        )
+        // L1 no participa en el intercambio de cara.
+        assertTrue(algo.onKey(KeyCodes.BUTTON_L1, pressed = true))
+        assertEquals(
+            ProtocolConstants.BUTTON_BIT_A or ProtocolConstants.BUTTON_BIT_X or ProtocolConstants.BUTTON_BIT_Y or
+                ProtocolConstants.BUTTON_BIT_L1,
+            algo.buttons,
+        )
+    }
+
+    @Test
+    fun `distribucion nintendo fusiona igual con la superficie tactil`() {
+        val algo = PhysicalGamepadAlgo()
+        algo.nintendoFaceDistribution = true
+        algo.onKey(KeyCodes.BUTTON_A, pressed = true)
+        val fused = algo.fusedWith(touchSnapshot(buttons = ProtocolConstants.BUTTON_BIT_X))
+        assertEquals(
+            ProtocolConstants.BUTTON_BIT_B or ProtocolConstants.BUTTON_BIT_X,
+            fused.buttons,
+        )
+    }
+
+    @Test
     fun `keycode fuera de la signature no se consume`() {
         val algo = PhysicalGamepadAlgo()
         assertFalse(algo.handlesKey(4)) // BACK de android.view.KeyEvent

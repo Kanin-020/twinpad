@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-008 |
 | Title | Controles táctiles configurables en la app (REQ-008) |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Draft` |
 | Owner | Eng lead |
 | Implements | REQ-008 (AC-1, AC-2, AC-3) |
 | Realized by | DES-XXX (`-` hasta asignar) |
-| Verified by | TEST-023 |
+| Verified by | TEST-023, TEST-090 |
 | Last updated | 2026-10-07 |
 
 ## 1. Purpose
@@ -107,6 +107,7 @@ Invariant: en `S1`, cada control operativo tiene asignación válida (SPEC-004 R
 - **R2:** el perfil de un juego detectado se carga automáticamente si existe (AC-2); sin perfil, default.
 - **R3:** la edición ocurre en `S0`; nunca se envían inputs durante la edición (NFR-002: la ruta de inputs no se toca al editar).
 - **R4:** los perfiles son portables (export/import) con validación idéntica a la local.
+- **R5 (CR-032):** con la preferencia "Distribución Nintendo" (SPEC-002 R19) activada, el perfil aplicado presenta los cuatro botones de cara en distribución Nintendo: el control en posición derecha envía `button_a` (A), el de abajo `button_b` (B), el de arriba `button_x` (X) y el de izquierda `button_y` (Y); ids, etiquetas y asignaciones viajan con su control, y los demás controles quedan intactos. Desactivada, el perfil se presenta tal como fue guardado. Es una vista del perfil: el JSON persistido no se reescribe. El mando físico aplica el mismo criterio por posición (intercambio A↔B/X↔Y); la Signature de SPEC-004 es invariante.
 
 ## 12. Contracts
 
@@ -150,6 +151,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9, cumpla §10, man
 | Aspect | Verified by |
 |---|---|
 | Edición, asignación, carga automática y conflicto (AC-1..AC-3) | TEST-023 |
+| Distribución Nintendo de los botones de cara del perfil táctil y swap A↔B/X↔Y del mando físico (CR-032) | TEST-090 |
 
 ## 17. Open questions
 
@@ -161,3 +163,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9, cumpla §10, man
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: superficie táctil configurable y perfiles |
+| 0.2.0 | 2026-10-28 | Product owner (CR-032) | R5: vista de distribución Nintendo de los botones de cara; el JSON persistido no se reescribe; TEST-090 |

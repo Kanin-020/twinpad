@@ -37,6 +37,10 @@ internal interface SettingsDrawerHost {
     fun onGyroMonitorToggled(visible: Boolean)
 
     fun onControlsToggled(visible: Boolean)
+
+    /** CR-032: distribución Nintendo activada/desactivada. Restauración
+     * inicial y cambio de usuario comparten esta notificación. */
+    fun onNintendoDistributionToggled(enabled: Boolean)
 }
 
 /**
@@ -72,8 +76,11 @@ internal class SettingsDrawerController(
         activity.findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
         activity.findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
         activity.findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
+        activity.findViewById<SwitchMaterial>(R.id.switch_nintendo_distribution).isChecked =
+            settings.nintendoDistribution
         host.onHudRestored(settings.showHud)
         host.onControlsToggled(settings.showControls)
+        host.onNintendoDistributionToggled(settings.nintendoDistribution)
         host.onGyroMonitorToggled(settings.showGyroMonitor)
         activity.findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
         val scaleButtonId = if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand
@@ -149,6 +156,12 @@ internal class SettingsDrawerController(
             host.onControlsToggled(checked)
             persist { it.copy(showControls = checked) }
         }
+        // CR-032: el swap exacto lo ejecuta el host (superficie y mando).
+        activity.findViewById<SwitchMaterial>(R.id.switch_nintendo_distribution)
+            .setOnCheckedChangeListener { _, checked ->
+                host.onNintendoDistributionToggled(checked)
+                persist { it.copy(nintendoDistribution = checked) }
+            }
     }
 
     /** Persiste sin notificar al ViewModel (audio y visibilidad del HUD). */

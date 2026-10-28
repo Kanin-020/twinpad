@@ -7,12 +7,12 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.9.0 |
+| Version | 1.10.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078 (registrados en `testing/traceability.md`) |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089 (registrados en `testing/traceability.md`) |
 | Last updated | 2026-10-28 |
 
 ## 1. Purpose
@@ -164,6 +164,7 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R16 (CR-029):** el drawer de ajustes no expone selector de fps: la Segunda pantalla emite sin tope de tasa ni pacing (SPEC-003 §4.1). `video_config` no lleva `fps`; el valor del wire es metadata informativa que no configura la app.
 - **R17 (CR-030):** la opción de resolución del drawer (960×540, 1280×720, 1920×1080) define la resolución de emisión de la pantalla del GamePad (DRC): la app la envía en `video_config` (`w`/`h`), el Servidor la reenvía a Cemu y el Plugin escala el framebuffer del GamePad antes de codificar (SPEC-003 §3). No cambia la resolución general del juego en la TV. Si la resolución elegida es mayor que la nativa del DRC, se conserva la nativa. La resolución por defecto es 1920×1080 (CR-031).
 - **R18 (CR-031):** los interruptores "Mostrar fps" (chip HUD) y "Mostrar botones" (controles táctiles) están **activados por defecto** en una instalación nueva; siguen siendo preferencia local persistente (R14 y SPEC-008).
+- **R19 (CR-032):** el drawer de ajustes incluye el interruptor "Distribución Nintendo": preferencia local persistente, **apagada por defecto**. Activado, los cuatro botones de cara se muestran y se envían en distribución Nintendo (A derecha, B abajo, X arriba, Y izquierda; intercambio A↔B y X↔Y respecto del default Xbox/Play); se aplica en caliente y también al mando físico conectado al teléfono (CR-028). La Signature HID de SPEC-004 §4 no cambia. Ver TEST-089/090.
 
 ## 12. Contracts
 
@@ -228,6 +229,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Selección obsoleta eliminada ante cambio de liveness | TEST-055 |
 | Landscape habitual fijo, barras del sistema inmersivas | TEST-059 |
 | Monitor gyro opt-in dibuja orientación absoluta de sensor y paleta semántica (CR-016/CR-018) | TEST-078 |
+| Interruptor "Distribución Nintendo": default apagado, sin efecto sobre el wire (CR-032) | TEST-089 |
 
 ## 17. Open questions
 
@@ -252,6 +254,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.5.0 | 2026-10-27 | Product owner (CR-026) | R14: pantalla limpia durante V1/V2, sin textos superpuestos ni marco de controles || 1.6.0 | 2026-10-27 | Product owner (CR-027) | R15: el drawer cambia el slider de calidad JPEG por bitrate objetivo (1.000–30.000 kbps, default 8.000) enviado en `video_config.bitrate_kbps` | 1.7.0 | 2026-10-28 | Product owner (CR-029) | R16: el drawer elimina el selector FPS; emisión sin tope de tasa y `video_config` sin fps |
 | 1.8.0 | 2026-10-28 | Product owner (CR-030) | R17: la opción de resolución del drawer define la resolución de emisión del GamePad (DRC), reenviada vía `video_config` w/h y aplicada en Cemu |
 | 1.9.0 | 2026-10-28 | Product owner (CR-031) | Defaults de fábrica: 1920×1080 (R17), contain (R12), bitrate 30.000 kbps (R15); R18: "Mostrar fps" y "Mostrar botones" activados por defecto |
+| 1.10.0 | 2026-10-28 | Product owner (CR-032) | R19: interruptor "Distribución Nintendo" en el drawer (preferencia local persistente, apagado por defecto), táctil y mando físico, wire sin cambios; TEST-089/090 |
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |

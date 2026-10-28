@@ -64,6 +64,10 @@ class PairingActivity : AppCompatActivity() {
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
+
+    /** CR-032: distribución Nintendo vigente; la superficie lo aplica
+     * al adjuntarse (onCreate restauración → attach posterior). */
+    private var nintendoFaceDistribution = false
     private var gyroMonitorVisible = false
     private var sessionConfigSent = false
     private var mediaSurfaceHolder: SurfaceHolder? = null
@@ -205,6 +209,14 @@ class PairingActivity : AppCompatActivity() {
                 controlsVisible = visible
                 surfaceRef?.showControls = visible
             }
+
+            /** CR-032: también actúa como restauración inicial; si la
+             * superficie aún no existe, [attachProfileSurface] aplica el
+             * flag al crearla. */
+            override fun onNintendoDistributionToggled(enabled: Boolean) {
+                nintendoFaceDistribution = enabled
+                surfaceRef?.setNintendoFaceLayout(enabled)
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -341,6 +353,7 @@ class PairingActivity : AppCompatActivity() {
         if (surfaceRef == null) {
             val surface = ProfileSurface(this) { report -> viewModel.onGamepadInput(report) }
             surface.showControls = controlsVisible
+            surface.setNintendoFaceLayout(nintendoFaceDistribution)
             surfaceRef = surface
             findViewById<ViewGroup>(R.id.surface_container).addView(
                 surface,
