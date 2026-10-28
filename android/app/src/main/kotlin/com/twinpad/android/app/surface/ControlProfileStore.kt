@@ -32,16 +32,6 @@ class ControlProfileStore(private val context: Context) {
             }
         }
 
-    /** Lista de juegos con perfil guardado. */
-    suspend fun listGames(): List<String> =
-        withContext(Dispatchers.IO) {
-            dir.listFiles { f -> f.name.endsWith(".json") }
-                ?.mapNotNull { f ->
-                    runCatching { ControlProfileCodec.decode(f.readText()).game }.getOrNull()
-                }
-                ?: emptyList()
-        }
-
     /** Carga el perfil del juego; `null` si no existe o está corrupto. */
     suspend fun load(game: String): ControlProfile? =
         withContext(Dispatchers.IO) {

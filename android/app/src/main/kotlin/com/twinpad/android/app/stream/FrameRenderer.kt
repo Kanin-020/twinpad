@@ -21,29 +21,6 @@ object FrameRenderer {
         }
 
     /**
-     * Ruta completa desde el wire: base64url → bitmap. La usa el pipeline
-     * (hilo IO) para decodificar el frame en un solo paso.
-     */
-    fun decodeBase64AndRender(
-        dataB64: String,
-        width: Int,
-        height: Int,
-        fmt: String,
-    ): Bitmap? =
-        try {
-            val bytes =
-                android.util.Base64.decode(
-                    dataB64,
-                    android.util.Base64.URL_SAFE or
-                        android.util.Base64.NO_WRAP or
-                        android.util.Base64.NO_PADDING,
-                )
-            decode(bytes, width, height, fmt)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
-
-    /**
      * Convierte `data` a ARGB para render. `jpeg` (CR-001) se decodifica con
      * `BitmapFactory` (acelerado por hardware); los formatos crudos se
      * rellenan píxel a píxel. Devuelve el bitmap del frame o `null` si el

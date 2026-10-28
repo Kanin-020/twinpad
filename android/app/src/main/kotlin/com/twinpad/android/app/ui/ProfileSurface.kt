@@ -51,7 +51,6 @@ class ProfileSurface(
     private var motionSample: MotionInput? = null
     private var activeGameId = ""
     private var profileLoadGeneration = 0
-    private var controlCounter = 0
 
     var profile: ControlProfile = ControlProfileCodec.defaultProfile()
         private set
@@ -98,33 +97,12 @@ class ProfileSurface(
         invalidate()
     }
 
-    fun addControl(kind: String) {
-        if (!editing || profile.controls.size >= ControlProfileCodec.MAX_CONTROLS) return
-        val control = createControl(kind, ++controlCounter)
-        touchController.selectControl(profile.controls.size)
-        profile = profile.copy(controls = profile.controls + control)
-        invalidate()
-    }
-
     fun availableAssignments(): List<String> =
         if (editing) {
             touchController.availableAssignments(profile)
         } else {
             emptyList()
         }
-
-    fun assignSelected(hid: String) {
-        if (!editing) return
-        profile = profile.assignControl(touchController.selectedControlIndex, hid)
-        invalidate()
-    }
-
-    fun deleteSelectedControl() {
-        if (!editing) return
-        profile = profile.deleteSelected(touchController.selectedControlIndex)
-        touchController.selectControl(-1)
-        invalidate()
-    }
 
     fun toggleEditing() {
         editing = !editing
@@ -207,53 +185,4 @@ class ProfileSurface(
     }
 
     private fun viewLifecycleScope(): kotlinx.coroutines.CoroutineScope? = findViewTreeLifecycleOwner()?.lifecycleScope
-
-    private fun createControl(
-        kind: String,
-        index: Int,
-    ): com.twinpad.android.app.surface.TouchControl {
-        val hid =
-            when (kind) {
-                ControlProfileCodec.KIND_STICK -> "stick_l"
-                ControlProfileCodec.KIND_DPAD -> "dpad"
-                else -> "button_a"
-            }
-        return com.twinpad.android.app.surface.TouchControl(
-            id = "custom_$index",
-            kind = kind,
-            label =
-                when (kind) {
-                    ControlProfileCodec.KIND_STICK -> "Stick"
-                    ControlProfileCodec.KIND_DPAD -> "D-pad"
-                    else -> "Button"
-                },
-            hid = hid,
-            x = DEFAULT_CONTROL_ORIGIN,
-            y = DEFAULT_CONTROL_ORIGIN,
-            w = ControlProfileCodec.DEFAULT_SIZE,
-            h = ControlProfileCodec.DEFAULT_SIZE,
-        )
-    }
-
-    private companion object {
-        const val DEFAULT_CONTROL_ORIGIN = 0.4f
-    }
-}
-
-private fun ControlProfile.deleteSelected(index: Int): ControlProfile {
-    if (index !in controls.indices) return this
-    return copy(controls = controls.filterIndexed { controlIndex, _ -> controlIndex != index })
-}
-
-private fun ControlProfile.assignControl(
-    index: Int,
-    hid: String,
-): ControlProfile {
-    if (index !in controls.indices) return this
-    return copy(
-        controls =
-            controls.mapIndexed { controlIndex, control ->
-                if (controlIndex == index) control.copy(hid = hid) else control
-            },
-    )
 }
