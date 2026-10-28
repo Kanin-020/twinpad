@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 private const val MEDIA_RECOVERY_WINDOW_MS = 10_000L
 private const val MEDIA_RECONNECT_INITIAL_DELAY_MS = 250L
 private const val MEDIA_RECONNECT_MAX_DELAY_MS = 2_000L
-private const val DEFAULT_STREAM_FPS = 30
+
 
 /** Owns the authenticated H.264 media socket and its Surface decoder. */
 internal class PairingMediaSession(
@@ -59,7 +59,6 @@ internal class PairingMediaSession(
 
     @Volatile
     private var mediaPort = MediaCrypto.PORT
-    private var streamFps = DEFAULT_STREAM_FPS
     private var lastPresentedFrameNumber: Long? = null
     private var lastReceivedFrameNumber: Long? = null
     private var reconnectJob: Job? = null
@@ -89,7 +88,8 @@ internal class PairingMediaSession(
         streamStartLine = line
         dimensions = message.width to message.height
         mediaPort = message.mediaPort
-        streamFps = message.fps
+        // CR-029: el fps del `stream_start` es metadata (unlimited=0) y no
+        // configura el decoder; el pacing ya no existe.
         streamStats.resetVideoStream()
         streamMachine.onLine(line)
         val current = currentStreamState()
@@ -106,7 +106,6 @@ internal class PairingMediaSession(
         closeChannel()
         streamStartLine = null
         dimensions = null
-        streamFps = DEFAULT_STREAM_FPS
         streamMachine.onLine(line)
         val current = currentStreamState()
         setStreamState(current.copy(state = streamMachine.state, width = 0, height = 0))
@@ -127,7 +126,6 @@ internal class PairingMediaSession(
         reconnectJob = null
         closeChannel()
         dimensions = null
-        streamFps = DEFAULT_STREAM_FPS
         streamStartLine = null
     }
 
@@ -173,7 +171,8 @@ internal class PairingMediaSession(
                 return null
             }
         return try {
-            newDecoder.configure(connection.frameSize.first, connection.frameSize.second, connection.frameRate)
+            // CR-029: sin frameRate del wire; el decoder usa el metadata real.
+            newDecoder.configure(connection.frameSize.first, connection.frameSize.second)
             newDecoder
         } catch (_: Exception) {
             newDecoder.close()
@@ -184,7 +183,6 @@ internal class PairingMediaSession(
     private data class ConnectionParameters(
         val output: Surface,
         val frameSize: Pair<Int, Int>,
-        val frameRate: Int,
         val credentials: MediaCredentials,
         val host: String,
     )
@@ -197,7 +195,7 @@ internal class PairingMediaSession(
         val credentials = mediaCredentials(machine, linked)
         val host = network.remoteHost()
         return if (credentials != null && host != null) {
-            ConnectionParameters(output, frameSize, streamFps, credentials, host)
+            ConnectionParameters(output, frameSize, credentials, host)
         } else {
             null
         }
@@ -336,7 +334,6 @@ internal class PairingMediaSession(
         val current = currentStreamState()
         setStreamState(current.copy(state = StreamState.INACTIVE))
         dimensions = null
-        streamFps = DEFAULT_STREAM_FPS
         streamStartLine = null
     }
 

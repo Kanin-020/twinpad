@@ -239,18 +239,30 @@ impl GameRegistry {
         Self::write_input(entry, line)
     }
 
-    /// Envía al adaptador Cemu el fps y el bitrate configurados en la sesión
-    /// Android (CR-027: el encoder H.264 del Plugin aplica el bitrate).
-    pub fn send_cemu_video_config(&self, fps: u8, bitrate_kbps: u32) -> bool {
+    /// Envía al adaptador Cemu la resolución y el bitrate configurados en la
+    /// sesión Android (CR-027/CR-030). El framerate ya no viaja ni se
+    /// reenvía: sin tope ni pacing (CR-029), la tasa es la que sostenga
+    /// captura+encoder. Cemu aplica w/h SOLO al framebuffer del GamePad
+    /// (DRC); la resolución del juego en TV no cambia.
+    pub fn send_cemu_video_config(&self, width: u16, height: u16, bitrate_kbps: u32) -> bool {
         let mut games = lock_or_reset(&self.games);
         let Some(entry) = games.get_mut("cemu") else {
             return false;
         };
-        let fps = fps.clamp(1, 60);
-        set_cemu_capture_fps(fps);
+        let (width, height) = (
+            width.clamp(
+                twinpad_core::stream::MIN_DIM,
+                twinpad_core::stream::MAX_WIDTH,
+            ),
+            height.clamp(
+                twinpad_core::stream::MIN_DIM,
+                twinpad_core::stream::MAX_HEIGHT,
+            ),
+        );
         let bitrate_kbps = bitrate_kbps.clamp(1_000, 30_000);
-        let line =
-            format!("{{\"type\":\"video_config\",\"fps\":{fps},\"bitrate_kbps\":{bitrate_kbps}}}");
+        let line = format!(
+            "{{\"type\":\"video_config\",\"w\":{width},\"h\":{height},\"bitrate_kbps\":{bitrate_kbps}}}"
+        );
         Self::write_input(entry, &line)
     }
 
@@ -293,16 +305,6 @@ fn lock_or_reset<'a>(
 /// Callback de publicación: se invoca con la lista vigente cada vez que el
 /// registro cambia (§7 paso 3: el server publica a las sesiones activas).
 pub type Publisher = dyn Fn(&[GameInfo]) + Send + Sync;
-
-static CEMU_CAPTURE_FPS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(30);
-
-pub fn set_cemu_capture_fps(fps: u8) {
-    CEMU_CAPTURE_FPS.store(fps.clamp(1, 60), std::sync::atomic::Ordering::Release);
-}
-
-fn cemu_fps() -> u8 {
-    CEMU_CAPTURE_FPS.load(std::sync::atomic::Ordering::Acquire)
-}
 
 /// Bucle del listener IPC (ADR-008): un hilo por conexión de juego; al caer,
 /// retira el juego y publica la lista nueva. Bloquea el hilo caller.
@@ -467,7 +469,6 @@ fn handle_game_connection(
                                     game_id: game.game_id.clone(),
                                     width: w,
                                     height: h,
-                                    fps: cemu_fps(),
                                     latest: AccessUnit {
                                         fn_: gfn,
                                         timestamp_us,
@@ -609,6 +610,47 @@ mod tests {
         assert_eq!(line, "{\"type\":\"input_report\",\"seq\":1}\n");
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_input("{}"));
+    }
+
+    // TEST-068 — verifies SPEC-003/CR-030: the runtime video_config forwarded to Cemu
+    // carries the configured resolution and bitrate (resolution applies to the GamePad
+    // screen only); values outside SPEC-003 ranges are clamped before forwarding.
+    #[test]
+    fn cemu_video_config_forwarding_includes_resolution_and_bitrate() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into(), "audio".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_video_config(1280, 720, 8_000));
+        let mut line = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert_eq!(
+            line,
+            "{\"type\":\"video_config\",\"w\":1280,\"h\":720,\"bitrate_kbps\":8000}\n"
+        );
+        assert!(registry.send_cemu_video_config(5000, 4000, 500));
+        let mut line = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert_eq!(
+            line,
+            "{\"type\":\"video_config\",\"w\":3840,\"h\":2160,\"bitrate_kbps\":1000}\n"
+        );
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_video_config(1280, 720, 8_000));
     }
 
     // TEST-049 — verifies SPEC-006/CR-008: a live Cemu adapter is discoverable before its first DRC frame.

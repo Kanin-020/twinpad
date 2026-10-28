@@ -60,7 +60,8 @@ pub enum StreamMsg {
         h: u16,
         /// Formato del Stream; v1.4.0 exige H.264.
         fmt: FrameFormat,
-        /// Frames por segundo objetivo (1–60).
+        /// Metadata informativa del framerate (0–255; `0` = unlimited, CR-029);
+        /// ya no fija el ritmo de emisión.
         fps: u8,
     },
     /// server → app: un Framebuffer completo (§7 paso 2).
@@ -146,8 +147,10 @@ pub enum StreamStopReason {
 pub const MIN_DIM: u16 = 16;
 pub const MAX_WIDTH: u16 = 3840;
 pub const MAX_HEIGHT: u16 = 2160;
-pub const MIN_FPS: u8 = 1;
-pub const MAX_FPS: u8 = 60;
+/// Metadata informativa de `stream_start.fps` (CR-029): `0` = sin límite
+/// declarado (`unlimited`). Ya no es parámetro de pacing: la fuente publica
+/// tan rápido como permitan captura+encoder.
+pub const FPS_UNLIMITED: u8 = 0;
 
 impl StreamMsg {
     /// Serializa a su línea NDJSON canónica (sin `\n` final).
@@ -171,15 +174,14 @@ impl StreamMsg {
                 fmt,
                 w,
                 h,
-                fps,
+                fps: _,
             } => {
                 validate_dims(*w, *h)?;
                 if *fmt != FrameFormat::H264 || *media_port != crate::media_crypto::MEDIA_PORT {
                     return Err(PairError::MalformedMessage);
                 }
-                if !(MIN_FPS..=MAX_FPS).contains(fps) {
-                    return Err(PairError::MalformedMessage);
-                }
+                // CR-029: `fps` es metadata informativa (0–255, dominio del
+                // u8); sin validación de rango 1–60 ni pacing.
                 Ok(())
             }
             StreamMsg::VideoFrame {
@@ -395,18 +397,29 @@ mod tests {
             w: 15,
             h: 480,
             fmt: FrameFormat::Rgb8,
-            fps: 30,
+            fps: 0,
         };
         assert_eq!(tiny.validate(), Err(PairError::MalformedMessage));
-        // fps fuera de 1..=60.
-        let fast = StreamMsg::StreamStart {
-            media_port: crate::media_crypto::MEDIA_PORT,
-            w: 640,
-            h: 480,
-            fmt: FrameFormat::Rgb8,
-            fps: 61,
-        };
-        assert_eq!(fast.validate(), Err(PairError::MalformedMessage));
+    }
+
+    // TEST-089 — verifies SPEC-003 §4.1/CR-029: `fps` es metadata del wire
+    // (0 = unlimited, cualquier u8 válido) y ya no se rechaza por rango.
+    #[test]
+    fn stream_start_accepts_unlimited_and_metadata_fps() {
+        for fps in [0_u8, 30, 60, u8::MAX] {
+            let start = StreamMsg::StreamStart {
+                media_port: crate::media_crypto::MEDIA_PORT,
+                w: 640,
+                h: 480,
+                fmt: FrameFormat::H264,
+                fps,
+            };
+            assert_eq!(
+                start.validate(),
+                Ok(()),
+                "fps={fps} debe ser metadata válida"
+            );
+        }
     }
 
     // TEST-016 — verifies SPEC-003 (§5/§9: frame inconsistente → rechazo).

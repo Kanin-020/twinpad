@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.14.0 |
+| Version | 1.16.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
 | Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017, Draft; adaptador Cemu) |
 | Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-28 |
 
 ## 1. Purpose
 
@@ -75,7 +75,7 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 4. El Plugin seleccionado publica `game_frame` y PCM. Para `fmt:"h264"`, `game_frame` incluye además `ts_capture_us` e `idr`; el Servidor retransmite la AU y esta metadata conforme a SPEC-003 sin sustituir el reloj del encoder. El Servidor adapta/retransmite únicamente esos medios. Sin fuente seleccionada no transmite video ni audio, no captura escritorio ni genera demo/PCM sintético.
 5. Android envía `input_report`. El Servidor conserva el último snapshot válido por sesión incluso antes de una selección, envía el snapshot inicial al Plugin al seleccionarlo y reenvía cada actualización posterior aceptada. `poll_input()` devuelve ese snapshot o `None`; los estados intermedios pueden coalescerse y el polling no bloquea la publicación A/V.
 6. Al cambiar de Plugin, el Servidor detiene los streams previos antes de iniciar los nuevos. Si la fuente seleccionada desaparece, detiene sus streams y Android procesa la nueva lista.
-7. Cemu publica el framebuffer DRC/GamePad internamente hasta 60 fps según la configuración vigente y PCM DRC, sin ventana separada ni selector, y consume los snapshots de input enviados por el Servidor. Si Twinpad se conecta y Jugador 1 no tiene VPAD emulado, Cemu crea uno temporal en memoria; si ya hay VPAD, lo reutiliza. El temporal no se persiste y se retira al desconectar sin alterar un perfil/asignación configurados. Conforme a CR-012, la salida TV del juego continúa local en Cemu/PC; la única fuente PCM de Cemu que se publica al Plugin SDK y se retransmite a Android es GamePad/DRC. La ausencia o fallo del stream Android no silencia TV y las rutas no se mezclan. El wire de SPEC-005 no cambia.
+7. Cemu publica el framebuffer DRC/GamePad internamente sin tope de framerate (sin pacing: cada frame en cuanto captura+encoder lo permiten, CR-029) y PCM DRC, sin ventana separada ni selector, y consume los snapshots de input enviados por el Servidor. Si Twinpad se conecta y Jugador 1 no tiene VPAD emulado, Cemu crea uno temporal en memoria; si ya hay VPAD, lo reutiliza. El temporal no se persiste y se retira al desconectar sin alterar un perfil/asignación configurados. Conforme a CR-012, la salida TV del juego continúa local en Cemu/PC; la única fuente PCM de Cemu que se publica al Plugin SDK y se retransmite a Android es GamePad/DRC. La ausencia o fallo del stream Android no silencia TV y las rutas no se mezclan. El wire de SPEC-005 no cambia.
 
 El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su política de auto/manual start se mantiene salvo donde contradiga este flujo. Bajo CR-016/CR-017, Configuraciones permite activar un monitor de orientación en una ventana Cemu separada y redimensionable, inicialmente apagado; muestra yaw/pitch/roll recibido y su mapeo al VPAD desde el último snapshot. Sin gyro válido, la ventana indica que espera entrada. No se superpone al juego ni requiere cambiar inputs o contrato wire.
 
@@ -121,7 +121,7 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 - **R3:** el crash de un juego jamás rompe la sesión de SPEC-001 (REQ-006 §8).
 - **R4 (CR-006):** auto-connect Cemu persistente y opt-in, inicialmente desactivado; desactivarlo no cierra una conexión actual.
 - **R5 (CR-007/CR-009/CR-010):** la integración host inicia/reutiliza el Servidor PC y presenta el QR vigente; el SDK Rust no incorpora UI ni gestión de procesos. Cemu confirma `cemu_live=true` por loopback antes del QR. El endpoint QR permanece loopback-only.
-- **R6 (CR-008/CR-010):** Cemu publica internamente la textura DRC/GamePad a la tasa configurada por el stream, hasta 60 fps; no abre ni requiere “Separate GamePad View” y no altera el render visible normal.
+- **R6 (CR-008/CR-010/CR-029):** Cemu publica internamente la textura DRC/GamePad sin tope de framerate ni pacing (la tasa es la que sostengan captura+encoder); no abre ni requiere “Separate GamePad View” y no altera el render visible normal.
 - **R7 (CR-010):** el Servidor retransmite únicamente los medios del Plugin confirmado para la sesión; ningún medio audiovisual se captura/genera en el Servidor.
 - **R8 (CR-010):** el snapshot válido más reciente de input se retiene por sesión, se entrega al Plugin seleccionado y se consulta con polling no bloqueante en el SDK; los estados intermedios pueden coalescerse.
 - **R9 (CR-010):** una selección obsoleta no interrumpe la fuente actual si aún sigue viva; el Servidor devuelve la lista vigente.
@@ -207,7 +207,8 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Conexión Cemu title-scoped, reintento, framing IPC y recepción de input | TEST-044 |
 | Preferencia Cemu persistente, estado inicial false, activación/desactivación en vivo y opciones del menú | TEST-046 |
 | QR vigente consultado por loopback y errores locales observables | TEST-047 |
-| Relay Cemu del DRC hasta 60 fps configurados, sin selección de pantalla ni captura/demo Server | TEST-054 |
+| Relay Cemu del DRC sin tope de framerate (CR-029), sin selección de pantalla ni captura/demo Server | TEST-054 |
+| Resolución de emisión del GamePad aplicada en Cemu: escala del DRC a w/h de `video_config` antes del encode, sin upscale (CR-030) | TEST-088 |
 | Cemu TV→PC y DRC/GamePad→Android independientes, sin mezcla y con volúmenes/rutas separados (CR-012) | TEST-062 (gate de banco físico) |
 | Anuncio Cemu confirmado antes de mostrar QR; cancelación manual limpia | TEST-050 |
 | IPC H.264 conserva timestamp monotónico del encoder e indicador IDR (CR-015) | TEST-073 |
@@ -239,3 +240,5 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.12.0 | 2026-10-22 | Product owner + Twinpad team (CR-016) | Añade monitor Cemu opt-in de orientación recibida y mapeada a VPAD, sin cambio del protocolo |
 | 1.13.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Mueve el monitor Cemu a ventana wxWidgets independiente y ampliable; sin cambio wire |
 | 1.14.0 | 2026-10-27 | Product owner + Twinpad team (CR-023) | SDK Twinpad como vía principal del giroscopio para terceros; Config externa y gamepad estándar sin giroscopio; sin cambio wire |
+| 1.15.0 | 2026-10-28 | Product owner (CR-029) | Cemu publica la DRC sin tope de framerate ni pacing; el wire de SPEC-005 no cambia |
+| 1.16.0 | 2026-10-28 | Product owner (CR-030) | El DRC se escala a la resolución de `video_config` antes del encode (nearest, sin upscale); sin cambio wire |

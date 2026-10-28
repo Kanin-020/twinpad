@@ -258,7 +258,8 @@ class PairingViewModel(app: Application) : AndroidViewModel(app) {
     fun onEvent(event: PairingEvent) = feed(event)
 
     /** Ajuste de calidad del video en caliente (menú de la app): pide al
-     * server nueva resolución/fps para las próximas sesiones (v1: el server
+     * server nueva resolución/bitrate para las próximas sesiones (CR-029:
+     * sin fps — el server emite según el ritmo del juego; v1: el server
      * lo aplica al re-anunciar; la sesión vigente continúa). */
     fun onStreamSettingsChanged(
         settings: com.twinpad.android.app.ui.AndroidSettings =

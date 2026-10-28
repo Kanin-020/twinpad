@@ -257,7 +257,6 @@ fn main() {
                         let media_game = Arc::new(std::sync::Mutex::new(None::<String>));
                         registry_ref.set_selected_game(session_id, None);
                         let initial_video_config = twinpad_server::video::VideoConfig::from_env();
-                        twinpad_server::games::set_cemu_capture_fps(initial_video_config.fps);
 
                         let session_input_snapshot =
                             Arc::new(std::sync::Mutex::new(None::<String>));
@@ -386,7 +385,7 @@ fn main() {
                                             if let Ok(mut slot) = reader_cfg.lock() {
                                                 *slot = cfg;
                                             }
-                                            twinpad_server::games::set_cemu_capture_fps(cfg.fps);
+                                            // CR-029: sin fps reenviado; resolución + bitrate (CR-030).
                                             if selected_game
                                                 .lock()
                                                 .ok()
@@ -395,13 +394,14 @@ fn main() {
                                                 == Some("cemu")
                                             {
                                                 games_ref.send_cemu_video_config(
-                                                    cfg.fps,
+                                                    cfg.width,
+                                                    cfg.height,
                                                     cfg.bitrate_kbps,
                                                 );
                                             }
                                             println!(
-                                                "Video config actualizada por la app: {}×{} @ {} fps, {} kbps.",
-                                                cfg.width, cfg.height, cfg.fps, cfg.bitrate_kbps
+                                                "Video config actualizada por la app: {}×{}, {} kbps (sin tope de fps).",
+                                                cfg.width, cfg.height, cfg.bitrate_kbps
                                             );
                                         }
                                         continue;
@@ -429,7 +429,8 @@ fn main() {
                                                 if game_id == "cemu" {
                                                     if let Ok(config) = reader_cfg.lock() {
                                                         games_ref.send_cemu_video_config(
-                                                            config.fps,
+                                                            config.width,
+                                                            config.height,
                                                             config.bitrate_kbps,
                                                         );
                                                     }
@@ -522,8 +523,8 @@ fn main() {
     }
 }
 
-/// Extrae `w`/`h`/`fps` del mensaje `video_config` del menú de la app
-/// (parseo mínimo sin serde; los valores se validan al construir VideoConfig).
+/// Extrae `w`/`h` (sin `fps`, CR-029) del mensaje `video_config` del menú de
+/// la app (parseo mínimo sin serde; los valores se validan al construir VideoConfig).
 fn parse_video_config(
     line: &str,
     current: twinpad_server::video::VideoConfig,
@@ -552,15 +553,8 @@ fn parse_video_config(
                 ) as u16
             })
             .unwrap_or(current.height),
-        fps: extract("fps")
-            .map(|v| {
-                v.clamp(
-                    u32::from(twinpad_core::stream::MIN_FPS),
-                    u32::from(twinpad_core::stream::MAX_FPS),
-                ) as u8
-            })
-            .unwrap_or(current.fps),
         // CR-027: bitrate objetivo del encoder H.264 del Plugin (kbps).
+        // CR-029: un `fps` heredado de apps antiguas se ignora.
         bitrate_kbps: extract("bitrate_kbps")
             .map(|v| v.clamp(1_000, 30_000))
             .unwrap_or(current.bitrate_kbps),

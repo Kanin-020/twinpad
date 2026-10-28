@@ -24,7 +24,6 @@
     <string name="game_select_title">Selecciona el juego</string>
     <string name="settings_title">Ajustes de transmisión</string>
     <string name="settings_resolution">Resolución</string>
-    <string name="settings_fps">FPS</string>
     <string name="settings_gyro">Giroscopio</string>
     <string name="settings_show_gyro_monitor">Mostrar monitor de orientación</string>
     <string name="gyro_monitor_title">Android · orientación enviada</string>

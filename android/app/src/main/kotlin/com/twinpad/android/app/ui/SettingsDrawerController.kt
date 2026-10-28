@@ -14,9 +14,6 @@ private const val RES_H_720 = 720
 private const val RES_W_1920 = 1920
 private const val RES_H_1080 = 1080
 
-/** fps seleccionables. */
-private const val FPS_30 = 30
-private const val FPS_60 = 60
 private const val AUDIO_VOLUME_PERCENT_MAX = 100
 private const val JOG_WHEEL_PERCENT_SCALE = 100
 
@@ -69,7 +66,6 @@ internal class SettingsDrawerController(
         if (!knownResolution) {
             activity.findViewById<RadioButton>(R.id.resolution_1280x720).isChecked = true
         }
-        activity.findViewById<RadioButton>(if (settings.fps == FPS_30) R.id.fps_30 else R.id.fps_60).isChecked = true
         activity.findViewById<SeekBar>(R.id.bitrate_seek).progress =
             settings.videoBitrateKbps - BITRATE_SEEK_KBPS_MIN
         activity.findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
@@ -90,7 +86,7 @@ internal class SettingsDrawerController(
             button.setOnCheckedChangeListener { _, checked ->
                 if (checked) {
                     updateStreamSettings {
-                        it.copy(width = dims.first, height = dims.second, fps = currentFps())
+                        it.copy(width = dims.first, height = dims.second)
                     }
                 }
             }
@@ -100,14 +96,6 @@ internal class SettingsDrawerController(
         }
         activity.findViewById<RadioButton>(R.id.scale_expand).setOnCheckedChangeListener { _, checked ->
             if (checked) updateStreamSettings { it.copy(scaleMode = VideoScaleMode.EXPAND) }
-        }
-        fpsButtons().forEach { (button, fps) ->
-            button.setOnCheckedChangeListener { _, checked ->
-                if (checked) {
-                    val (width, height) = currentResolution()
-                    updateStreamSettings { it.copy(width = width, height = height, fps = fps) }
-                }
-            }
         }
         activity.findViewById<SeekBar>(R.id.bitrate_seek).setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
@@ -181,14 +169,6 @@ internal class SettingsDrawerController(
             activity.findViewById<RadioButton>(R.id.resolution_1280x720) to (RES_W_1280 to RES_H_720),
             activity.findViewById<RadioButton>(R.id.resolution_1920x1080) to (RES_W_1920 to RES_H_1080),
         )
-
-    private fun fpsButtons(): Map<RadioButton, Int> =
-        mapOf(
-            activity.findViewById<RadioButton>(R.id.fps_30) to FPS_30,
-            activity.findViewById<RadioButton>(R.id.fps_60) to FPS_60,
-        )
-
-    private fun currentFps(): Int = if (activity.findViewById<RadioButton>(R.id.fps_30).isChecked) FPS_30 else FPS_60
 
     private fun currentResolution(): Pair<Int, Int> =
         when {

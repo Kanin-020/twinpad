@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.8.0 |
+| Version | 1.10.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
-| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054 |
-| Last updated | 2026-10-27 |
+| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088 |
+| Last updated | 2026-10-28 |
 
 ## 1. Purpose
 
@@ -23,7 +23,7 @@ Define transporte y presentación del Stream de video de la Segunda pantalla, pu
 - **Frame number (`fn`)**: contador `u64` estrictamente creciente asignado al AU por Cemu desde cero al cambiar fuente.
 - **Frame activo**: última imagen decodificada y presentada por Android.
 - **IDR**: punto de acceso aleatorio que reinicia estado del decoder y contiene SPS/PPS.
-- **Degradación**: ajuste de resolución/fps comunicado por control; nunca recodificación en el Servidor.
+- **Degradación**: ajuste de resolución comunicado por control; nunca recodificación en el Servidor.
 - Los términos **Sesión autenticada**, **Pairing**, **Stream**, **Segunda pantalla** y **Servidor PC**: ver CTX §8 y SPEC-001 §2.
 
 ## 3. Preconditions
@@ -37,10 +37,10 @@ Define transporte y presentación del Stream de video de la Segunda pantalla, pu
 
 | Message | Fields | Constraints |
 |---|---|---|
-| `stream_start` | `w`,`h`,`fmt`,`fps`,`media_port` | `fmt="h264"`; dimensiones 16–3840 × 16–2160; fps 1–60; `media_port=8425` |
+| `stream_start` | `w`,`h`,`fmt`,`fps`,`media_port` | `fmt="h264"`; dimensiones 16–3840 × 16–2160; `fps` metadata informativa del wire, dominio u8 0–255 (`0` = sin límite declarado, CR-029); `media_port=8425` |
 | `stream_stop` | `reason` | `plugin_stopped` \| `server_shutdown` |
 
-El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo para la fuente seleccionada y cuando existe una AU IDR disponible. Una actualización de encoder/dimensiones genera `stream_stop`, `stream_start` nuevo y una IDR; no se envían medios sin un start vigente. La línea `video_config` de sesión (drawer de la app, SPEC-002 R15) puede incluir `bitrate_kbps` (1.000–30.000, por defecto 8.000; clamp idéntico en server y adaptador): el Servidor conserva el valor vigente y lo reenvía a Cemu junto con fps; Cemu reinicia su encoder cuando cambia (CR-027). `video_frame`, `video_patch` y `stream_gap` no forman parte de v1.5.0.
+El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo para la fuente seleccionada y cuando existe una AU IDR disponible. Una actualización de encoder/dimensiones genera `stream_stop`, `stream_start` nuevo y una IDR; no se envían medios sin un start vigente. Desde CR-029 el framerate no es un parámetro de control: ninguna capa fija el ritmo por un fps objetivo. La fuente (Plugin/Cemu) publica cada AU en cuanto captura+encoder lo permiten y el Servidor la retransmite en cuanto llega; `stream_start.fps` es metadata informativa (`0` = sin límite declarado, valor que anuncia el Servidor) sin validación de rango 1–60 ni efecto de pacing. La línea `video_config` de sesión (drawer de la app, SPEC-002 R15/R17) puede incluir `w`/`h` (dimensiones 16–3840 × 16–2160), `bitrate_kbps` (1.000–30.000, por defecto 8.000) o ambas (clamp idéntico en server y adaptador): el Servidor conserva el valor vigente y reenvía w/h y bitrate a Cemu; Cemu reinicia su encoder cuando cambian (CR-027/CR-030) y aplica w/h como resolución de emisión SOLO de la pantalla GamePad (DRC): escalado nearest-neighbor del frame capturado antes del encode, sin upscale (si w×h ≥ nativo se publica nativo e impares se reducen al par inferior). La resolución general del juego en TV no cambia. `video_config` ya no lleva `fps` (CR-029): el Servidor ignora ese campo si una app antigua lo envía. `video_frame`, `video_patch` y `stream_gap` no forman parte de v1.5.0.
 
 ### 4.2 Handshake del canal media TCP
 
@@ -99,8 +99,8 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 
 ### 8.1 Cambio de resolución
 
-- **Trigger:** Cemu recibe `video_config` con dimensión, fps o bitrate_kbps nuevos.
-- **Flow:** Cemu reinicia el encoder; el servidor envía `stream_stop` y después `stream_start` con `fmt="h264"`, nueva configuración y `media_port=8425`. El primer AU es IDR con SPS/PPS; `fn` reinicia en cero.
+- **Trigger:** Cemu recibe `video_config` con dimensión o bitrate_kbps nuevos (fps ya no es parámetro, CR-029).
+- **Flow:** Cemu reinicia el encoder y escala el framebuffer del DRC a la dimensión objetivo (nearest-neighbor, sin upscale — CR-030); el servidor envía `stream_stop` y después `stream_start` con `fmt="h264"`, nueva configuración y `media_port=8425`. El primer AU es IDR con SPS/PPS; `fn` reinicia en cero.
 - **Result:** Android reinicia MediaCodec/surface; no mezcla resoluciones ni requiere Pairing nuevo.
 
 ### 8.2 Corte transitorio del canal media (REQ-005 AC-2)
@@ -153,9 +153,9 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 - **R7 (CR-014):** ningún payload de media se procesa antes de validar AES-GCM; counter recibido debe ser exactamente el esperado. Cada conexión deriva clave nueva de nonces aleatorios frescos.
 - **R8 (CR-014):** el canal media se asocia a un SessionId autenticado vivo y termina al cerrar su canal de Pairing.
 - **R4:** ante corte < 10 s, la reanudación reutiliza la sesión autenticada y jamás exige re-pairing (REQ-005 AC-2).
-- **R5:** la degradación la decide siempre el Server (fps primero, resolución después); el Android nunca la solicita en v1.
+- **R5:** la degradación la decide siempre el Server (resolución; el framerate ya no degrada por pacing desde CR-029); el Android nunca la solicita en v1.
 - **R6:** si no hay stream, la vista lo indica explícitamente; jamás muestra un Frame congelado como si estuviera vivo (REQ-004 AC-3).
-- **R9 (CR-025):** el modo de escalado `contain`/`expand` es presentación local de Android; no cambia resolución, fps, codec ni wire. Cambiarlo relayout el SurfaceView sin renegociar el stream ni reiniciar el decoder.
+- **R9 (CR-025):** el modo de escalado `contain`/`expand` es presentación local de Android; no cambia resolución, codec ni wire. Cambiarlo relayout el SurfaceView sin renegociar el stream ni reiniciar el decoder.
 
 ## 12. Contracts
 
@@ -171,7 +171,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 ```gherkin
 Scenario: Flujo principal (REQ-004 AC-1)
   Given sesión autenticada, plugin seleccionado y transmitiendo
-  When llega stream_start(w=1280,h=720,fmt=h264,fps=30,media_port=8425)
+  When llega stream_start(w=1280,h=720,fmt=h264,fps=0,media_port=8425)
   And Android completa handshake HMAC y recibe una AU IDR autenticada
   Then MediaCodec presenta el video en SurfaceView
 
@@ -241,6 +241,8 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.8.0 | 2026-10-27 | Product owner (CR-027) | `video_config` admite y reenvía `bitrate_kbps` (1.000–30.000, default 8.000); trigger §8.1 incluye el cambio de bitrate |
+| 1.9.0 | 2026-10-28 | Product owner (CR-029) | FPS unlimited: sin pacing ni tope 30/60; `stream_start.fps` metadata 0–255 (`0` = unlimited); `video_config` sin fps |
+| 1.10.0 | 2026-10-28 | Product owner (CR-030) | `video_config` reenvía w/h a Cemu; el DRC se escala (nearest, sin upscale) antes del encode; trigger §8.1 define el escalado |
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |

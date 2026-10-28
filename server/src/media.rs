@@ -28,7 +28,6 @@ pub struct MediaSource {
     pub game_id: String,
     pub width: u16,
     pub height: u16,
-    pub fps: u8,
     pub latest: AccessUnit,
 }
 
@@ -152,8 +151,6 @@ fn handle_media_client(
             || source.width > 3840
             || source.height < 16
             || source.height > 2160
-            || source.fps == 0
-            || source.fps > 60
             || source.latest.annex_b.is_empty()
         {
             return;
@@ -188,7 +185,9 @@ fn handle_media_client(
         };
         last_fn = Some(source.latest.fn_);
         last_timestamp_us = Some(source.latest.timestamp_us);
-        std::thread::sleep(Duration::from_millis(1_000 / u64::from(source.fps)));
+        // CR-029: sin pacing por fps; la próxima iteración espera por la
+        // AU nueva (1 ms de poll) y retransmite en cuanto llega.
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 
@@ -246,7 +245,6 @@ mod tests {
             game_id: "cemu".into(),
             width: 64,
             height: 64,
-            fps: 60,
             latest: AccessUnit {
                 fn_,
                 timestamp_us,

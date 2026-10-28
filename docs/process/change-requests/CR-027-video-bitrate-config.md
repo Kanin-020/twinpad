@@ -95,3 +95,4 @@ El owner pidió quitar el ajuste JPEG ("ya no es relevante") y añadir el ajuste
 | 0.1.0 | 2026-10-27 | Product owner + Twinpad team | Opened (petición del owner) |
 | 1.0.0 | 2026-10-27 | Product owner | Approved: bitrate objetivo 1.000–30.000 kbps default 8.000 |
 | 1.1.0 | 2026-10-27 | Twinpad team | Applied: código server/Android/Cemu y docs |
+| 1.2.0 | 2026-10-28 | Twinpad team | Fix (tras CR-029): el rate-control usa la cadencia REAL de emisión (ventana rodante + histéresis 30 %/2 s); con un nominal fijo de 60 y emisión a ~4–5 fps el stream quedaba acotado a ~1/15 del bitrate objetivo (tope observado ≈ 2.2 Mbps con target 30.000) |

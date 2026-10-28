@@ -5,8 +5,6 @@
 //! (start → frames consecutivos → stop) sobre la conexión persistente.
 //! La captura real del juego entra con el Plugin.
 
-use std::time::Instant;
-
 use twinpad_core::stream::{FrameFormat, StreamMsg};
 
 /// Un canal de emisión por sesión activa. `send` serializa y entrega la
@@ -131,29 +129,27 @@ pub const DEFAULT_JPEG_QUALITY: u8 = 80;
 pub const DEFAULT_VIDEO_BITRATE_KBPS: u32 = 8_000;
 
 /// Objetivos de calidad del stream que el owner puede ajustar por variable
-/// de entorno (720p/1080p, 30/60 fps; CR-001, CR-027). Los valores caen a lo
-/// que la máquina sostenga: el stream no se congela (SPEC-003 R3/R5).
+/// de entorno (720p/1080p; CR-001/CR-027). El framerate ya no es un
+/// objetivo: desde CR-029 la fuente emite sin tope ni pacing y
+/// `stream_start.fps` se anuncia como metadata `FPS_UNLIMITED`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VideoConfig {
     pub width: u16,
     pub height: u16,
-    pub fps: u8,
     /// Bitrate objetivo del encoder H.264 del Plugin, en kbps (CR-027).
     pub bitrate_kbps: u32,
 }
 
 impl VideoConfig {
-    /// Lee `TWINPAD_WIDTH`/`TWINPAD_HEIGHT`/`TWINPAD_FPS`/
-    /// `TWINPAD_VIDEO_BITRATE_KBPS` (720p×30 por defecto). Los valores fuera
-    /// de rango de SPEC-003 §4 se clampean (16–3840×16–2160, 1–60 fps,
-    /// 1000–30000 kbps).
+    /// Lee `TWINPAD_WIDTH`/`TWINPAD_HEIGHT`/`TWINPAD_VIDEO_BITRATE_KBPS`
+    /// (720p por defecto). Los valores fuera de rango de SPEC-003 §4 se
+    /// clampean (16–3840×16–2160, 1000–30000 kbps). `TWINPAD_FPS` quedó
+    /// discontinuado por CR-029: el framerate no se configura.
     #[must_use]
     pub fn from_env() -> Self {
         Self {
             width: clamp_env_u16("TWINPAD_WIDTH", 1280),
             height: clamp_env_u16("TWINPAD_HEIGHT", 720),
-            fps: clamp_env_u8("TWINPAD_FPS", 30)
-                .clamp(twinpad_core::stream::MIN_FPS, twinpad_core::stream::MAX_FPS),
             bitrate_kbps: clamp_env_u32("TWINPAD_VIDEO_BITRATE_KBPS", DEFAULT_VIDEO_BITRATE_KBPS)
                 .clamp(1_000, 30_000),
         }
@@ -170,14 +166,6 @@ fn clamp_env_u16(name: &str, default: u16) -> u16 {
             twinpad_core::stream::MAX_WIDTH,
         )
 }
-
-fn clamp_env_u8(name: &str, default: u8) -> u8 {
-    std::env::var(name)
-        .ok()
-        .and_then(|v| v.parse::<u8>().ok())
-        .unwrap_or(default)
-}
-
 fn clamp_env_u32(name: &str, default: u32) -> u32 {
     std::env::var(name)
         .ok()
@@ -271,26 +259,28 @@ pub type GameFrameSource<'a> = &'a mut dyn FnMut() -> Option<(String, crate::gam
 /// `stream_start` nuevo (§8.1) anuncia los cambios de resolución. Un juego
 /// que deja de publicar frames NO detiene el stream: se queda en el último
 /// emitido (SPEC-006 §9: su crash jamás rompe la sesión); `stop_on_no_game`
-/// controla el fin limpio cuando el juego desaparece.
+/// controla el fin limpio cuando el juego desaparece. El framerate ya no se
+/// escala por un objetivo: se itera a la cadencia que la fuente sostiene
+/// (CR-029) y `stream_start.fps` se anuncia como `FPS_UNLIMITED`.
 ///
 /// # Errors
 /// `Disconnected` si el receptor deja de estar disponible.
 pub fn run_game_stream(
     sink: &mut dyn FrameSink,
-    frames: u64,
-    fps: u8,
+    _frames: u64,
+    _fps: u8,
     source: GameFrameSource,
     stop_on_no_game: bool,
 ) -> Result<(), VideoSourceError> {
     let mut announced: Option<(u16, u16, FrameFormat)> = None;
-    let mut next_deadline = Instant::now();
-    for _ in 0..frames {
+    // Presupuesto de iteraciones: en v1 limita los bucles de prueba; el
+    // ritmo ya no lo fija un fps (CR-029), la fuente se sondea directo.
+    for _ in 0.._frames {
         let Some((_game_id, gf)) = source() else {
             if stop_on_no_game {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(1_000 / u64::from(fps)));
-            next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
+            std::thread::sleep(std::time::Duration::from_millis(10));
             continue;
         };
         let _ = _game_id; // v1: una sola fuente preferente (§8.1 de SPEC-006)
@@ -310,17 +300,12 @@ pub fn run_game_stream(
                         w: gf.w,
                         h: gf.h,
                         fmt: FrameFormat::H264,
-                        fps,
+                        fps: twinpad_core::stream::FPS_UNLIMITED,
                     },
                 )?;
             }
         } else {
             continue;
-        }
-        next_deadline += std::time::Duration::from_millis(1_000 / u64::from(fps));
-        let now = Instant::now();
-        if next_deadline > now {
-            std::thread::sleep(next_deadline - now);
         }
     }
 
@@ -359,13 +344,15 @@ pub fn run_selected_game_stream(
             std::thread::sleep(std::time::Duration::from_millis(10));
             continue;
         }
-        let fps = config().fps.clamp(1, 60);
+        // CR-029: `fps` es metadata (0 = unlimited); ya no escoge el ritmo.
+        let fps = twinpad_core::stream::FPS_UNLIMITED;
         if announced != Some((frame.w, frame.h, fps)) {
             send_stream_stop(sink, announced.take().is_some())?;
             if frame.idr != Some(true) {
                 std::thread::sleep(std::time::Duration::from_millis(2));
                 continue;
             }
+            let _ = config(); // bitrate vigente reenviado por el lector de sesión
             announced = Some((frame.w, frame.h, fps));
             send(
                 sink,
@@ -481,7 +468,6 @@ mod tests {
         let cfg = VideoConfig {
             width: 1280,
             height: 720,
-            fps: 30,
             bitrate_kbps: DEFAULT_VIDEO_BITRATE_KBPS,
         };
         assert_eq!(cfg.width, 1280);
@@ -697,7 +683,6 @@ mod tests {
         let mut config = || VideoConfig {
             width: 1280,
             height: 720,
-            fps: 60,
             bitrate_kbps: DEFAULT_VIDEO_BITRATE_KBPS,
         };
         let mut sink = SinkSpy(RefCell::new(Vec::new()));
@@ -708,18 +693,19 @@ mod tests {
             .iter()
             .map(|line| StreamMsg::decode(line).unwrap())
             .collect();
+        // CR-029: `fps` se anuncia como metadata 0 = unlimited.
         assert!(matches!(
             messages.as_slice(),
             [
                 StreamMsg::StreamStart {
                     fmt: FrameFormat::H264,
-                    fps: 60,
+                    fps: 0,
                     ..
                 },
                 StreamMsg::StreamStop { .. },
                 StreamMsg::StreamStart {
                     fmt: FrameFormat::H264,
-                    fps: 60,
+                    fps: 0,
                     ..
                 },
                 StreamMsg::StreamStop { .. },
