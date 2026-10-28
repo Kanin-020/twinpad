@@ -249,7 +249,8 @@ impl GameRegistry {
         let fps = fps.clamp(1, 60);
         set_cemu_capture_fps(fps);
         let bitrate_kbps = bitrate_kbps.clamp(1_000, 30_000);
-        let line = format!("{{\"type\":\"video_config\",\"fps\":{fps},\"bitrate_kbps\":{bitrate_kbps}}}");
+        let line =
+            format!("{{\"type\":\"video_config\",\"fps\":{fps},\"bitrate_kbps\":{bitrate_kbps}}}");
         Self::write_input(entry, &line)
     }
 

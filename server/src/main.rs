@@ -394,7 +394,10 @@ fn main() {
                                                 .as_deref()
                                                 == Some("cemu")
                                             {
-                                                games_ref.send_cemu_video_config(cfg.fps, cfg.bitrate_kbps);
+                                                games_ref.send_cemu_video_config(
+                                                    cfg.fps,
+                                                    cfg.bitrate_kbps,
+                                                );
                                             }
                                             println!(
                                                 "Video config actualizada por la app: {}×{} @ {} fps, {} kbps.",
@@ -425,7 +428,10 @@ fn main() {
 
                                                 if game_id == "cemu" {
                                                     if let Ok(config) = reader_cfg.lock() {
-                                                        games_ref.send_cemu_video_config(config.fps, config.bitrate_kbps);
+                                                        games_ref.send_cemu_video_config(
+                                                            config.fps,
+                                                            config.bitrate_kbps,
+                                                        );
                                                     }
                                                 }
                                                 if let Some(snapshot) =
