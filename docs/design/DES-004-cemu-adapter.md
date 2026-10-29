@@ -1,4 +1,4 @@
-# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-038)
+# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-035/CR-038)
 
 | | |
 |---|---|
@@ -83,6 +83,12 @@ sequenceDiagram
   C->>S: camera_request(on) en cada transición HLE de cámara del juego (CR-038)
   S->>A: camera_request encolado/coalesced y re-emitido a la sesión vigente
   A->>A: gating frontal: stream camera_frame solo con «cemu» seleccionado Y demanda vigente
+  C->>S: mic_request(on) en cada transición MICOpen/MICClose del HLE mic (CR-035, SOLO DRC0)
+  S->>A: mic_request encolado/coalesced y re-emitido a la sesión vigente
+  A->>A: gating mic + RECORD_AUDIO: captura AudioRecord 32 kHz solo con «cemu» seleccionado Y demanda vigente
+  A->>S: mic_chunk (PCM s16le mono 32 kHz, samples 32–32000)
+  S->>C: mic_chunk → cola s16 drop-old de 1 s del adaptador
+  C->>C: mic_updateOnAXFrame consume 96 muestras (3 ms) solo con cola fresca (≤ 250 ms) y demanda vigente; sin ellas, caminos Cemu existentes
   S->>V: aplica snapshot al VPAD emulado
   V->>V: mapea motion AndroidDSU→DSU y alimenta WiiUMotionHandler/Mahony
   V-->>H: MotionSample fusionado actualiza VPADStatus
@@ -91,6 +97,22 @@ sequenceDiagram
 ```
 
 Audio/input/selección mantienen los contratos existentes. El video usa el framing cifrado binario SPEC-003; al cambiar fuente, dimensión o Pairing se cierra/reinicia el canal y el encoder comienza con IDR. El Servidor nunca captura, decodifica ni genera medios.
+
+### 7.1 Micrófono del teléfono bajo demanda (CR-035)
+
+El micrófono de la DRC0 se alimenta EXCLUSIVAMENTE bajo demanda (pedido del
+owner): el HLE `mic` de Cemu emite `mic_request on=true/false` en las
+transiciones MICOpen/MICClose del juego y `ConnectPrimary` lo re-emite tras
+`game_announce` para sobrevivir reconexiones. Del lado Cemu, `mic_chunk` se
+valida estrictamente (samples 32–32000, `2·samples` bytes s16le) y se
+encola FIFO s16 con drop-old a 1 s; `ConsumeMicSamples` exige demanda
+vigente y frescura ≤ 250 ms, y `mic_updateOnAXFrame` consume 96 muestras
+por frame de AX con precedencia sobre el dispositivo del PC y el blow mic.
+Del lado Android, la captura AudioRecord a 32 kHz (mono, s16, bloques de
+480 muestras) arranca solo con juego «cemu» seleccionado Y `mic_request`
+con demanda vigente; sin permiso `RECORD_AUDIO` se solicita una vez y sin
+concesión no hay captura. Cambiar de juego, cerrar la sesión o una
+desconexión reseatea la demanda y para la captura.
 
 ## 7. Concurrency
 
@@ -158,6 +180,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | TV local independiente y PCM DRC/GamePad únicamente hacia Android, sin mezcla/dependencia de transporte | `AIInitDMA` / `AIInitDRCDMA`, `g_tvAudio` / `g_padAudio`, `TwinpadClient::PublishAudioBlock` | TEST-062; audición en banco físico pendiente |
 | Ciclo Cemu anterior, configuración y QR loopback | `MainWindow`, `TwinpadClient`, listener QR | TEST-046, TEST-047, TEST-050 |
 | VPAD Player 1 temporal cuando falta, restauración de asignación y no persistencia | `InputManager::update_twinpad_vpad`, `InputManager::save` | TEST-064; compilado en Cemu debug, assertions y smoke de título pendientes |
+| Micrófono del teléfono bajo demanda: transiciones MICOpen/MICClose → `mic_request`, cola s16 drop-old de 1 s, consumo de 96 muestras por frame AX con precedencia sobre el micrófono local | `mic.cpp`, `TwinpadClient::PublishMicRequest/FeedMicChunk/ConsumeMicSamples`, `PairingMicController` | TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
 
 ## 13. Related decisions
 
@@ -211,6 +234,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | 1.4.0 | 2026-10-26 | Product owner + Twinpad team (CR-022) | Mapeo de ejes AndroidDSU solo en Android; Cemu convierte unidades y niega accel Y/Z en la ruta Twinpad como en DSU |
 | 1.5.0 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU de referencia pasa a landscape exclusivo; Cemu sin cambios de mapeo |
 | 1.6.0 | 2026-10-29 | Product owner + Twinpad team (CR-038) | El HLE `camera` notifica transiciones OpenCam/CloseCam como `camera_request` Cemu→Servidor→Android; Android activa la cámara frontal solo con cambio de selección + demanda vigente |
+| 1.7.0 | 2026-10-29 | Product owner + Twinpad team (CR-035) | Micrófono bajo demanda: el HLE `mic` emite `mic_request` en MICOpen/MICClose (DRC0); `mic_chunk` s16le mono 32 kHz encola en cola drop-old de 1 s y alimenta `mic_updateOnAXFrame` solo con cola fresca; Android captura con AudioRecord solo con juego «cemu» Y demanda vigente |
 | 1.1.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Alinea los colores yaw/pitch/roll de Cemu con Android y documenta la orientación absoluta reportada |
 | 1.1.2 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Corrige el signo de pitch en la conversión de Cemu al VPAD y afirma el signo en TEST-077 |
 | 1.1.3 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Elimina el desfase gráfico de 90° en roll y añade aserción de roll cero hacia la derecha en TEST-079 |

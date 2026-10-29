@@ -11,7 +11,6 @@
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
 | CR-034 | Cámara del teléfono hacia Cemu (alcance por definir) | SPEC-005, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-034-phone-camera-to-cemu.md](CR-034-phone-camera-to-cemu.md) |
-| CR-035 | Micrófono del teléfono hacia Cemu | SPEC-005, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-035-phone-microphone-to-cemu.md](CR-035-phone-microphone-to-cemu.md) |
 | CR-036 | Continuidad del video al cambiar de escena | SPEC-003, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-036-video-continuity-scene-changes.md](CR-036-video-continuity-scene-changes.md) |
 
 > CR-009 y CR-010 fueron aprobados por el Product owner; CR-009 se aplicó en su iteración. CR-010 está implementado en código y contratos; permanece abierto únicamente el gate físico Cemu/Android de ±150 ms A/V y hasta 60 fps.
@@ -37,6 +36,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-035 | Micrófono del teléfono bajo demanda: `mic_request` Cemu→Android desde MICOpen/MICClose del HLE `mic` y `mic_chunk` Android→Cemu PCM s16le mono 32 kHz (aplicado en SPEC-006 1.20.0, SPEC-005 1.4.0, DES-004, core, server, Cemu y Android) | SPEC-005, SPEC-006, DES-004 | 2026-10-29 | [CR-035-phone-microphone-to-cemu.md](CR-035-phone-microphone-to-cemu.md) |
 | CR-038 | Cámara del teléfono bajo demanda: `camera_request` Cemu→Servidor→Android desde las transiciones HLE `camera` (aplicado en SPEC-006 1.19.0, DES-002/004, core, server, Cemu y Android) | SPEC-006, DES-002, DES-004 | 2026-10-29 | [CR-038-camera-video-on-demand.md](CR-038-camera-video-on-demand.md) |
 | CR-037 | Marco AndroidDSU landscape exclusivo: accel `(y,-z,x)`, gyro `(-y,-z,x)` (aplicado en SPEC-004 1.10.0 y código Android) | SPEC-004, DES-002, DES-004 | 2026-10-29 | [CR-037-androiddsu-landscape-reference-frame.md](CR-037-androiddsu-landscape-reference-frame.md) |
 | CR-033 | Vibración del VPAD de Cemu hacia el teléfono (aplicado en SPEC-006 1.17.0, servidor, Cemu y Android) | SPEC-006, SPEC-002, DES-004 | 2026-10-28 | [CR-033-cemu-vpad-rumble-to-phone.md](CR-033-cemu-vpad-rumble-to-phone.md) |
@@ -70,6 +70,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 3 |
+| Open | 2 |
 | Median time open → applied | — |
-| Last reviewed | 2026-10-20 |
+| Last reviewed | 2026-10-29 |

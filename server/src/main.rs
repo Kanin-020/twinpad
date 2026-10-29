@@ -419,6 +419,19 @@ fn main() {
                                         }
                                         continue;
                                     }
+                                    // CR-035: micrófono del teléfono hacia Cemu.
+                                    if trimmed.starts_with("{\"type\":\"mic_chunk\"") {
+                                        if let Ok(msg) =
+                                            twinpad_core::game::GameMsg::decode(trimmed)
+                                        {
+                                            if let Ok(line) = msg.encode() {
+                                                games_ref.send_cemu_mic_chunk(&line);
+                                            }
+                                        } else {
+                                            println!("mic_chunk inválido descartado.");
+                                        }
+                                        continue;
+                                    }
                                     if let Ok(twinpad_core::game::GameMsg::GameSelect { game_id }) =
                                         twinpad_core::game::GameMsg::decode(trimmed)
                                     {
@@ -690,6 +703,8 @@ fn spawn_game_audio_forwarding(
                 last_seen_selection = selection_now.clone();
                 if let Some(game_id) = selection_now.as_deref() {
                     let _ = games.requeue_camera_request(game_id);
+                    // CR-035: idem para la demanda de micrófono.
+                    let _ = games.requeue_mic_request(game_id);
                 }
             }
             if selected != current_game {
@@ -725,6 +740,16 @@ fn spawn_game_audio_forwarding(
             if let Some(game_id) = selection_now.as_deref() {
                 if let Some(on) = games.pop_camera_request(game_id) {
                     let msg = twinpad_core::game::GameMsg::CameraRequest { on };
+                    if let Ok(line) = msg.encode() {
+                        if !sink.send_line(&line) {
+                            return;
+                        }
+                    }
+                }
+                // CR-035: demanda de micrófono del Plugin vivo seleccionado;
+                // rige la captura del micrófono del teléfono.
+                if let Some(on) = games.pop_mic_request(game_id) {
+                    let msg = twinpad_core::game::GameMsg::MicRequest { on };
                     if let Ok(line) = msg.encode() {
                         if !sink.send_line(&line) {
                             return;

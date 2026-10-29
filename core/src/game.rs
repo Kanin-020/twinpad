@@ -115,6 +115,26 @@ pub enum GameMsg {
         /// true: abrir la cámara del teléfono; false: detenerla.
         on: bool,
     },
+    /// Android → server → Cemu (CR-035): PCM s16le mono 32 kHz del
+    /// micrófono del teléfono hacia la API de micrófono HLE `mic` del
+    /// GamePad. `data` es base64url de exactamente 2·`samples` bytes,
+    /// no vacío.
+    #[serde(rename = "mic_chunk")]
+    MicChunk {
+        /// Muestras s16 de este chunk (2 bytes por muestra).
+        samples: u16,
+        /// PCM s16le little-endian mono en base64url.
+        data: String,
+    },
+    /// juego → server → Android (CR-035): demanda vigente del micrófono
+    /// del teléfono. `on` true cuando el juego abrió el micrófono HLE
+    /// `mic` y false al cerrarlo; la captura del teléfono pasa a estar
+    /// gobernada por este mensaje.
+    #[serde(rename = "mic_request")]
+    MicRequest {
+        /// true: abrir el micrófono del teléfono; false: detenerlo.
+        on: bool,
+    },
 }
 
 /// Geometría fija de la cámara del teléfono enviada a Cemu (CR-034).
@@ -123,6 +143,12 @@ pub const CAMERA_HEIGHT: u16 = 240;
 
 /// Máximo de bytes de un patrón de vibración (`VPADControlMotor`, CR-033).
 pub const RUMBLE_MAX_BYTES: u8 = 120;
+
+/// Muestras s16 máximo por chunk de micrófono: 1 s a 32 kHz (CR-035).
+pub const MIC_MAX_SAMPLES: u16 = 32000;
+
+/// Muestras s16 mínimo por chunk de micrófono: 1 ms a 32 kHz (CR-035).
+pub const MIC_MIN_SAMPLES: u16 = 32;
 
 impl GameMsg {
     /// Serializa a su línea NDJSON canónica (sin `\n` final).
@@ -172,7 +198,20 @@ impl GameMsg {
                 Ok(())
             }
             // CR-038: el flag es un booleano wire estricto; nada más que validar.
-            GameMsg::CameraRequest { .. } => Ok(()),
+            GameMsg::CameraRequest { .. } | GameMsg::MicRequest { .. } => Ok(()),
+            GameMsg::MicChunk { samples, data } => {
+                if *samples < MIC_MIN_SAMPLES || *samples > MIC_MAX_SAMPLES || data.is_empty() {
+                    return Err(PairError::MalformedMessage);
+                }
+                // 2 bytes por muestra s16.
+                let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(data)
+                    .map_err(|_| PairError::MalformedMessage)?;
+                if decoded.len() != usize::from(*samples) * 2 {
+                    return Err(PairError::MalformedMessage);
+                }
+                Ok(())
+            }
             GameMsg::GameFrame {
                 w,
                 h,
@@ -406,8 +445,87 @@ mod tests {
         );
     }
 
-    // TEST-097 — verifies SPEC-006 (CR-038): `camera_request` round-trip with a strict boolean flag.
+    // TEST-0101 — verifies SPEC-006 (CR-035): `mic_chunk` round-trip, strict sample
+    // count/byte parity and `mic_request` boolean flag.
     #[test]
+    fn mic_chunk_and_request_round_trip_and_reject_bad_shapes() {
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        // Chunk mínimo válido: 32 muestras (1 ms a 32 kHz) = 64 bytes s16le.
+        let pcm = vec![0x01u8, 0x00, 0xFF, 0xFF, 0x02, 0x00];
+        let mut full = vec![0u8; 64];
+        full.extend_from_slice(&pcm);
+        let msg = GameMsg::MicChunk {
+            samples: 35,
+            data: engine.encode(&full),
+        };
+        assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
+
+        // `samples` incoherente con los bytes decodificados.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"mic_chunk","samples":36,"data":"{}"}}"#,
+                engine.encode(&full)
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Bytes no pares (medias muestras).
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"mic_chunk","samples":32,"data":"{}"}}"#,
+                engine.encode(&full[..65])
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Vacío y por debajo del mínimo (32 muestras = 1 ms).
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"mic_chunk","samples":0,"data":""}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"mic_chunk","samples":31,"data":"{}"}}"#,
+                engine.encode(vec![0u8; 62])
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Por encima del máximo (32000 muestras = 1 s).
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"mic_chunk","samples":32001,"data":"{}"}}"#,
+                engine.encode(vec![0u8; 32001 * 2])
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Base64 inválido.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"mic_chunk","samples":32,"data":"!!"}"#),
+            Err(PairError::MalformedMessage)
+        );
+
+        // `mic_request`: ida y vuelta y flag estricto.
+        let on = GameMsg::MicRequest { on: true };
+        assert_eq!(GameMsg::decode(&on.encode().unwrap()).unwrap(), on);
+        let off = GameMsg::MicRequest { on: false };
+        assert_eq!(GameMsg::decode(&off.encode().unwrap()).unwrap(), off);
+        // Flag faltante.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"mic_request"}"#),
+            Err(PairError::MalformedMessage)
+        );
+        // Flag no booleano.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"mic_request","on":"no"}"#),
+            Err(PairError::MalformedMessage)
+        );
+        // Campo desconocido.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"mic_request","on":true,"x":1}"#),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-097 — verifies SPEC-006 (CR-038): `camera_request` round-trip with a strict boolean flag.    #[test]
     fn camera_request_round_trips_and_rejects_bad_flag() {
         let msg = GameMsg::CameraRequest { on: true };
         assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);

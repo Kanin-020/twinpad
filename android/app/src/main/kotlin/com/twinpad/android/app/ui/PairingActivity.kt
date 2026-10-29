@@ -65,6 +65,7 @@ private const val PROFILE_UNLOADED = "\u0000unloaded"
 class PairingActivity : AppCompatActivity() {
     private lateinit var viewModel: PairingViewModel
     private lateinit var cameraController: PairingCameraController
+    private lateinit var micController: PairingMicController
     private lateinit var drawer: SettingsDrawerController
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
@@ -166,6 +167,13 @@ class PairingActivity : AppCompatActivity() {
             viewModel.onCameraPermissionResult(granted)
         }
 
+    /** CR-035: permiso del micrófono bajo demanda; al concederlo se reevalúa
+     * el estado combinado de la sesión (juego «cemu» + `mic_request`). */
+    private val micPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) applyMicDemand()
+        }
+
     /** Efectos del drawer que exceden sus vistas: hardware y estado propio. */
     private val drawerHost =
         object : SettingsDrawerHost {
@@ -222,6 +230,10 @@ class PairingActivity : AppCompatActivity() {
             PairingCameraController(this) { raw ->
                 viewModel.onEvent(PairingEvent.QrScanned(raw))
             }
+        micController =
+            PairingMicController(this) { line ->
+                viewModel.sendSessionLine(line)
+            }
         drawer = SettingsDrawerController(this, drawerHost)
         wireViews()
         findViewById<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
@@ -230,6 +242,7 @@ class PairingActivity : AppCompatActivity() {
         }
         drawer.applyPersistedSettings()
         observeCameraEffects()
+        observeMicDemand()
         observeStates()
     }
 
@@ -269,12 +282,44 @@ class PairingActivity : AppCompatActivity() {
                     }
                     if (gameId == "cemu" && cameraRequested) {
                         cameraController.startFrontStream(this@PairingActivity) { line ->
-                            viewModel.sendCameraFrame(line)
+                            viewModel.sendSessionLine(line)
                         }
                     } else {
                         cameraController.stopFrontStream()
                     }
                 }
+        }
+    }
+
+    /** CR-035: activa la captura del micrófono solo con el juego «cemu»
+     * seleccionado y demanda `mic_request` vigente (el juego abrió el
+     * micrófono del GamePad en Cemu). Sin demanda, sin permiso y sin
+     * captura (bajo demanda, igual que la cámara en CR-038). */
+    private fun observeMicDemand() {
+        lifecycleScope.launch {
+            kotlinx.coroutines.flow.combine(
+                viewModel.selectedGameId,
+                viewModel.micRequested,
+            ) { gameId, micRequested -> gameId to micRequested }
+                .collectLatest { (gameId, micRequested) ->
+                    if (gameId == "cemu" && micRequested) {
+                        applyMicDemand()
+                    } else {
+                        micController.stop()
+                    }
+                }
+        }
+    }
+
+    /** CR-035: arranque real de la captura; si falta el permiso
+     * RECORD_AUDIO lo solicita una vez y el lanzador reevalúa la
+     * demanda al concederlo. Función-propiedad para mantener el
+     * recuento de funciones bajo el umbral de detekt. */
+    private val applyMicDemand: () -> Unit = {
+        if (micController.hasPermission()) {
+            micController.start()
+        } else {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -553,6 +598,7 @@ class PairingActivity : AppCompatActivity() {
         findViewById<SurfaceView>(R.id.video_view).holder.removeCallback(mediaSurfaceCallback)
         viewModel.attachMediaSurface(null)
         cameraController.release()
+        micController.stop()
         SessionForegroundService.stop(this)
         super.onDestroy()
     }

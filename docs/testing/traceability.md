@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0101 |
+| TEST | TEST-0105 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -112,6 +112,10 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-098 | Draft | CR-038: Test Rust (servidor) — las transiciones de `camera_request` del juego Cemu seleccionado se encolan/hacen coalescing hacia la sesión Android y se re-emiten al reconectar la sesión/reenviar al re-seleccionar |
 | REQ-006 | SPEC-006 | DES-002 | TEST-099 | Draft | CR-038: Test JVM `CameraRequestCodecTest` (Android) — decodificación estricta de `camera_request` (on/off); el gating combinado (juego «cemu» && demanda vigente) vive en `PairingActivity.observeSelectedGame` |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0100 | Draft | CR-038: Test C++ `TwinpadClient_camera_request_test` (Cemu, binario debug) — las dos líneas canónicas exactas `camera_request` y que publicar sin conexión no aborta; compilado en build release (UnitTests corre bajo `CEMU_DEBUG_ASSERT`), ejecución de las aserciones pendiente del build debug |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0101 | Draft | CR-035: Test Rust `mic_chunk_and_request_round_trip_and_reject_bad_shapes` (core) — ida y vuelta de `mic_chunk`/`mic_request`, coherencia samples/bytes (2 por muestra s16), vacío, mínimo 32, máximo 32000 y base64 inválido |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0102 | Draft | CR-035: Test Rust (servidor) — las transiciones de `mic_request` del juego Cemu seleccionado se encolan/hacen coalescing hacia la sesión Android y `mic_chunk` de la sesión solo llega al Plugin Cemu seleccionado sin persistirse |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0103 | Draft | CR-035: Test C++ `TwinpadClient_mic_test` (Cemu, binario debug) — las dos líneas canónicas exactas `mic_request`, validación estricta de `mic_chunk` (coherencia muestras/bytes, base64 inválido, fuera de 32..32000), cola FIFO s16 host-order con drop-old a 1 s y consumo solo con demanda vigente y cola fresca; registrado y compilado en build debug, ejecución de aserciones pendiente |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0104 | Draft | CR-035: Test JVM `MicChunkCodecTest` (Android) — encoding canónico de `mic_chunk` (480 muestras = 15 ms @ 32 kHz, s16le), slices con offset, rechazo fuera del rango 32–32000 o fragmento que no cabe y decodificación estricta de `mic_request` (4 casos, ejecutados); la captura AudioRecord con gating vive en `PairingActivity.observeMicDemand` (integración física pendiente) |
 
 ## NFR verification
 
@@ -151,6 +155,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-035 | SPEC-006 1.20.0 y SPEC-005 1.4.0: micrófono del teléfono BAJO DEMANDA — `mic_request` Cemu→Android en transiciones MICOpen/MICClose del HLE `mic` (DRC0) y `mic_chunk` Android→Cemu (PCM s16le mono 32 kHz, cola drop-old de 1 s); el teléfono solo graba con juego «cemu» Y demanda vigente; TEST-0101/0102/0103/0104 | 2026-10-29 | Applied (owner-requested) |
 | CR-038 | SPEC-006 1.19.0: mensaje `camera_request` Cemu→Servidor→Android; Android solo enciende la cámara frontal con juego «cemu» Y demanda vigente del juego (HLE `camera`); TEST-097/098/099/0100 | 2026-10-29 | Applied (owner-requested) |
 | CR-037 | SPEC-004 v1.10.0 y DES-002/004: marco AndroidDSU de referencia landscape exclusivo de la app (accel `(y,-z,x)`, gyro `(-y,-z,x)`); wire y ruta Cemu sin cambios; TEST-083/085 actualizados | 2026-10-29 | Applied (owner-requested) |
 | CR-034 | SPEC-006 1.18.0: mensaje `camera_frame` Android→Servidor→Cemu (H.264 320x240, 30 fps, cámara frontal); Cemu decodifica y rellena la superficie CAM en NV12; TEST-093/094/095/096 | 2026-10-28 | Approved (owner-decided) |

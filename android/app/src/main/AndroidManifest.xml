@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- CR-033: vibración del teléfono con los patrones de Cemu. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- CR-035: micrófono solo bajo demanda (mic_request desde el juego). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
 
     <application

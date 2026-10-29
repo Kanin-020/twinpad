@@ -17,6 +17,7 @@ import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
 import com.twinpad.android.app.wire.CameraRequestCodec
 import com.twinpad.android.app.wire.GameListCodec
+import com.twinpad.android.app.wire.MicRequestCodec
 import com.twinpad.android.app.wire.RumbleCodec
 import com.twinpad.android.app.wire.RumbleMessage
 import com.twinpad.android.app.wire.StreamCodec
@@ -110,6 +111,12 @@ class PairingViewModel(
     private val _cameraRequested = MutableStateFlow<Boolean>(false)
     val cameraRequested: StateFlow<Boolean> = _cameraRequested
 
+    /** CR-035: demanda vigente del micrófono emitida por Cemu
+     * (`mic_request`); gobernada por MICOpen/MICClose del juego en el HLE
+     * `mic`. El teléfono solo graba con demanda activa (bajo demanda). */
+    private val _micRequested = MutableStateFlow<Boolean>(false)
+    val micRequested: StateFlow<Boolean> = _micRequested
+
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
     val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
@@ -169,6 +176,7 @@ class PairingViewModel(
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
             "camera_request" -> CameraRequestCodec.decode(line)?.let { _cameraRequested.value = it.on }
+            "mic_request" -> MicRequestCodec.decode(line)?.let { _micRequested.value = it.on }
             else -> Unit
         }
     }
@@ -279,8 +287,10 @@ class PairingViewModel(
         streamMachine.reset()
         _streamState.value = com.twinpad.android.app.stream.StreamUiState()
         resetAudioSession()
-        // CR-038: sin sesión no hay demanda vigente que gobierne la cámara.
+        // CR-038/035: sin sesión no hay demanda vigente que gobierne la
+        // cámara ni el micrófono del teléfono.
         _cameraRequested.value = false
+        _micRequested.value = false
     }
 
     private fun resetAudioSession() {
@@ -292,8 +302,9 @@ class PairingViewModel(
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
     fun onEvent(event: PairingEvent) = feed(event)
 
-    /** CR-034: una línea `camera_frame` hacia el Servidor (Cemu la recibe). */
-    fun sendCameraFrame(line: String) = network.send(line)
+    /** Líneas de sesión media enviadas por el teléfono hacia el Servidor
+     * (CR-034: `camera_frame`; CR-035: `mic_chunk` solo con demanda vigente). */
+    fun sendSessionLine(line: String) = network.send(line)
 
     /** Ajuste de calidad del video en caliente (menú de la app): pide al
      * server nueva resolución/bitrate para las próximas sesiones (CR-029:

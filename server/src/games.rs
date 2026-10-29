@@ -62,6 +62,10 @@ struct GameEntry {
     /// Último estado de demanda de camera_request vigente (CR-038) para
     /// reenviarlo a una sesión que seleccione el Plugin.
     camera_request_last: Option<bool>,
+    /// Estados de demanda de micrófono pendientes (CR-035), acotados como el audio.
+    mic_request_queue: std::collections::VecDeque<bool>,
+    /// Último estado de demanda de mic_request vigente (CR-035).
+    mic_request_last: Option<bool>,
 }
 
 /// Registro en memoria de juegos compatibles vivos (§6: D0/D1 por juego).
@@ -97,6 +101,8 @@ impl GameRegistry {
                 rumble_queue: std::collections::VecDeque::new(),
                 camera_request_queue: std::collections::VecDeque::new(),
                 camera_request_last: None,
+                mic_request_queue: std::collections::VecDeque::new(),
+                mic_request_last: None,
             },
         );
         Ok(())
@@ -256,6 +262,46 @@ impl GameRegistry {
             .pop_front()
     }
 
+    /// Registra un cambio de demanda de micrófono (CR-035): actualiza el
+    /// último estado vigente y encola la entrega a la sesión.
+    pub fn push_mic_request(&self, game_id: &str, on: bool) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        while entry.mic_request_queue.len() >= 8 {
+            entry.mic_request_queue.pop_front();
+        }
+        entry.mic_request_last = Some(on);
+        entry.mic_request_queue.push_back(on);
+        true
+    }
+
+    /// Reencola el último estado vigente de micrófono (CR-035) para una
+    /// sesión que acaba de seleccionar el juego.
+    pub fn requeue_mic_request(&self, game_id: &str) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        let Some(on) = entry.mic_request_last else {
+            return false;
+        };
+        while entry.mic_request_queue.len() >= 8 {
+            entry.mic_request_queue.pop_front();
+        }
+        entry.mic_request_queue.push_back(on);
+        true
+    }
+
+    /// Siguiente estado de mic_request pendiente (CR-035).
+    pub fn pop_mic_request(&self, game_id: &str) -> Option<bool> {
+        lock_or_reset(&self.games)
+            .get_mut(game_id)?
+            .mic_request_queue
+            .pop_front()
+    }
+
     /// Retira una fuente de audio al recibir stop o perder su conexión.
     pub fn stop_audio(&self, game_id: &str) -> Option<(u32, u8)> {
         let mut games = lock_or_reset(&self.games);
@@ -346,6 +392,13 @@ impl GameRegistry {
             return false;
         };
         Self::write_input(entry, line)
+    }
+
+    /// Reenvía a Cemu un chunk de PCM del micrófono del teléfono (CR-035).
+    /// No se persiste: si Cemu no está vivo o no está seleccionado, el
+    /// chunk se descarta (rachas en tiempo real).
+    pub fn send_cemu_mic_chunk(&self, line: &str) -> bool {
+        self.send_cemu_camera_frame(line)
     }
 
     /// Entrega el snapshot inicial a un Plugin recién seleccionado.
@@ -580,6 +633,11 @@ fn handle_game_connection(
             Ok(GameMsg::CameraRequest { on }) => {
                 registry.push_camera_request(&game.game_id, on);
             }
+            // CR-035: demanda vigente del micrófono; el drenaje por sesión
+            // la entrega al teléfono.
+            Ok(GameMsg::MicRequest { on }) => {
+                registry.push_mic_request(&game.game_id, on);
+            }
             Ok(_) => {} // otro mensaje sobre la conexión viva: ignorado en v1
             Err(_) => println!("Línea inválida de '{}' descartada (E4).", game.game_id),
         }
@@ -813,6 +871,52 @@ mod tests {
         assert_eq!(registry.pop_camera_request("cemu"), Some(true));
         assert!(registry.unregister("cemu"));
         assert_eq!(registry.pop_camera_request("cemu"), None);
+    }
+
+    // TEST-0102 — verifies SPEC-006 (CR-035): mic_request transitions are
+    // queued in order with the same last-state requeue, and a live plugin
+    // receives mic_chunk lines only while it stays selected.
+    #[test]
+    fn mic_request_queues_and_mic_chunk_reaches_selected_cemu() {
+        let registry = GameRegistry::new();
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(!registry.push_mic_request("otro-juego", true));
+
+        registry.push_mic_request("cemu", true);
+        registry.push_mic_request("cemu", false);
+        assert_eq!(registry.pop_mic_request("cemu"), Some(true));
+        assert_eq!(registry.pop_mic_request("cemu"), Some(false));
+        assert_eq!(registry.pop_mic_request("cemu"), None);
+        assert!(registry.requeue_mic_request("cemu"));
+        assert_eq!(registry.pop_mic_request("cemu"), Some(false));
+
+        // El chunk vivo llega al plugin seleccionado por la conexión real.
+        assert!(
+            registry.send_cemu_mic_chunk(r#"{"type":"mic_chunk","samples":32,"data":"AAECAwQ"}"#)
+        );
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(&client), &mut line).unwrap();
+        assert_eq!(
+            line.trim(),
+            r#"{"type":"mic_chunk","samples":32,"data":"AAECAwQ"}"#
+        );
+
+        // Sin plugin vivo se descarta sin persistencia.
+        assert!(registry.unregister("cemu"));
+        assert!(
+            !registry.send_cemu_mic_chunk(r#"{"type":"mic_chunk","samples":32,"data":"AAECAwQ"}"#)
+        );
+        assert_eq!(registry.pop_mic_request("cemu"), None);
     }
 
     // TEST-049 — verifies SPEC-006/CR-008: a live Cemu adapter is discoverable before its first DRC frame.
