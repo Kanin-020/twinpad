@@ -11,7 +11,7 @@
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
 | CR-034 | Cámara del teléfono hacia Cemu (alcance por definir) | SPEC-005, SPEC-006, DES-004 | Open | Twinpad team (agente) | [CR-034-phone-camera-to-cemu.md](CR-034-phone-camera-to-cemu.md) |
-| CR-039 | Encoder H.264 por hardware: rebuild de ffmpeg con VAAPI (decidido por el owner, pendiente de aplicar) | SPEC-003, DES-004 | Decided (2026-10-29) | Twinpad team (agente) | [CR-039-cemu-hardware-encoder-vaapi.md](CR-039-cemu-hardware-encoder-vaapi.md) |
+| CR-039 | Encoder H.264 por hardware: driver VA-API freeworld (fallback `LIBVA_DRIVERS_PATH` en Cemu + copia local; pendiente verificación física) | SPEC-003, DES-004 | Applied (2026-10-29) | Twinpad team (agente) | [CR-039-cemu-hardware-encoder-vaapi.md](CR-039-cemu-hardware-encoder-vaapi.md) |
 
 > CR-009 y CR-010 fueron aprobados por el Product owner; CR-009 se aplicó en su iteración. CR-010 está implementado en código y contratos; permanece abierto únicamente el gate físico Cemu/Android de ±150 ms A/V y hasta 60 fps.
 
