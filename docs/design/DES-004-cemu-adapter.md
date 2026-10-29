@@ -1,10 +1,10 @@
-# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021)
+# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-038)
 
 | | |
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.5.0 |
+| Version | 1.6.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
@@ -80,6 +80,9 @@ sequenceDiagram
   C->>C: poll_input() consulta el snapshot más reciente
   C->>S: DRC GameFrame hasta 60 fps + PCM DRC
   S->>A: video/audio adaptados solo de Cemu
+  C->>S: camera_request(on) en cada transición HLE de cámara del juego (CR-038)
+  S->>A: camera_request encolado/coalesced y re-emitido a la sesión vigente
+  A->>A: gating frontal: stream camera_frame solo con «cemu» seleccionado Y demanda vigente
   S->>V: aplica snapshot al VPAD emulado
   V->>V: mapea motion AndroidDSU→DSU y alimenta WiiUMotionHandler/Mahony
   V-->>H: MotionSample fusionado actualiza VPADStatus
@@ -207,6 +210,7 @@ Audio/input/selección mantienen los contratos existentes. El video usa el frami
 | 1.1.0 | 2026-10-22 | Product owner + Twinpad team (CR-017) | Sustituye el overlay TV por ventana wxWidgets externa y redimensionable |
 | 1.4.0 | 2026-10-26 | Product owner + Twinpad team (CR-022) | Mapeo de ejes AndroidDSU solo en Android; Cemu convierte unidades y niega accel Y/Z en la ruta Twinpad como en DSU |
 | 1.5.0 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU de referencia pasa a landscape exclusivo; Cemu sin cambios de mapeo |
+| 1.6.0 | 2026-10-29 | Product owner + Twinpad team (CR-038) | El HLE `camera` notifica transiciones OpenCam/CloseCam como `camera_request` Cemu→Servidor→Android; Android activa la cámara frontal solo con cambio de selección + demanda vigente |
 | 1.1.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Alinea los colores yaw/pitch/roll de Cemu con Android y documenta la orientación absoluta reportada |
 | 1.1.2 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Corrige el signo de pitch en la conversión de Cemu al VPAD y afirma el signo en TEST-077 |
 | 1.1.3 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Elimina el desfase gráfico de 90° en roll y añade aserción de roll cero hacia la derecha en TEST-079 |

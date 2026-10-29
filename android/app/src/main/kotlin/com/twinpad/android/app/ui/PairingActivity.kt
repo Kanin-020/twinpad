@@ -51,6 +51,11 @@ private const val HUD_TICK_MS: Long = 1_000L
 /** Conversión kbps → Mbps. */
 private const val KBPS_PER_MBPS: Int = 1_000
 
+/** CR-038: valor inicial de [PairingActivity.loadedProfileId] — ningún juego
+ * cargado aún, así la primera emisión del estado combinado (antes `null`)
+ * dispara la carga del perfil vacío como en CR-034. */
+private const val PROFILE_UNLOADED = "\u0000unloaded"
+
 /**
  * Pantalla de Pairing (SPEC-002 §6) sobre Views clásicas: layouts XML +
  * drawables XML editables en Android Studio (pedido del owner: mantener la
@@ -70,6 +75,10 @@ class PairingActivity : AppCompatActivity() {
     private var nintendoFaceDistribution = false
     private var gyroMonitorVisible = false
     private var sessionConfigSent = false
+
+    /** CR-038: el estado combinado emite en cada cambio de demanda; el perfil
+     * del juego solo se recarga cuando el juego seleccionado cambia. */
+    private var loadedProfileId: String? = PROFILE_UNLOADED
     private var mediaSurfaceHolder: SurfaceHolder? = null
     private val mediaSurfaceCallback =
         object : SurfaceHolder.Callback {
@@ -243,19 +252,29 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** Carga el perfil del juego y, solo para Cemu, activa la cámara frontal (CR-034). */
+    /** Carga el perfil del juego y, solo para Cemu con demanda vigente, activa
+     * la cámara frontal (CR-034 + CR-038): el juego debe haber abierto la
+     * cámara del GamePad en Cemu (`camera_request on=true`). Los cambios de
+     * cada flow reinician el envío con el estado combinado más reciente. */
     private fun observeSelectedGame() {
         lifecycleScope.launch {
-            viewModel.selectedGameId.collectLatest { gameId ->
-                surfaceRef?.loadProfile(gameId.orEmpty())
-                if (gameId == "cemu") {
-                    cameraController.startFrontStream(this@PairingActivity) { line ->
-                        viewModel.sendCameraFrame(line)
+            kotlinx.coroutines.flow.combine(
+                viewModel.selectedGameId,
+                viewModel.cameraRequested,
+            ) { gameId, cameraRequested -> gameId to cameraRequested }
+                .collectLatest { (gameId, cameraRequested) ->
+                    if (gameId != loadedProfileId) {
+                        loadedProfileId = gameId
+                        surfaceRef?.loadProfile(gameId.orEmpty())
                     }
-                } else {
-                    cameraController.stopFrontStream()
+                    if (gameId == "cemu" && cameraRequested) {
+                        cameraController.startFrontStream(this@PairingActivity) { line ->
+                            viewModel.sendCameraFrame(line)
+                        }
+                    } else {
+                        cameraController.stopFrontStream()
+                    }
                 }
-            }
         }
     }
 

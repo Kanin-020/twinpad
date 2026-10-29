@@ -15,6 +15,7 @@ import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
+import com.twinpad.android.app.wire.CameraRequestCodec
 import com.twinpad.android.app.wire.GameListCodec
 import com.twinpad.android.app.wire.RumbleCodec
 import com.twinpad.android.app.wire.RumbleMessage
@@ -103,6 +104,12 @@ class PairingViewModel(
     private val _selectedGameId = MutableStateFlow<String?>(null)
     val selectedGameId: StateFlow<String?> = _selectedGameId
 
+    /** CR-038: demanda vigente del video de cámara emitida por Cemu
+     * (`camera_request`); gobernada por el uso real del juego (HLE
+     * `camera`). Se aplica solo con el juego "cemu" seleccionado. */
+    private val _cameraRequested = MutableStateFlow<Boolean>(false)
+    val cameraRequested: StateFlow<Boolean> = _cameraRequested
+
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
     val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
@@ -161,6 +168,7 @@ class PairingViewModel(
             "stream_start", "stream_stop" -> handleStreamControlLine(line)
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
+            "camera_request" -> CameraRequestCodec.decode(line)?.let { _cameraRequested.value = it.on }
             else -> Unit
         }
     }
@@ -271,6 +279,8 @@ class PairingViewModel(
         streamMachine.reset()
         _streamState.value = com.twinpad.android.app.stream.StreamUiState()
         resetAudioSession()
+        // CR-038: sin sesión no hay demanda vigente que gobierne la cámara.
+        _cameraRequested.value = false
     }
 
     private fun resetAudioSession() {

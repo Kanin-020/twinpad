@@ -57,6 +57,11 @@ struct GameEntry {
     audio_connection_active: bool,
     /// Patrones de vibración pendientes (CR-033), acotados como el audio.
     rumble_queue: std::collections::VecDeque<Vec<u8>>,
+    /// Estados de demanda de cámara pendientes (CR-038), acotados como el audio.
+    camera_request_queue: std::collections::VecDeque<bool>,
+    /// Último estado de demanda de camera_request vigente (CR-038) para
+    /// reenviarlo a una sesión que seleccione el Plugin.
+    camera_request_last: Option<bool>,
 }
 
 /// Registro en memoria de juegos compatibles vivos (§6: D0/D1 por juego).
@@ -90,6 +95,8 @@ impl GameRegistry {
                 audio_chunks: std::collections::VecDeque::new(),
                 audio_connection_active: false,
                 rumble_queue: std::collections::VecDeque::new(),
+                camera_request_queue: std::collections::VecDeque::new(),
+                camera_request_last: None,
             },
         );
         Ok(())
@@ -206,6 +213,46 @@ impl GameRegistry {
         lock_or_reset(&self.games)
             .get_mut(game_id)?
             .rumble_queue
+            .pop_front()
+    }
+
+    /// Registra un cambio de demanda de cámara (CR-038): actualiza el
+    /// último estado vigente y encola la entrega a la sesión.
+    pub fn push_camera_request(&self, game_id: &str, on: bool) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        while entry.camera_request_queue.len() >= 8 {
+            entry.camera_request_queue.pop_front();
+        }
+        entry.camera_request_last = Some(on);
+        entry.camera_request_queue.push_back(on);
+        true
+    }
+
+    /// Reencola el último estado vigente de cámara (CR-038) para una sesión
+    /// que acaba de seleccionar el juego; no altera `camera_request_last`.
+    pub fn requeue_camera_request(&self, game_id: &str) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        let Some(on) = entry.camera_request_last else {
+            return false;
+        };
+        while entry.camera_request_queue.len() >= 8 {
+            entry.camera_request_queue.pop_front();
+        }
+        entry.camera_request_queue.push_back(on);
+        true
+    }
+
+    /// Siguiente estado de camera_request pendiente (CR-038).
+    pub fn pop_camera_request(&self, game_id: &str) -> Option<bool> {
+        lock_or_reset(&self.games)
+            .get_mut(game_id)?
+            .camera_request_queue
             .pop_front()
     }
 
@@ -521,13 +568,17 @@ fn handle_game_connection(
             },
             Ok(GameMsg::Rumble { length, data }) => {
                 use base64::Engine as _;
-                if let Ok(pattern) =
-                    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&data)
+                if let Ok(pattern) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&data)
                 {
                     if pattern.len() == usize::from(length) {
                         registry.push_rumble(&game.game_id, pattern);
                     }
                 }
+            }
+            // CR-038: demanda vigente de la cámara; el drenaje por sesión en
+            // `spawn_game_audio_forwarding` la entrega al teléfono.
+            Ok(GameMsg::CameraRequest { on }) => {
+                registry.push_camera_request(&game.game_id, on);
             }
             Ok(_) => {} // otro mensaje sobre la conexión viva: ignorado en v1
             Err(_) => println!("Línea inválida de '{}' descartada (E4).", game.game_id),
@@ -664,7 +715,8 @@ mod tests {
         use std::io::{BufRead, BufReader};
 
         let registry = GameRegistry::new();
-        let line = r#"{"type":"camera_frame","w":320,"h":240,"ts_capture_us":0,"idr":true,"data":"AAEC"}"#;
+        let line =
+            r#"{"type":"camera_frame","w":320,"h":240,"ts_capture_us":0,"idr":true,"data":"AAEC"}"#;
         assert!(!registry.send_cemu_camera_frame(line));
 
         let (server_side, client) = loopback_pair();
@@ -727,6 +779,40 @@ mod tests {
         );
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_video_config(1280, 720, 8_000));
+    }
+
+    // TEST-098 — verifies SPEC-006 (CR-038): camera_request transitions are
+    // queued in order, the last state survives for a re-selection, and an
+    // unknown game has nothing to deliver.
+    #[test]
+    fn camera_request_queues_transitions_and_keeps_last_state() {
+        let registry = GameRegistry::new();
+        let (server_side, _client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(!registry.push_camera_request("otro-juego", true));
+
+        registry.push_camera_request("cemu", true); // 0 → 1 instancias HLE
+        registry.push_camera_request("cemu", false); // de vuelta a 0
+        registry.push_camera_request("cemu", true);
+        assert_eq!(registry.pop_camera_request("cemu"), Some(true));
+        assert_eq!(registry.pop_camera_request("cemu"), Some(false));
+        assert_eq!(registry.pop_camera_request("cemu"), Some(true));
+        assert_eq!(registry.pop_camera_request("cemu"), None);
+
+        // El último estado vigente se reencola para una nueva sesión.
+        assert!(registry.requeue_camera_request("cemu"));
+        assert_eq!(registry.pop_camera_request("cemu"), Some(true));
+        assert!(registry.unregister("cemu"));
+        assert_eq!(registry.pop_camera_request("cemu"), None);
     }
 
     // TEST-049 — verifies SPEC-006/CR-008: a live Cemu adapter is discoverable before its first DRC frame.

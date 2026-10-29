@@ -7,7 +7,7 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.3.4 |
+| Version | 0.3.5 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
@@ -98,6 +98,7 @@ sequenceDiagram
 
 - Transaction boundaries: el estado de UI cambia solo en el hilo principal al aplicar `Effect`s.
 - Consistency: un intento activo a la vez (SPEC-002 R5); cancelar/fondo emiten `Disconnect`+`StopCamera`.
+- CR-038: la cámara frontal (CR-034) solo se enciende con el estado combinado de la sesión — juego «cemu» seleccionado **Y** demanda vigente del mensaje `camera_request` de Cemu. La demanda vive en el `PairingViewModel` (`cameraRequested`) y la Activity la aplica con `combine(selectedGameId, cameraRequested)`, de modo que ambos órdenes de llegada activan/paran el stream; cambiar de juego o cerrar la sesión apaga la cámara y cancela la demanda.
 
 ## 7. Concurrency
 
@@ -183,3 +184,4 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | 0.3.2 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Separa orientación local del wire y captura ambos sensores como snapshot inercial timestamped |
 | 0.3.3 | 2026-10-26 | Product owner + Twinpad team (CR-022) | El snapshot inercial se envía ya en el marco AndroidDSU: accel `(-x, -z, y)`, gyro `(x, -z, y)` |
 | 0.3.4 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU pasa a landscape exclusivo de la app: accel `(y, -z, x)`, gyro `(-y, -z, x)` |
+| 0.3.5 | 2026-10-29 | Product owner + Twinpad team (CR-038) | La cámara frontal se rige por demanda: `camera_request` de Cemu + juego «cemu» seleccionado canalizados como estado combinado del ViewModel; sin cambio wire de App→Servidor |

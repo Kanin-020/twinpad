@@ -669,6 +669,7 @@ fn spawn_game_audio_forwarding(
             session_id: None,
         };
         let mut current_game = None::<String>;
+        let mut last_seen_selection = None::<String>;
         let mut seq = 0u64;
         while session_running.load(std::sync::atomic::Ordering::Acquire) {
             let selected = sink
@@ -677,6 +678,20 @@ fn spawn_game_audio_forwarding(
                 .ok()
                 .and_then(|selected| selected.clone())
                 .filter(|game_id| games.has_audio_source(game_id));
+            // CR-038: al cambiar la selección (vigente sin el filtro de audio),
+            // re-entregar a la nueva sesión el estado de camera_request que
+            // el Plugin ya hubiera enviado (p. ej. reconexión del teléfono).
+            let selection_now = sink
+                .selected_game
+                .lock()
+                .ok()
+                .and_then(|selected| selected.clone());
+            if selection_now != last_seen_selection {
+                last_seen_selection = selection_now.clone();
+                if let Some(game_id) = selection_now.as_deref() {
+                    let _ = games.requeue_camera_request(game_id);
+                }
+            }
             if selected != current_game {
                 if current_game.is_some() {
                     let stop = twinpad_core::audio::AudioMsg::AudioStop {
@@ -701,6 +716,18 @@ fn spawn_game_audio_forwarding(
                             if !sink.send_line(&line) {
                                 return;
                             }
+                        }
+                    }
+                }
+            }
+            // CR-038: demanda de cámara del Plugin vivo seleccionado, sin el
+            // gate de fuente de audio: rige el stream de `camera_frame`.
+            if let Some(game_id) = selection_now.as_deref() {
+                if let Some(on) = games.pop_camera_request(game_id) {
+                    let msg = twinpad_core::game::GameMsg::CameraRequest { on };
+                    if let Ok(line) = msg.encode() {
+                        if !sink.send_line(&line) {
+                            return;
                         }
                     }
                 }

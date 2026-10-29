@@ -106,6 +106,15 @@ pub enum GameMsg {
         idr: bool,
         data: String,
     },
+    /// juego → server → Android (CR-038): demanda vigente del video de la
+    /// cámara del teléfono. `on` true cuando el juego abrió instancias de
+    /// cámara HLE y false al cerrarlas; el envío de `camera_frame` pasa a
+    /// estar gobernado por este mensaje.
+    #[serde(rename = "camera_request")]
+    CameraRequest {
+        /// true: abrir la cámara del teléfono; false: detenerla.
+        on: bool,
+    },
 }
 
 /// Geometría fija de la cámara del teléfono enviada a Cemu (CR-034).
@@ -162,6 +171,8 @@ impl GameMsg {
                 }
                 Ok(())
             }
+            // CR-038: el flag es un booleano wire estricto; nada más que validar.
+            GameMsg::CameraRequest { .. } => Ok(()),
             GameMsg::GameFrame {
                 w,
                 h,
@@ -391,6 +402,31 @@ mod tests {
         // Base64 inválido.
         assert_eq!(
             GameMsg::decode(r#"{"type":"rumble","length":1,"data":"!!"}"#),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-097 — verifies SPEC-006 (CR-038): `camera_request` round-trip with a strict boolean flag.
+    #[test]
+    fn camera_request_round_trips_and_rejects_bad_flag() {
+        let msg = GameMsg::CameraRequest { on: true };
+        assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
+        let off = GameMsg::CameraRequest { on: false };
+        assert_eq!(GameMsg::decode(&off.encode().unwrap()).unwrap(), off);
+
+        // Flag faltante.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"camera_request"}"#),
+            Err(PairError::MalformedMessage)
+        );
+        // Flag no booleano.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"camera_request","on":"yes"}"#),
+            Err(PairError::MalformedMessage)
+        );
+        // Campo desconocido (contrato NDJSON estricto).
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"camera_request","on":true,"x":1}"#),
             Err(PairError::MalformedMessage)
         );
     }
