@@ -23,17 +23,19 @@ class CameraStreamEncoder(
 ) {
     private var codec: MediaCodec? = null
     private var worker: Thread? = null
+
     @Volatile private var running = false
     private var config: ByteArray = ByteArray(0)
 
     /** Crea el codec y devuelve la superficie de entrada para CameraX. */
     fun start(): Surface {
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, CAMERA_WIDTH, CAMERA_HEIGHT).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, CAMERA_BITRATE_BPS)
-            setInteger(MediaFormat.KEY_FRAME_RATE, CAMERA_FPS)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, CAMERA_I_FRAME_INTERVAL_S)
-        }
+        val format =
+            MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, CAMERA_WIDTH, CAMERA_HEIGHT).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                setInteger(MediaFormat.KEY_BIT_RATE, CAMERA_BITRATE_BPS)
+                setInteger(MediaFormat.KEY_FRAME_RATE, CAMERA_FPS)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, CAMERA_I_FRAME_INTERVAL_S)
+            }
         val created = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         created.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         val surface = created.createInputSurface()
@@ -67,7 +69,11 @@ class CameraStreamEncoder(
         }
     }
 
-    private fun emitOutput(encoder: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+    private fun emitOutput(
+        encoder: MediaCodec,
+        index: Int,
+        info: MediaCodec.BufferInfo,
+    ) {
         val buffer = encoder.getOutputBuffer(index)
         val bytes = ByteArray(info.size)
         buffer?.position(info.offset)

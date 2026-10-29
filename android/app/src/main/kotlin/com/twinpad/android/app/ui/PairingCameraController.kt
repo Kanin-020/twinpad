@@ -24,9 +24,8 @@ import java.util.concurrent.Executors
  * Adaptador de cámara (DES-002 §4): ejecuta los efectos `StartCamera` /
  * `StopCamera` con CameraX y decodifica QRs con ML Kit (SPEC-002 §6 U2:
  * cada payload crudo llega al evento `QrScanned` para su validación §4.1).
- */class PairingCameraController(
-
-
+ */
+class PairingCameraController(
     private val context: Context,
     private val onQrScanned: (String) -> Unit,
 ) {

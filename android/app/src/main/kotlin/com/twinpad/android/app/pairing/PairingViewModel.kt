@@ -282,13 +282,13 @@ class PairingViewModel(
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
     fun onEvent(event: PairingEvent) = feed(event)
 
+    /** CR-034: una línea `camera_frame` hacia el Servidor (Cemu la recibe). */
+    fun sendCameraFrame(line: String) = network.send(line)
+
     /** Ajuste de calidad del video en caliente (menú de la app): pide al
      * server nueva resolución/bitrate para las próximas sesiones (CR-029:
      * sin fps — el server emite según el ritmo del juego; v1: el server
      * lo aplica al re-anunciar; la sesión vigente continúa). */
-    /** CR-034: una línea `camera_frame` hacia el Servidor (Cemu la recibe). */
-    fun sendCameraFrame(line: String) = network.send(line)
-
     fun onStreamSettingsChanged(
         settings: com.twinpad.android.app.ui.AndroidSettings =
             AndroidSettingsStore(getApplication()).load(),

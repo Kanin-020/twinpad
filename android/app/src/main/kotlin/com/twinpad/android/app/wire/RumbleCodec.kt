@@ -13,8 +13,7 @@ const val RUMBLE_BIT_MS: Long = 16L
 
 /** Mensaje `rumble` (CR-033). `pattern` vacío = parar. */
 data class RumbleMessage(val pattern: ByteArray) {
-    override fun equals(other: Any?): Boolean =
-        other is RumbleMessage && other.pattern.contentEquals(pattern)
+    override fun equals(other: Any?): Boolean = other is RumbleMessage && other.pattern.contentEquals(pattern)
 
     override fun hashCode(): Int = pattern.contentHashCode()
 }
@@ -43,13 +42,15 @@ object RumbleCodec {
         return toMessage(length, bytes)
     }
 
-    private fun toMessage(length: Int?, bytes: ByteArray?): RumbleMessage? {
+    private fun toMessage(
+        length: Int?,
+        bytes: ByteArray?,
+    ): RumbleMessage? {
         if (length == null || bytes == null) return null
         return if (length in 0..RUMBLE_MAX_BYTES && bytes.size == length) RumbleMessage(bytes) else null
     }
 
-    private fun decodeBase64(data: String): ByteArray? =
-        runCatching { Base64.getUrlDecoder().decode(data) }.getOrNull()
+    private fun decodeBase64(data: String): ByteArray? = runCatching { Base64.getUrlDecoder().decode(data) }.getOrNull()
 
     /**
      * Replica el bitset de `VPADController::push_rumble`: por cada byte toma los

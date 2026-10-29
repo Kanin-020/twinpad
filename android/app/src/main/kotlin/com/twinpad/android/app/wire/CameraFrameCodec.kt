@@ -11,7 +11,11 @@ const val CAMERA_HEIGHT: Int = 240
  * access unit H.264 de la cámara frontal; `data` es base64url sin relleno.
  */
 object CameraFrameCodec {
-    fun encode(tsCaptureUs: Long, idr: Boolean, accessUnit: ByteArray): String {
+    fun encode(
+        tsCaptureUs: Long,
+        idr: Boolean,
+        accessUnit: ByteArray,
+    ): String {
         require(accessUnit.isNotEmpty()) { "camera_frame sin datos" }
         val data = Base64.getUrlEncoder().withoutPadding().encodeToString(accessUnit)
         return "{\"type\":\"camera_frame\",\"w\":$CAMERA_WIDTH,\"h\":$CAMERA_HEIGHT," +
