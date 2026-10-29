@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-037 |
+| CR | CR-038 |
 
 ## Open / In review
 
@@ -37,6 +37,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-037 | Marco AndroidDSU landscape exclusivo: accel `(y,-z,x)`, gyro `(-y,-z,x)` (aplicado en SPEC-004 1.10.0 y código Android) | SPEC-004, DES-002, DES-004 | 2026-10-29 | [CR-037-androiddsu-landscape-reference-frame.md](CR-037-androiddsu-landscape-reference-frame.md) |
 | CR-033 | Vibración del VPAD de Cemu hacia el teléfono (aplicado en SPEC-006 1.17.0, servidor, Cemu y Android) | SPEC-006, SPEC-002, DES-004 | 2026-10-28 | [CR-033-cemu-vpad-rumble-to-phone.md](CR-033-cemu-vpad-rumble-to-phone.md) |
 | CR-032 | Switch «Distribución Nintendo» en el drawer: botones de cara táctiles y mando físico (aplicado en SPEC-002/SPEC-008 y código Android) | SPEC-002, SPEC-008 | 2026-10-28 | [CR-032-nintendo-button-layout.md](CR-032-nintendo-button-layout.md) |
 | CR-031 | Ajustes por defecto: 1080p, escalado contener, bitrate máximo, HUD fps y botones visibles (aplicado en SPEC-002 y código Android) | SPEC-002 | 2026-10-28 | [CR-031-default-stream-settings.md](CR-031-default-stream-settings.md) |

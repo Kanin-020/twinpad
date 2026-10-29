@@ -18,7 +18,7 @@ class ProfileGyroControllerTest {
         controller.updateAcceleration(floatArrayOf(1f, 8f, -1f), 41_000_000L)
 
         assertEquals(
-            MotionInput(41_000L, listOf(-1f, 1f, 8f), listOf(0.1f, -0.3f, -0.2f)),
+            MotionInput(41_000L, listOf(8f, 1f, 1f), listOf(0.2f, -0.3f, 0.1f)),
             samples.last(),
         )
     }
@@ -27,8 +27,8 @@ class ProfileGyroControllerTest {
     fun sensor_vectors_use_reference_frame() {
         val nativeVector = floatArrayOf(1f, 2f, 3f)
 
-        assertEquals(listOf(-1f, -3f, 2f), remapAccelerationVector(nativeVector).toList())
-        assertEquals(listOf(1f, -3f, 2f), remapGyroscopeVector(nativeVector).toList())
+        assertEquals(listOf(2f, -3f, 1f), remapAccelerationVector(nativeVector).toList())
+        assertEquals(listOf(-2f, -3f, 1f), remapGyroscopeVector(nativeVector).toList())
     }
 
     @Test
