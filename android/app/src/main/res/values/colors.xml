@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colores canónicos de la app; CR-044 añade el fondo del overlay del
+     teclado del juego (90 % negro). -->
+<resources>
+    <color name="keyboard_overlay_background">#E6121212</color>
+</resources>

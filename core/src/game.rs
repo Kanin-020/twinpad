@@ -135,11 +135,59 @@ pub enum GameMsg {
         /// true: abrir el micrófono del teléfono; false: detenerlo.
         on: bool,
     },
+    /// juego → server → Android (CR-044): demanda vigente del teclado
+    /// de la pantalla (swkbd). `on` true cuando el teclado HLE apareció
+    /// y false al desaparecer; `text` es el texto vigente en base64url
+    /// UTF-8 (solo con `on` true) y `max_length` el techo de caracteres
+    /// que acepta el juego (solo con `on` true, 1–4096).
+    #[serde(rename = "keyboard_request")]
+    KeyboardRequest {
+        /// true: abrir el teclado del teléfono; false: desaparecer.
+        on: bool,
+        /// Texto vigente del form en base64url UTF-8 (vacío con `on` false).
+        /// `None`/ausente equivale a texto vacío (campo admitido solo con `on` true).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        text: Option<String>,
+        /// Techo de caracteres que acepta el juego (1–4096; solo con `on` true).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        max_length: Option<u16>,
+    },
+    /// Android → server → Cemu (CR-044): texto del teclado del teléfono.
+    /// `action` es la transición pedida y `text` el texto completo del
+    /// form en base64url UTF-8 (vacío permitido con `update` para borrar
+    /// todo; `confirm`/`cancel` lo exigen exactamente vacío).
+    #[serde(rename = "keyboard_input")]
+    KeyboardInput {
+        /// Transición pedida al teclado del juego.
+        action: KeyboardAction,
+        /// Texto completo del form en base64url UTF-8 (puede quedar vacío
+        /// con `update` para dejar el form sin texto).
+        text: String,
+    },
+}
+
+/// Transición pedida por un `keyboard_input` (CR-044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyboardAction {
+    /// Sustituir el texto del form (equivale a escribir y/o borrar).
+    Update,
+    /// Aceptar el texto (botón OK del juego).
+    Confirm,
+    /// Descartar el teclado sin aceptar.
+    Cancel,
 }
 
 /// Geometría fija de la cámara del teléfono enviada a Cemu (CR-034).
 pub const CAMERA_WIDTH: u16 = 320;
 pub const CAMERA_HEIGHT: u16 = 240;
+
+/// Techo de caracteres del form del teclado HLE (CR-044): igual que la
+/// constante del buffer del swkbd de Cemu.
+pub const KEYBOARD_MAX_LENGTH: u16 = 4096;
+
+/// Máximo de bytes del texto UTF-8 en un `keyboard_input` (base64url).
+pub const KEYBOARD_TEXT_MAX_BYTES: usize = 2048;
 
 /// Máximo de bytes de un patrón de vibración (`VPADControlMotor`, CR-033).
 pub const RUMBLE_MAX_BYTES: u8 = 120;
@@ -199,6 +247,56 @@ impl GameMsg {
             }
             // CR-038: el flag es un booleano wire estricto; nada más que validar.
             GameMsg::CameraRequest { .. } | GameMsg::MicRequest { .. } => Ok(()),
+            // CR-044: teclado del juego bajo demanda.
+            GameMsg::KeyboardRequest {
+                on,
+                text,
+                max_length,
+            } => {
+                if *on {
+                    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .decode(text.as_deref().unwrap_or(""))
+                        .map_err(|_| PairError::MalformedMessage)?;
+                    if decoded.len() > KEYBOARD_TEXT_MAX_BYTES
+                        || decoded.len() >= usize::from(KEYBOARD_MAX_LENGTH)
+                    {
+                        return Err(PairError::MalformedMessage);
+                    }
+                    let max = max_length.unwrap_or(0);
+                    if max == 0 || max > KEYBOARD_MAX_LENGTH {
+                        return Err(PairError::MalformedMessage);
+                    }
+                } else {
+                    // con `on` false el wire no lleva techo de caracteres ni texto
+                    // vigente (solo la cadena vacía, que es el encode de “vacio”).
+                    if max_length.is_some() {
+                        return Err(PairError::MalformedMessage);
+                    }
+                    if !text.as_deref().unwrap_or("").is_empty() {
+                        return Err(PairError::MalformedMessage);
+                    }
+                }
+                Ok(())
+            }
+            GameMsg::KeyboardInput { action, text } => {
+                let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(text)
+                    .map_err(|_| PairError::MalformedMessage)?;
+                if decoded.len() > KEYBOARD_TEXT_MAX_BYTES {
+                    return Err(PairError::MalformedMessage);
+                }
+                match action {
+                    // `update` vacío es válido: borra todo el texto del form
+                    // (el TextWatcher de Android reporta el borrado completo).
+                    KeyboardAction::Update => {}
+                    KeyboardAction::Confirm | KeyboardAction::Cancel => {
+                        if !decoded.is_empty() {
+                            return Err(PairError::MalformedMessage);
+                        }
+                    }
+                }
+                Ok(())
+            }
             GameMsg::MicChunk { samples, data } => {
                 if *samples < MIC_MIN_SAMPLES || *samples > MIC_MAX_SAMPLES || data.is_empty() {
                     return Err(PairError::MalformedMessage);
@@ -546,6 +644,85 @@ mod tests {
         // Campo desconocido (contrato NDJSON estricto).
         assert_eq!(
             GameMsg::decode(r#"{"type":"camera_request","on":true,"x":1}"#),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-0106 — verifies SPEC-006 (CR-044): `keyboard_request`/`keyboard_input` round-trip and strict validation.
+    #[test]
+    fn keyboard_messages_round_trips_and_reject_bad_fields() {
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let text = engine.encode("hola");
+
+        let on = GameMsg::KeyboardRequest {
+            on: true,
+            text: Some(text.clone()),
+            max_length: Some(24),
+        };
+        assert_eq!(GameMsg::decode(&on.encode().unwrap()).unwrap(), on);
+        // El “off” no lleva techo de caracteres ni texto distinto de vacío.
+        let off = GameMsg::KeyboardRequest {
+            on: false,
+            text: None,
+            max_length: None,
+        };
+        assert_eq!(GameMsg::decode(&off.encode().unwrap()).unwrap(), off);
+
+        // max_length 0 o fuera de rango.
+        assert_eq!(
+            GameMsg::decode(
+                r#"{"type":"keyboard_request","on":true,"text":"aG9sYQ==","max_length":0}"#
+            ),
+            Err(PairError::MalformedMessage)
+        );
+        // Texto no base64url.
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"keyboard_request","on":true,"text":"!!","max_length":8}"#),
+            Err(PairError::MalformedMessage)
+        );
+        // `on` false con texto no vacío.
+        assert_eq!(
+            GameMsg::decode(
+                r#"{"type":"keyboard_request","on":false,"text":"aG9sYQ==","max_length":8}"#
+            ),
+            Err(PairError::MalformedMessage)
+        );
+
+        let upd = GameMsg::KeyboardInput {
+            action: KeyboardAction::Update,
+            text: text.clone(),
+        };
+        assert_eq!(GameMsg::decode(&upd.encode().unwrap()).unwrap(), upd);
+        // `update` con texto vacío: borra todo el texto del form (válido).
+        let upd_empty = GameMsg::KeyboardInput {
+            action: KeyboardAction::Update,
+            text: "".to_string(),
+        };
+        assert_eq!(
+            GameMsg::decode(&upd_empty.encode().unwrap()).unwrap(),
+            upd_empty
+        );
+        let confirm = GameMsg::KeyboardInput {
+            action: KeyboardAction::Confirm,
+            text: "".to_string(),
+        };
+        assert_eq!(
+            GameMsg::decode(&confirm.encode().unwrap()).unwrap(),
+            confirm
+        );
+
+        // `confirm` con texto.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"keyboard_input","action":"confirm","text":"{}"}}"#,
+                text
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Acción desconocida (serde enum).
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"keyboard_input","action":"paste","text":""}"#),
             Err(PairError::MalformedMessage)
         );
     }

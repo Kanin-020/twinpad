@@ -17,6 +17,8 @@ import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
 import com.twinpad.android.app.wire.CameraRequestCodec
 import com.twinpad.android.app.wire.GameListCodec
+import com.twinpad.android.app.wire.KeyboardRequestCodec
+import com.twinpad.android.app.wire.KeyboardRequestMessage
 import com.twinpad.android.app.wire.MicRequestCodec
 import com.twinpad.android.app.wire.RumbleCodec
 import com.twinpad.android.app.wire.RumbleMessage
@@ -117,6 +119,12 @@ class PairingViewModel(
     private val _micRequested = MutableStateFlow<Boolean>(false)
     val micRequested: StateFlow<Boolean> = _micRequested
 
+    /** CR-044: demanda vigente del teclado del juego emitida por Cemu
+     * (`keyboard_request`); el overlay IME del teléfono lo reemplaza al
+     * overlay de escritura de Cemu. `null`/`on=false`: teclado cerrado. */
+    private val _keyboardRequested = MutableStateFlow<KeyboardRequestMessage?>(null)
+    val keyboardRequested: StateFlow<KeyboardRequestMessage?> = _keyboardRequested
+
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
     val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
@@ -177,8 +185,15 @@ class PairingViewModel(
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
             "camera_request" -> CameraRequestCodec.decode(line)?.let { _cameraRequested.value = it.on }
             "mic_request" -> MicRequestCodec.decode(line)?.let { _micRequested.value = it.on }
+            "keyboard_request" -> handleKeyboardRequest(line)
             else -> Unit
         }
+    }
+
+    /** CR-044: rama de `keyboard_request` delegada (detekt: complejidad de
+     * `onStreamLine` y umbral de funciones); aplica la demanda vigente. */
+    private val handleKeyboardRequest: (String) -> Unit = { line ->
+        KeyboardRequestCodec.decode(line)?.let { _keyboardRequested.value = it }
     }
 
     private fun onSessionDisconnected() {
@@ -198,6 +213,7 @@ class PairingViewModel(
         _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
         streamStats.reset()
         rumblePlayer.play(RumbleMessage(ByteArray(0)))
+        _keyboardRequested.value = null
     }
 
     private fun handleAudioLine(line: String) {
@@ -288,9 +304,10 @@ class PairingViewModel(
         _streamState.value = com.twinpad.android.app.stream.StreamUiState()
         resetAudioSession()
         // CR-038/035: sin sesión no hay demanda vigente que gobierne la
-        // cámara ni el micrófono del teléfono.
+        // cámara ni el micrófono del teléfono. CR-044: idem el teclado.
         _cameraRequested.value = false
         _micRequested.value = false
+        _keyboardRequested.value = null
     }
 
     private fun resetAudioSession() {

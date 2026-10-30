@@ -4,12 +4,14 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-044 |
+| CR | CR-045 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-044 | Teclado del juego (swkbd): Android IME en Twinpad en lugar del overlay de Cemu (mensajería `keyboard_request`/`keyboard_input`; supresión del overlay con Twinpad conectado; TEST-0106–0110 verdes en host) | SPEC-006, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-044-cemu-keyboard-to-android-ime.md](CR-044-cemu-keyboard-to-android-ime.md) |
+| CR-039 | Encoder H.264 por hardware: driver VA-API freeworld (fallback `LIBVA_DRIVERS_PATH` en Cemu + copia local; verificado físicamente 2026-10-30: VAAPI activo, 30/30 fps) | SPEC-003, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-039-cemu-hardware-encoder-vaapi.md](CR-039-cemu-hardware-encoder-vaapi.md) |
 
 > CR-009 y CR-010 fueron aprobados por el Product owner; CR-009 se aplicó en su iteración. CR-010 está implementado en código y contratos; permanece abierto únicamente el gate físico Cemu/Android de ±150 ms A/V y hasta 60 fps.
 

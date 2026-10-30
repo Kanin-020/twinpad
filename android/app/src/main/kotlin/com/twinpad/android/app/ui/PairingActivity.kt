@@ -66,6 +66,7 @@ class PairingActivity : AppCompatActivity() {
     private lateinit var viewModel: PairingViewModel
     private lateinit var cameraController: PairingCameraController
     private lateinit var micController: PairingMicController
+    private lateinit var keyboardOverlay: KeyboardOverlayController
     private lateinit var drawer: SettingsDrawerController
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
@@ -254,6 +255,10 @@ class PairingActivity : AppCompatActivity() {
             PairingMicController(this) { line ->
                 viewModel.sendSessionLine(line)
             }
+        keyboardOverlay =
+            KeyboardOverlayController(this) { line ->
+                viewModel.sendSessionLine(line)
+            }
         drawer = SettingsDrawerController(this, drawerHost)
         wireViews()
         findViewById<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
@@ -263,6 +268,7 @@ class PairingActivity : AppCompatActivity() {
         drawer.applyPersistedSettings()
         observeCameraEffects()
         observeMicDemand()
+        observeKeyboardDemand()
         observeStates()
     }
 
@@ -317,6 +323,22 @@ class PairingActivity : AppCompatActivity() {
             }
         } else {
             cameraController.stopStream()
+        }
+    }
+
+    /** CR-044: controla el overlay del teclado solo con la demanda vigente
+     * del juego (`keyboard_request`) y «cemu» seleccionado: con Twinpad
+     * conectado el IME del teléfono reemplaza al teclado de Cemu.
+     * Función-propiedad (detekt: umbral de funciones de la clase). */
+    private val observeKeyboardDemand: () -> Unit = {
+        lifecycleScope.launch {
+            kotlinx.coroutines.flow.combine(
+                viewModel.selectedGameId,
+                viewModel.keyboardRequested,
+            ) { gameId, request -> gameId to request }
+                .collectLatest { (gameId, request) ->
+                    keyboardOverlay.apply(request, gameId == "cemu")
+                }
         }
     }
 

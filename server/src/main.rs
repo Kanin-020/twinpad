@@ -432,6 +432,19 @@ fn main() {
                                         }
                                         continue;
                                     }
+                                    // CR-044: texto del teclado del teléfono hacia Cemu.
+                                    if trimmed.starts_with("{\"type\":\"keyboard_input\"") {
+                                        if let Ok(msg) =
+                                            twinpad_core::game::GameMsg::decode(trimmed)
+                                        {
+                                            if let Ok(line) = msg.encode() {
+                                                games_ref.send_cemu_keyboard_input(&line);
+                                            }
+                                        } else {
+                                            println!("keyboard_input inválido descartado.");
+                                        }
+                                        continue;
+                                    }
                                     if let Ok(twinpad_core::game::GameMsg::GameSelect { game_id }) =
                                         twinpad_core::game::GameMsg::decode(trimmed)
                                     {
@@ -705,6 +718,8 @@ fn spawn_game_audio_forwarding(
                     let _ = games.requeue_camera_request(game_id);
                     // CR-035: idem para la demanda de micrófono.
                     let _ = games.requeue_mic_request(game_id);
+                    // CR-044: idem para la demanda del teclado del juego.
+                    let _ = games.requeue_keyboard_request(game_id);
                 }
             }
             if selected != current_game {
@@ -750,6 +765,28 @@ fn spawn_game_audio_forwarding(
                 // rige la captura del micrófono del teléfono.
                 if let Some(on) = games.pop_mic_request(game_id) {
                     let msg = twinpad_core::game::GameMsg::MicRequest { on };
+                    if let Ok(line) = msg.encode() {
+                        if !sink.send_line(&line) {
+                            return;
+                        }
+                    }
+                }
+                // CR-044: demanda del teclado del Plugin vivo seleccionado;
+                // rige el IME del teléfono.
+                if let Some(demand) = games.pop_keyboard_request(game_id) {
+                    let msg = twinpad_core::game::GameMsg::KeyboardRequest {
+                        on: demand.on,
+                        text: if demand.text.is_empty() && !demand.on {
+                            None
+                        } else {
+                            Some(demand.text)
+                        },
+                        max_length: if demand.on {
+                            Some(demand.max_length)
+                        } else {
+                            None
+                        },
+                    };
                     if let Ok(line) = msg.encode() {
                         if !sink.send_line(&line) {
                             return;

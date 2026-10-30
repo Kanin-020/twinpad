@@ -66,6 +66,30 @@ struct GameEntry {
     mic_request_queue: std::collections::VecDeque<bool>,
     /// Último estado de demanda de mic_request vigente (CR-035).
     mic_request_last: Option<bool>,
+    /// Estados de demanda del teclado del juego pendientes (CR-044).
+    keyboard_request_queue: std::collections::VecDeque<KeyboardDemand>,
+    /// Último estado de demanda de keyboard_request vigente (CR-044).
+    keyboard_request_last: Option<KeyboardDemand>,
+}
+
+/// Estado vigente del teclado del juego (CR-044): texto y techo de
+/// caracteres van con `on` true y vacíos con `on` false.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyboardDemand {
+    pub on: bool,
+    pub text: String,
+    pub max_length: u16,
+}
+
+impl KeyboardDemand {
+    #[cfg(test)]
+    fn off() -> Self {
+        Self {
+            on: false,
+            text: String::new(),
+            max_length: 0,
+        }
+    }
 }
 
 /// Registro en memoria de juegos compatibles vivos (§6: D0/D1 por juego).
@@ -103,6 +127,8 @@ impl GameRegistry {
                 camera_request_last: None,
                 mic_request_queue: std::collections::VecDeque::new(),
                 mic_request_last: None,
+                keyboard_request_queue: std::collections::VecDeque::new(),
+                keyboard_request_last: None,
             },
         );
         Ok(())
@@ -302,6 +328,49 @@ impl GameRegistry {
             .pop_front()
     }
 
+    /// Registra un cambio de demanda del teclado del juego (CR-044):
+    /// actualiza el último estado vigente y encola la entrega a la sesión.
+    pub fn push_keyboard_request(&self, game_id: &str, demand: KeyboardDemand) -> bool {
+        if demand.on && demand.max_length == 0 {
+            return false;
+        }
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        while entry.keyboard_request_queue.len() >= 8 {
+            entry.keyboard_request_queue.pop_front();
+        }
+        entry.keyboard_request_last = Some(demand.clone());
+        entry.keyboard_request_queue.push_back(demand);
+        true
+    }
+
+    /// Reencola el último estado vigente del teclado (CR-044) para una
+    /// sesión que acaba de seleccionar el juego.
+    pub fn requeue_keyboard_request(&self, game_id: &str) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut(game_id) else {
+            return false;
+        };
+        let Some(demand) = entry.keyboard_request_last.clone() else {
+            return false;
+        };
+        while entry.keyboard_request_queue.len() >= 8 {
+            entry.keyboard_request_queue.pop_front();
+        }
+        entry.keyboard_request_queue.push_back(demand);
+        true
+    }
+
+    /// Siguiente estado de keyboard_request pendiente (CR-044).
+    pub fn pop_keyboard_request(&self, game_id: &str) -> Option<KeyboardDemand> {
+        lock_or_reset(&self.games)
+            .get_mut(game_id)?
+            .keyboard_request_queue
+            .pop_front()
+    }
+
     /// Retira una fuente de audio al recibir stop o perder su conexión.
     pub fn stop_audio(&self, game_id: &str) -> Option<(u32, u8)> {
         let mut games = lock_or_reset(&self.games);
@@ -398,6 +467,12 @@ impl GameRegistry {
     /// No se persiste: si Cemu no está vivo o no está seleccionado, el
     /// chunk se descarta (rachas en tiempo real).
     pub fn send_cemu_mic_chunk(&self, line: &str) -> bool {
+        self.send_cemu_camera_frame(line)
+    }
+
+    /// Reenvía a Cemu el texto teleteado desde el teléfono (CR-044).
+    /// No se persiste: si Cemu no está vivo, el texto se descarta.
+    pub fn send_cemu_keyboard_input(&self, line: &str) -> bool {
         self.send_cemu_camera_frame(line)
     }
 
@@ -638,6 +713,23 @@ fn handle_game_connection(
             Ok(GameMsg::MicRequest { on }) => {
                 registry.push_mic_request(&game.game_id, on);
             }
+            // CR-044: demanda vigente del teclado del juego; el drenaje
+            // por sesión la entrega al teléfono. El texto ya llega en
+            // base64url validado por GameMsg::decode y viaja bit a bit.
+            Ok(GameMsg::KeyboardRequest {
+                on,
+                text,
+                max_length,
+            }) => {
+                registry.push_keyboard_request(
+                    &game.game_id,
+                    KeyboardDemand {
+                        on,
+                        text: text.unwrap_or_default(),
+                        max_length: max_length.unwrap_or(0),
+                    },
+                );
+            }
             Ok(_) => {} // otro mensaje sobre la conexión viva: ignorado en v1
             Err(_) => println!("Línea inválida de '{}' descartada (E4).", game.game_id),
         }
@@ -798,7 +890,117 @@ mod tests {
         assert!(!registry.send_cemu_camera_frame(line));
     }
 
-    // TEST-068 — verifies SPEC-003/CR-030: the runtime video_config forwarded to Cemu
+    // TEST-0107 — verifies SPEC-006 (CR-044): `keyboard_input` reaches only the live Cemu
+    #[test]
+    fn keyboard_input_routes_only_to_selected_cemu() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        let line = r#"{"type":"keyboard_input","action":"update","text":"aG9sYQ=="}"#;
+        assert!(!registry.send_cemu_keyboard_input(line));
+
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_keyboard_input(line));
+        let mut received = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut received)
+            .unwrap();
+        assert_eq!(received, format!("{line}\n"));
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_keyboard_input(line));
+    }
+
+    // TEST-0108 — verifies SPEC-006 (CR-044): `keyboard_request` queue keeps the last
+    // demand (with text/max_length) and requeues it for a newly selected session.
+    #[test]
+    fn keyboard_request_queue_requeues_last_demand_for_new_selection() {
+        let registry = GameRegistry::new();
+        // Sin juego vivo: push rechazado.
+        assert!(!registry.push_keyboard_request(
+            "cemu",
+            KeyboardDemand {
+                on: true,
+                text: "aG9sYQ==".into(),
+                max_length: 24,
+            },
+        ));
+
+        let (server_side, _client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+
+        // Transiciones encoladas en orden (misma semántica FIFO que cámara/micrófono).
+        assert!(registry.push_keyboard_request(
+            "cemu",
+            KeyboardDemand {
+                on: true,
+                text: "aG9sYQ==".into(),
+                max_length: 24,
+            },
+        ));
+        assert!(registry.push_keyboard_request("cemu", KeyboardDemand::off(),));
+        assert_eq!(
+            registry.pop_keyboard_request("cemu"),
+            Some(KeyboardDemand {
+                on: true,
+                text: "aG9sYQ==".into(),
+                max_length: 24,
+            })
+        );
+        assert_eq!(
+            registry.pop_keyboard_request("cemu"),
+            Some(KeyboardDemand::off())
+        );
+        assert_eq!(registry.pop_keyboard_request("cemu"), None);
+
+        // Requeue entrega el último estado vigente (off) a la nueva sesión.
+        assert!(registry.requeue_keyboard_request("cemu"));
+        assert_eq!(
+            registry.pop_keyboard_request("cemu"),
+            Some(KeyboardDemand::off())
+        );
+        assert_eq!(registry.pop_keyboard_request("cemu"), None);
+
+        // Un push único acarrea texto y techo completos.
+        assert!(registry.push_keyboard_request(
+            "cemu",
+            KeyboardDemand {
+                on: true,
+                text: "aG9sYQ==".into(),
+                max_length: 24,
+            },
+        ));
+        assert!(registry.requeue_keyboard_request("cemu"));
+        assert_eq!(
+            registry.pop_keyboard_request("cemu"),
+            Some(KeyboardDemand {
+                on: true,
+                text: "aG9sYQ==".into(),
+                max_length: 24,
+            })
+        );
+
+        // Techo 0 con on=true es inválido en la entrada.
+        assert!(registry.unregister("cemu"));
+    }
     // carries the configured resolution and bitrate (resolution applies to the GamePad
     // screen only); values outside SPEC-003 ranges are clamped before forwarding.
     #[test]

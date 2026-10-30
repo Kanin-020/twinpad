@@ -91,6 +91,12 @@ sequenceDiagram
   A->>S: mic_chunk (PCM s16le mono 32 kHz, samples 32–32000)
   S->>C: mic_chunk → cola s16 drop-old de 1 s del adaptador
   C->>C: mic_updateOnAXFrame consume 96 muestras (3 ms) solo con cola fresca (≤ 250 ms) y demanda vigente; sin ellas, caminos Cemu existentes
+  C->>S: kb_requestShow cuando el HLE `swkbd` abre/aparece; kb_requestHide cuando cierra (CR-044)
+  S->>A: kb_request encolado/coalesced y re-emitido a la sesión vigente
+  A->>A: overlay de teclado en PairingActivity solo con «cemu» seleccionado Y demanda vigente
+  A->>S: kb_event (IME/multi-tap → código virtual Wii U + estado modifier)
+  S->>C: kb_event → hilo HLE `swkbd` encola y DRCCallback lo drena
+  C->>C: el texto va al buffer del juego; la pantalla del teclado Cemu permanece apagada
   S->>V: aplica snapshot al VPAD emulado
   V->>V: mapea motion AndroidDSU→DSU y alimenta WiiUMotionHandler/Mahony
   V-->>H: MotionSample fusionado actualiza VPADStatus
@@ -128,6 +134,21 @@ access unit no vacía) y decodifica: cada IDR lleva SPS/PPS delante y la
 salida se convierte a NV12 (`ConvertToNv12`, Y plano + UV entrelazado); el
 HLE `camera` copia el frame más reciente a la superficie CAM del juego
 (`CopyLatestNv12`); sin frames nuevos el juego conserva la última imagen.
+
+### 7.3 Teclado del juego: Android IME en lugar del teclado emulado (CR-044)
+
+Cuando un juego abre el `swkbd` HLE, Cemu emite `kb_requestShow` (apertura o
+reaparición) o `kb_requestHide` (confirm/cancel/cierre del juego) y Twinpad
+suprime la presentación del teclado emulado en pantalla (página de texto y
+capas secundarias invisibles). El Servidor coalescea y re-emitte la última
+demanda a la sesión vigente. La app Twinpad muestra su overlay de teclado
+(Android IME del sistema en el campo de texto del overlay, y multi-tap
+GamePad como alternativa corta) solo con «cemu» seleccionado Y demanda
+vigente, y envía `kb_event` con el código virtual Wii U y el estado modifier
+del momento de la pulsación. El adaptador valida estrictamente el evento,
+lo encola en el hilo HLE con descarte si excede 32 eventos y lo drena en el
+callback DRC del `swkbd`; el texto entra por el mismo camino determinista
+del teclado emulado y la accesibilidad del juego se mantiene.
 
 ## 7. Concurrency
 
@@ -197,6 +218,7 @@ HLE `camera` copia el frame más reciente a la superficie CAM del juego
 | Ciclo Cemu anterior, configuración y QR loopback | `MainWindow`, `TwinpadClient`, listener QR | TEST-046, TEST-047, TEST-050 |
 | VPAD Player 1 temporal cuando falta, restauración de asignación y no persistencia | `InputManager::update_twinpad_vpad`, `InputManager::save` | TEST-064; compilado en Cemu debug, assertions y smoke de título pendientes |
 | Micrófono del teléfono bajo demanda: transiciones MICOpen/MICClose → `mic_request`, cola s16 drop-old de 1 s, consumo de 96 muestras por frame AX con precedencia sobre el micrófono local | `mic.cpp`, `TwinpadClient::PublishMicRequest/FeedMicChunk/ConsumeMicSamples`, `PairingMicController` | TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
+| Teclado del juego como Android IME (CR-044, §7.3): transiciones open/hide del HLE `swkbd` → `kb_requestShow/Hide`, supresión del teclado emulado, overlay Twinpad con demanda vigente y `kb_event` estricto en el hilo HLE | `swkbd.cpp`, `TwinpadClient::PublishKbRequest/FeedKeyboardEvent/DrainKeyboardEvents`, `KeyboardCodec`, `KeyboardOverlayController` | TEST-0106, TEST-0107, TEST-0108, TEST-0109 |
 
 ## 13. Related decisions
 
@@ -252,6 +274,7 @@ HLE `camera` copia el frame más reciente a la superficie CAM del juego
 | 1.6.0 | 2026-10-29 | Product owner + Twinpad team (CR-038) | El HLE `camera` notifica transiciones OpenCam/CloseCam como `camera_request` Cemu→Servidor→Android; Android activa la cámara frontal solo con cambio de selección + demanda vigente |
 | 1.7.0 | 2026-10-29 | Product owner + Twinpad team (CR-035) | Micrófono bajo demanda: el HLE `mic` emite `mic_request` en MICOpen/MICClose (DRC0); `mic_chunk` s16le mono 32 kHz encola en cola drop-old de 1 s y alimenta `mic_updateOnAXFrame` solo con cola fresca; Android captura con AudioRecord solo con juego «cemu» Y demanda vigente |
 | 1.11.0 | 2026-10-30 | Product owner (CR-034) | Cámara del teléfono a Cemu: `camera_frame` decodificado a NV12 en la superficie CAM; envío opt-in del drawer con lente seleccionable (frontal por defecto); TEST-093..096 |
+| 1.12.0 | 2026-10-30 | Product owner (CR-044) | Teclado del juego como Android IME: `kb_requestShow/Hide` del HLE `swkbd` suprime el teclado emulado, overlay de teclado en la app bajo demanda y `kb_event` (código virtual + modifiers) drenado en el hilo HLE; TEST-0106..0109 |
 | 1.8.0 | 2026-10-29 | Product owner + Twinpad team (CR-036) | Readback del DRC acepta RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K con conversión B↔R; descartes con log y repetición del último frame cada ≤100 ms; sin recreación de encoder por cadencia; dependencia ffmpeg requiere VAAPI en Linux/AMD (CR-039) |
 | 1.9.0 | 2026-10-30 | Product owner + Twinpad team (CR-041) | Contrato de perfil AVC relajado a Baseline (66) o Main (77) nivel ≤4.2 para admitir el encoder VAAPI freeworld; fallback OpenH264 CPU intacto |
 | 1.10.0 | 2026-10-30 | Product owner + Twinpad team (CR-043) | Codec: conversión RGB8→YUV SSSE3 con dispatch runtime y fallback escalar bit-exacto (TEST-0105, 4.36x a 1080p) y consumo NV12 directo del encoder hardware sin copias por filas ni interleave por píxel |

@@ -52,6 +52,8 @@
     <string name="editor_save">Guardar</string>
     <string name="editor_done">Listo</string>
     <string name="hud_chip_text">%1$s render · %2$s recibidos · %3$s Mbps</string>
+    <!-- CR-044: overlay del teclado del juego; la escritura vive en el IME. -->
+    <string name="keyboard_hint">Teclado del juego…</string>
 
     <!-- Servicio en primer plano de la sesión: cara visible al cambiar de
          app; el owner lo pidió para no cortar la transmisión. -->

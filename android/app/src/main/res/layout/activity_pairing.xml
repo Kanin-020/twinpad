@@ -165,6 +165,52 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
+
+            <!-- CR-044: overlay del teclado del juego; el IME del teléfono
+                 reemplaza al teclado de Cemu (dicho overlay no se dibuja
+                 mientras Twinpad esté conectado). -->
+            <LinearLayout
+                android:id="@+id/keyboard_overlay"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:background="@color/keyboard_overlay_background"
+                android:orientation="vertical"
+                android:padding="8dp"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent">
+
+                <EditText
+                    android:id="@+id/keyboard_input"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/keyboard_hint"
+                    android:imeOptions="actionDone"
+                    android:importantForAutofill="no"
+                    android:inputType="text"
+                    android:maxLines="1" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_keyboard_cancel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@android:string/cancel" />
+
+                    <Button
+                        android:id="@+id/btn_keyboard_accept"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@android:string/ok" />
+                </LinearLayout>
+            </LinearLayout>
         </androidx.constraintlayout.widget.ConstraintLayout>
 
         <com.twinpad.android.app.ui.GyroMonitorView
