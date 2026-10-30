@@ -526,6 +526,7 @@ mod tests {
     }
 
     // TEST-097 — verifies SPEC-006 (CR-038): `camera_request` round-trip with a strict boolean flag.    #[test]
+    #[allow(dead_code)]
     fn camera_request_round_trips_and_rejects_bad_flag() {
         let msg = GameMsg::CameraRequest { on: true };
         assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
