@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.20.0 |
+| Version | 1.22.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
 | Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017, Draft; adaptador Cemu) |
 | Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079, TEST-092, TEST-093, TEST-094, TEST-095, TEST-096, TEST-097, TEST-098, TEST-099, TEST-0100, TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
-| Last updated | 2026-10-29 |
+| Last updated | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -40,7 +40,7 @@ Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `
 | `game_selected` | mensaje Servidor→Android de sesión | `type:"game_selected"`, `game_id` vivo previamente solicitado | sí, al aceptar selección |
 | `games_available` | mensaje Servidor→Android de sesión | lista completa ordenada de Plugins vivos | al conectar sesión y al cambiar liveness |
 | `rumble` | mensaje Cemu→Servidor→Android de sesión (CR-033) | `type:"rumble"`, `length` 0–120, `data` base64url de exactamente `length` bytes; `length` 0 = parar | por cada patrón aceptado de `VPADControlMotor` del Jugador 1 mientras Cemu está conectado; no persistido; Android lo ignora si el dispositivo no tiene vibrador |
-| `camera_frame` | mensaje Android→Servidor→Cemu de sesión (CR-034) | `type:"camera_frame"`, `w:320`, `h:240`, `ts_capture_us:u64` monotónico desde el inicio del encoder, `idr:boolean`, `data` base64url de una access unit H.264 no vacía; sin persistir | por cada access unit de la cámara frontal del teléfono (30 fps) solo mientras Cemu está seleccionado **Y** hay demanda vigente de cámara del juego (CR-038: `camera_request on=true`); Cemu la descarta si no hay decodificador |
+| `camera_frame` | mensaje Android→Servidor→Cemu de sesión (CR-034) | `type:"camera_frame"`, `w:320`, `h:240`, `ts_capture_us:u64` monotónico desde el inicio del encoder, `idr:boolean`, `data` base64url de una access unit H.264 no vacía; sin persistir | por cada access unit de la lente seleccionada del teléfono (frontal por defecto; selector frontal/trasera en el drawer, CR-034) a 30 fps solo mientras Cemu está seleccionado **Y** hay demanda vigente de cámara del juego (CR-038: `camera_request on=true`) **Y** el usuario activó el toggle `Enviar cámara al GamePad` (opt-in del drawer, CR-034); Cemu la descarta si no hay decodificador |
 | `camera_request` | mensaje Cemu→Servidor→Android de sesión (CR-038) | `type:"camera_request"`, `on:boolean` exactamente | en cada transición del número de instancias HLE de cámara abiertas por el juego (a demanda/vigente al anunciar o re-seleccionar); no persistido; encola con coalescing en el Servidor (tope 8) y se re-emite a la sesión Android vigente/reconectada |
 | `mic_chunk` | mensaje Android→Servidor→Cemu de sesión (CR-035) | `type:"mic_chunk"`, `samples:uint16` en [32, 32000] (1 ms–1 s @ 32 kHz), `data` base64url de exactamente 2·`samples` bytes PCM s16le mono 32 kHz | por cada bloque de captura AudioRecord del teléfono a 32 kHz solo mientras Cemu está seleccionado **Y** hay demanda vigente de micrófono del juego (CR-035: `mic_request on=true`); no persistido; Cemu lo valida estrictamente y lo encola con drop-old de 1 s |
 | `mic_request` | mensaje Cemu→Servidor→Android de sesión (CR-035) | `type:"mic_request"`, `on:boolean` exactamente | en cada transición MICOpen/MICClose del juego sobre el HLE `mic` del DRC0 (a demanda/vigente al anunciar o re-seleccionar); no persistido; encola con coalescing en el Servidor (idem `camera_request`) y el teléfono solo captura — y pide permiso `RECORD_AUDIO` — con juego «cemu» seleccionado Y demanda vigente |
@@ -220,7 +220,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | VPAD temporal de Jugador 1 solo cuando falta, sin sobreescribir ni persistir perfil local (CR-013) | TEST-064 |
 | Monitor Cemu opt-in en ventana externa, con orientación recibida y mapeada a VPAD (CR-016/CR-017) | TEST-079 |
 | Vibración del VPAD de Cemu: patrón de `VPADControlMotor` reenviado como `rumble` y reproducido en el teléfono a 60 Hz, parada con longitud 0 (CR-033) | TEST-092 |
-| Cámara frontal del teléfono enviada a Cemu como `camera_frame` H.264 320x240 a 30 fps, validada y enrutada solo al Plugin Cemu (CR-034) | TEST-093 (core), TEST-094 (servidor), TEST-095 (Android) |
+| Lente seleccionada del teléfono (frontal por defecto, opt-in del drawer) enviada a Cemu como `camera_frame` H.264 320x240 a 30 fps, validada y enrutada solo al Plugin Cemu (CR-034) | TEST-093 (core), TEST-094 (servidor), TEST-095 (Android) |
 | Demanda de cámara gobernar el envío: `camera_request` Cemu→Android con transiciones del uso HLE y gating combinado (juego «cemu» && demanda vigente) antes de encender la cámara frontal (CR-038) | TEST-097 (core), TEST-098 (servidor), TEST-099 (Android), TEST-0100 (Cemu) |
 | Micrófono del teléfono bajo demanda: `mic_request` Cemu→Android con transiciones MICOpen/MICClose de HLE `mic`, captura con gating combinado (juego «cemu» && demanda vigente) y `mic_chunk` validado hacia la cola drop-old de Cemu (CR-035) | TEST-0101 (core), TEST-0102 (servidor), TEST-0103 (Cemu), TEST-0104 (Android) |
 
@@ -256,3 +256,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.19.0 | 2026-10-29 | Product owner (CR-038) | Añade el mensaje Cemu→Android `camera_request` (transiciones del uso HLE de cámara del juego); Android solo enciende la cámara frontal con juego seleccionado Y demanda vigente |
 | 1.20.0 | 2026-10-29 | Product owner (CR-035) | Añade los mensajes `mic_chunk` (Android→Cemu, PCM s16le mono 32 kHz bajo demanda) y `mic_request` (Cemu→Android, transiciones MICOpen/MICClose del HLE `mic`); el teléfono solo graba con juego seleccionado Y demanda vigente |
 | 1.21.0 | 2026-10-29 | Product owner (CR-036) | Regla de continuidad del video de Cemu: repetición del último frame DRC cada ≤100 ms con plugin conectado; readback del DRC acepta RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K y los descartes se registran en el log (no silenciosos); sin cambio de wire |
+| 1.22.0 | 2026-10-30 | Product owner (CR-034) | El envío de `camera_frame` es opt-in desde el drawer (toggle + selector frontal/trasera, frontal por defecto); wire sin cambios |

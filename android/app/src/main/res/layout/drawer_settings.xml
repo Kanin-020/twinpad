@@ -152,13 +152,47 @@
             android:text="@string/settings_distribution"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
-        <!-- CR-032: distribución de los botones de cara; también el mando
+        <!-- CR-034: distribución de los botones de cara; también el mando
              físico (SPEC-002 R19). -->
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switch_nintendo_distribution"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_nintendo_distribution" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_camera"
+            android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+        <!-- CR-034: opt-in del stream de cámara hacia Cemu; los frames solo
+             salen con juego "cemu" Y demanda vigente (CR-038). -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_camera_stream"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_camera_stream" />
+
+        <RadioGroup
+            android:id="@+id/camera_lens_group"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/camera_lens_front"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_camera_front" />
+
+            <RadioButton
+                android:id="@+id/camera_lens_back"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_camera_back" />
+        </RadioGroup>
 
         <Button
             android:id="@+id/btn_close_drawer"

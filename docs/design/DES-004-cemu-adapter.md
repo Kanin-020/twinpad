@@ -1,15 +1,15 @@
-# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-035/CR-038)
+# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-034/CR-035/CR-038)
 
 | | |
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.10.0 |
+| Version | 1.11.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
 | Depends on | DES-003, ADR-007, ADR-008 |
-| Last updated | 2026-10-29 |
+| Last updated | 2026-10-30 |
 
 ## 1. Overview
 
@@ -82,7 +82,9 @@ sequenceDiagram
   S->>A: video/audio adaptados solo de Cemu
   C->>S: camera_request(on) en cada transición HLE de cámara del juego (CR-038)
   S->>A: camera_request encolado/coalesced y re-emitido a la sesión vigente
-  A->>A: gating frontal: stream camera_frame solo con «cemu» seleccionado Y demanda vigente
+  A->>A: gating: stream camera_frame solo con «cemu» seleccionado Y demanda vigente Y toggle del drawer activo (lente frontal por defecto)
+  A->>S: camera_frame (H.264 320x240, 30 fps; lente seleccionada)
+  S->>C: camera_frame → TwinpadCameraDecoder → nv12 → superficie CAM
   C->>S: mic_request(on) en cada transición MICOpen/MICClose del HLE mic (CR-035, SOLO DRC0)
   S->>A: mic_request encolado/coalesced y re-emitido a la sesión vigente
   A->>A: gating mic + RECORD_AUDIO: captura AudioRecord 32 kHz solo con «cemu» seleccionado Y demanda vigente
@@ -113,6 +115,19 @@ Del lado Android, la captura AudioRecord a 32 kHz (mono, s16, bloques de
 con demanda vigente; sin permiso `RECORD_AUDIO` se solicita una vez y sin
 concesión no hay captura. Cambiar de juego, cerrar la sesión o una
 desconexión reseatea la demanda y para la captura.
+
+### 7.2 Cámara del teléfono bajo demanda (CR-034)
+
+El video de cámara llega a Cemu por el canal de sesión como `camera_frame`
+(H.264 320x240, 30 fps). Android solo envía si el juego «cemu» está
+seleccionado Y `camera_request` tiene demanda vigente (CR-038) Y el usuario
+activó el toggle `Enviar cámara al GamePad` del drawer (opt-in, frontal por
+defecto, selector frontal/trasera persistente). El Servidor enruta la línea
+solo al Plugin Cemu vivo. `TwinpadCameraDecoder` valida (320x240, base64url,
+access unit no vacía) y decodifica: cada IDR lleva SPS/PPS delante y la
+salida se convierte a NV12 (`ConvertToNv12`, Y plano + UV entrelazado); el
+HLE `camera` copia el frame más reciente a la superficie CAM del juego
+(`CopyLatestNv12`); sin frames nuevos el juego conserva la última imagen.
 
 ## 7. Concurrency
 
@@ -178,6 +193,7 @@ desconexión reseatea la demanda y para la captura.
 | H.264 hardware opcional/OpenH264 → relay binario autenticado → MediaCodec Surface | `TwinpadClient`, `server::media`, Android MediaCodec | TEST-071..074, TEST-082; CR-020 |
 | IPC del frame Cemu y encoding Base64URL sin padding | `TwinpadClient::Base64Url` y `FrameLoop` | TEST-065; microbenchmark CPU aislado documentado, debug assertion en build pendiente |
 | TV local independiente y PCM DRC/GamePad únicamente hacia Android, sin mezcla/dependencia de transporte | `AIInitDMA` / `AIInitDRCDMA`, `g_tvAudio` / `g_padAudio`, `TwinpadClient::PublishAudioBlock` | TEST-062; audición en banco físico pendiente |
+| camera_frame de la lente seleccionada del teléfono → superficie CAM en NV12 (CR-034, §7.2) | `TwinpadCameraDecoder` (`DecodeLine`/`ConvertToNv12`/`CopyLatestNv12`), HLE `camera`, relay del Servidor y `CameraStreamEncoder` Android | TEST-093, TEST-094, TEST-095, TEST-096 |
 | Ciclo Cemu anterior, configuración y QR loopback | `MainWindow`, `TwinpadClient`, listener QR | TEST-046, TEST-047, TEST-050 |
 | VPAD Player 1 temporal cuando falta, restauración de asignación y no persistencia | `InputManager::update_twinpad_vpad`, `InputManager::save` | TEST-064; compilado en Cemu debug, assertions y smoke de título pendientes |
 | Micrófono del teléfono bajo demanda: transiciones MICOpen/MICClose → `mic_request`, cola s16 drop-old de 1 s, consumo de 96 muestras por frame AX con precedencia sobre el micrófono local | `mic.cpp`, `TwinpadClient::PublishMicRequest/FeedMicChunk/ConsumeMicSamples`, `PairingMicController` | TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
@@ -235,6 +251,7 @@ desconexión reseatea la demanda y para la captura.
 | 1.5.0 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU de referencia pasa a landscape exclusivo; Cemu sin cambios de mapeo |
 | 1.6.0 | 2026-10-29 | Product owner + Twinpad team (CR-038) | El HLE `camera` notifica transiciones OpenCam/CloseCam como `camera_request` Cemu→Servidor→Android; Android activa la cámara frontal solo con cambio de selección + demanda vigente |
 | 1.7.0 | 2026-10-29 | Product owner + Twinpad team (CR-035) | Micrófono bajo demanda: el HLE `mic` emite `mic_request` en MICOpen/MICClose (DRC0); `mic_chunk` s16le mono 32 kHz encola en cola drop-old de 1 s y alimenta `mic_updateOnAXFrame` solo con cola fresca; Android captura con AudioRecord solo con juego «cemu» Y demanda vigente |
+| 1.11.0 | 2026-10-30 | Product owner (CR-034) | Cámara del teléfono a Cemu: `camera_frame` decodificado a NV12 en la superficie CAM; envío opt-in del drawer con lente seleccionable (frontal por defecto); TEST-093..096 |
 | 1.8.0 | 2026-10-29 | Product owner + Twinpad team (CR-036) | Readback del DRC acepta RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K con conversión B↔R; descartes con log y repetición del último frame cada ≤100 ms; sin recreación de encoder por cadencia; dependencia ffmpeg requiere VAAPI en Linux/AMD (CR-039) |
 | 1.9.0 | 2026-10-30 | Product owner + Twinpad team (CR-041) | Contrato de perfil AVC relajado a Baseline (66) o Main (77) nivel ≤4.2 para admitir el encoder VAAPI freeworld; fallback OpenH264 CPU intacto |
 | 1.10.0 | 2026-10-30 | Product owner + Twinpad team (CR-043) | Codec: conversión RGB8→YUV SSSE3 con dispatch runtime y fallback escalar bit-exacto (TEST-0105, 4.36x a 1080p) y consumo NV12 directo del encoder hardware sin copias por filas ni interleave por píxel |

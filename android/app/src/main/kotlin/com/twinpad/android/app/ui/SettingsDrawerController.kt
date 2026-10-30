@@ -41,6 +41,14 @@ internal interface SettingsDrawerHost {
     /** CR-032: distribución Nintendo activada/desactivada. Restauración
      * inicial y cambio de usuario comparten esta notificación. */
     fun onNintendoDistributionToggled(enabled: Boolean)
+
+    /** CR-034: stream de cámara (on/off) con la lente vigente. Restauración
+     * inicial y cambio de usuario comparten esta notificación; el host
+     * reevalúa la demanda (CR-038) y arranca/para/reinicia la lente. */
+    fun onCameraStreamToggled(
+        enabled: Boolean,
+        lens: CameraLens,
+    )
 }
 
 /**
@@ -83,8 +91,18 @@ internal class SettingsDrawerController(
         host.onNintendoDistributionToggled(settings.nintendoDistribution)
         host.onGyroMonitorToggled(settings.showGyroMonitor)
         activity.findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
-        val scaleButtonId = if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand
+        activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream).isChecked = settings.cameraStream
+        val lensCheckedId =
+            if (settings.cameraLens == CameraLens.FRONT) R.id.camera_lens_front else R.id.camera_lens_back
+        activity.findViewById<RadioButton>(lensCheckedId).isChecked = true
+        val scaleButtonId =
+            if (settings.scaleMode == VideoScaleMode.CONTAIN) R.id.scale_contain else R.id.scale_expand
         activity.findViewById<RadioButton>(scaleButtonId).isChecked = true
+        activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream).isChecked = settings.cameraStream
+        val lensButtonId =
+            if (settings.cameraLens == CameraLens.FRONT) R.id.camera_lens_front else R.id.camera_lens_back
+        activity.findViewById<RadioButton>(lensButtonId).isChecked = true
+        host.onCameraStreamToggled(settings.cameraStream, settings.cameraLens)
         host.applyVideoScale(settings)
     }
 
@@ -162,6 +180,31 @@ internal class SettingsDrawerController(
                 host.onNintendoDistributionToggled(checked)
                 persist { it.copy(nintendoDistribution = checked) }
             }
+        // CR-034: toggle + lente; el host decide arrancar/parar/reiniciar.
+        activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream)
+            .setOnCheckedChangeListener { _, checked ->
+                val lens = store.load().cameraLens
+                host.onCameraStreamToggled(checked, lens)
+                persist { it.copy(cameraStream = checked) }
+            }
+        val lensFront = activity.findViewById<RadioButton>(R.id.camera_lens_front)
+        val lensBack = activity.findViewById<RadioButton>(R.id.camera_lens_back)
+        lensFront.setOnCheckedChangeListener { _, checked -> updateCameraLens(checked, CameraLens.FRONT) }
+        lensBack.setOnCheckedChangeListener { _, checked -> updateCameraLens(checked, CameraLens.BACK) }
+    }
+
+    /** CR-034: cambia la lente persistida; si el stream estaba activo, el
+     * host recibe la notificación para reiniciar con la lente nueva. */
+    private fun updateCameraLens(
+        checked: Boolean,
+        lens: CameraLens,
+    ) {
+        if (!checked) return
+        val current = store.load()
+        if (current.cameraLens == lens) return
+        val updated = current.copy(cameraLens = lens)
+        store.save(updated)
+        host.onCameraStreamToggled(current.cameraStream, lens)
     }
 
     /** Persiste sin notificar al ViewModel (audio y visibilidad del HUD). */

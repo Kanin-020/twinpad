@@ -43,6 +43,10 @@
     <!-- CR-032: título de grupo + interruptor de distribución de cara. -->
     <string name="settings_distribution">Distribución</string>
     <string name="settings_nintendo_distribution">Distribución Nintendo</string>
+    <string name="settings_camera">Cámara del teléfono (Cemu)</string>
+    <string name="settings_camera_stream">Enviar cámara al GamePad</string>
+    <string name="settings_camera_front">Frontal</string>
+    <string name="settings_camera_back">Trasera</string>
     <string name="settings_audio">Volumen GamePad local</string>
     <string name="editor_title">Editor de controles</string>
     <string name="editor_save">Guardar</string>

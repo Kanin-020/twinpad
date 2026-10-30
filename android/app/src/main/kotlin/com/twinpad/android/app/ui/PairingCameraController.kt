@@ -79,19 +79,23 @@ class PairingCameraController(
 
     private var encoder: CameraStreamEncoder? = null
 
-    /** Para el envío de la cámara frontal (CR-034) sin tocar el QR. */
-    fun stopFrontStream() {
+    /** Para el envío de `camera_frame` (CR-034); desvincula el bind de
+     * CameraX si él mismo lo inició, sin tocar el QR. */
+    fun stopStream() {
+        if (encoder == null) return
+        cameraProvider?.unbindAll()
         encoder?.stop()
         encoder = null
     }
 
     /**
-     * CR-034: envía la cámara frontal a 320x240 / 30 fps como `camera_frame`.
-     * Usa el mismo proveedor de CameraX que el QR; la superficie de entrada
-     * del codificador es el destino de la vista previa.
+     * CR-034: envía la cámara a 320x240 / 30 fps como `camera_frame`. Usa el
+     * mismo proveedor de CameraX que el QR; la superficie de entrada del
+     * codificador es el destino de la vista previa.
      */
-    fun startFrontStream(
+    fun startStream(
         lifecycleOwner: LifecycleOwner,
+        lens: CameraLens,
         onLine: (String) -> Unit,
     ) {
         if (encoder != null) return
@@ -122,9 +126,15 @@ class PairingCameraController(
                             }
                         }
                 provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, preview)
+                val selector =
+                    if (lens == CameraLens.BACK) {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    } else {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    }
+                provider.bindToLifecycle(lifecycleOwner, selector, preview)
             } catch (e: Exception) {
-                android.util.Log.w("PairingCamera", "Cámara frontal no disponible", e)
+                android.util.Log.w("PairingCamera", "Cámara $lens no disponible", e)
                 encoder?.stop()
                 encoder = null
             }

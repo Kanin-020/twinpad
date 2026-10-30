@@ -77,6 +77,12 @@ class PairingActivity : AppCompatActivity() {
     private var gyroMonitorVisible = false
     private var sessionConfigSent = false
 
+    /** CR-034: preferencia vigente del stream de cámara (toggle + lente del
+     * drawer); el valor alimenta la evaluación combinada de demanda. */
+    private var cameraStreamSettingsLoaded = false
+    private var cameraStreamEnabled = false
+    private var cameraStreamLens = CameraLens.FRONT
+
     /** CR-038: el estado combinado emite en cada cambio de demanda; el perfil
      * del juego solo se recarga cuando el juego seleccionado cambia. */
     private var loadedProfileId: String? = PROFILE_UNLOADED
@@ -216,6 +222,20 @@ class PairingActivity : AppCompatActivity() {
                 nintendoFaceDistribution = enabled
                 surfaceRef?.setNintendoFaceLayout(enabled)
             }
+
+            /** CR-034: el toggle/lente del drawer guarda el estado y el
+             * stream de cámara se reevalúa al momento (juego + demanda +
+             * preferencia), parando/reiniciando si ya estaba activo. */
+            override fun onCameraStreamToggled(
+                enabled: Boolean,
+                lens: CameraLens,
+            ) {
+                cameraStreamEnabled = enabled
+                cameraStreamLens = lens
+                cameraStreamSettingsLoaded = true
+                cameraController.stopStream()
+                applyCameraDemand()
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -280,14 +300,23 @@ class PairingActivity : AppCompatActivity() {
                         loadedProfileId = gameId
                         surfaceRef?.loadProfile(gameId.orEmpty())
                     }
-                    if (gameId == "cemu" && cameraRequested) {
-                        cameraController.startFrontStream(this@PairingActivity) { line ->
-                            viewModel.sendSessionLine(line)
-                        }
-                    } else {
-                        cameraController.stopFrontStream()
-                    }
+                    applyCameraDemand()
                 }
+        }
+    }
+
+    /** CR-034 + CR-038: arranca/para el stream de cámara solo si el juego
+     * «cemu» está seleccionado Y demanda vigente Y el toggle del drawer
+     * activado (función-propiedad; detekt hiperparámetros). */
+    private val applyCameraDemand: () -> Unit = {
+        val demandActive =
+            viewModel.selectedGameId.value == "cemu" && viewModel.cameraRequested.value
+        if (demandActive && cameraStreamEnabled) {
+            cameraController.startStream(this@PairingActivity, cameraStreamLens) { line ->
+                viewModel.sendSessionLine(line)
+            }
+        } else {
+            cameraController.stopStream()
         }
     }
 

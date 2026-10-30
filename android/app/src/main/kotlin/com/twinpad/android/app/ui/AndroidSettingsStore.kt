@@ -11,6 +11,9 @@ private const val MAX_VIDEO_BITRATE_KBPS = 30_000
 private const val MIN_AUDIO_VOLUME_PERCENT = 0
 private const val MAX_AUDIO_VOLUME_PERCENT = 100
 
+/** CR-034: lente del teléfono que alimenta la superficie CAM de Cemu. */
+enum class CameraLens { FRONT, BACK }
+
 /** Ajustes locales del drawer; nunca persiste datos de Pairing ni claves de sesión. */
 data class AndroidSettings(
     val width: Int = DEFAULT_WIDTH,
@@ -23,6 +26,10 @@ data class AndroidSettings(
     val scaleMode: VideoScaleMode = VideoScaleMode.CONTAIN,
     /** CR-032: distribución de los botones de cara; true = Nintendo. */
     val nintendoDistribution: Boolean = false,
+    /** CR-034: envío del video de cámara a Cemu (opt-in del drawer). */
+    val cameraStream: Boolean = false,
+    /** CR-034: lente usada cuando [cameraStream] está activada. */
+    val cameraLens: CameraLens = CameraLens.FRONT,
 ) {
     fun videoConfigLine(): String =
         buildString {
@@ -68,6 +75,13 @@ internal class AndroidSettingsStore(context: Context) {
                     VideoScaleMode.CONTAIN
                 },
             nintendoDistribution = preferences.getBoolean(KEY_NINTENDO_DISTRIBUTION, false),
+            cameraStream = preferences.getBoolean(KEY_CAMERA_STREAM, false),
+            cameraLens =
+                if (preferences.getString(KEY_CAMERA_LENS, null) == CameraLens.BACK.name) {
+                    CameraLens.BACK
+                } else {
+                    CameraLens.FRONT
+                },
         )
 
     fun save(settings: AndroidSettings) {
@@ -87,6 +101,8 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_CONTROLS, settings.showControls)
             .putString(KEY_SCALE_MODE, settings.scaleMode.name)
             .putBoolean(KEY_NINTENDO_DISTRIBUTION, settings.nintendoDistribution)
+            .putBoolean(KEY_CAMERA_STREAM, settings.cameraStream)
+            .putString(KEY_CAMERA_LENS, settings.cameraLens.name)
             .apply()
     }
 
@@ -101,5 +117,7 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_CONTROLS = "show_controls"
         const val KEY_SCALE_MODE = "video_scale_mode"
         const val KEY_NINTENDO_DISTRIBUTION = "nintendo_distribution"
+        const val KEY_CAMERA_STREAM = "camera_stream"
+        const val KEY_CAMERA_LENS = "camera_lens"
     }
 }
