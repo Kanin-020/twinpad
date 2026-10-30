@@ -4,12 +4,12 @@
 |---|---|
 | ID | DES-003 |
 | Title | Realización del Stream H.264 de Segunda pantalla |
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16 (CR-014) |
 | Depends on | DES-001, DES-004, ADR-005 |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-10-30 |
 
 ## 1. Overview
 
@@ -27,7 +27,7 @@ CR-014 reemplaza la ruta JPEG/tiles por una ruta H.264/AVC: Cemu produce AU Anne
 - `EncodedAccessUnit`: `fn:u64`, `ts_capture_us:u64`, flag IDR y bytes H.264 Annex B.
 - `MediaChannel`: sesión Pairing, socket TCP 8425, claves y counters únicos para esa conexión.
 - `DecoderSurface`: MediaCodec AVC y SurfaceView Android, espera IDR tras inicio/reset.
-- `EncoderState`: OpenH264 Constrained Baseline Level 4.2, I420, sin B-frames; IDR con SPS/PPS.
+- `EncoderState`: OpenH264 CPU (Constrained Baseline Level 4.2) o encoder hardware FFmpeg cuyo candidato negociado debe cumplir el contrato CR-041 (Baseline 66 o Main 77, nivel ≤4.2, YUV 4:2:0, sin B-frames); IDR con SPS/PPS. La entrada se convierte de RGB8 a YUV con ruta SSSE3 y fallback escalar bit-exacto, y NV12 directo para el encoder hardware (CR-043).
 
 ## 4. Interfaces
 
@@ -140,3 +140,4 @@ La suite/protocolo está decidido. Interoperabilidad concreta de dispositivos, F
 |---|---|---|---|
 | 0.1.0 | 2026-10-17 | Usuario + agente | Diseño inicial de la realización de tiles bajo CR-002 |
 | 0.2.0 | 2026-10-20 | Product owner + Twinpad team (CR-014) | Sustituye tiles/JPEG por canal H.264 autenticado, cifrado y MediaCodec |
+| 0.3.0 | 2026-10-30 | Product owner + Twinpad team (CR-041/CR-043) | Contrato de perfil Baseline/Main nivel ≤4.2 para el encoder hardware; conversión RGB8→YUV SSSE3 con identidad bit a bit al escalar (TEST-0105) y consumo NV12 directo del encoder hardware |

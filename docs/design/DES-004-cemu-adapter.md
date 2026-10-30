@@ -4,7 +4,7 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.6.0 |
+| Version | 1.10.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
@@ -15,7 +15,7 @@
 
 Cemu es la primera integración host del Plugin SDK. El host Cemu inicia `twinpad-server` desde PATH si no existe una instancia activa, o reutiliza la que responde; consulta el QR vigente en `127.0.0.1:8423`, inicia el anuncio `cemu` y espera `cemu_live=true` antes de presentar el QR. El SDK/Plugin es headless. Al cancelar el diálogo, Cemu cancela la solicitud manual y cierra sus conexiones; auto-connect opt-in existente permanece según CR-006.
 
-Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el readback DRC alimenta OpenH264 software por defecto o un encoder H.264 hardware cuando la preferencia persistente `twinpad_hardware_acceleration` está activada y existe un backend utilizable. CR-036: el readback Vulkan del DRC acepta los formatos RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K (buffer de 3840×2160×4 por slot, 3 slots), convierte BGRA a RGB copiando/intercambiando los canales B↔R en el FrameLoop, registra todo descarte en el log (una vez por sesión, con motivo) y repite el último frame ya escalado cada ≤100 ms sin frame nuevo del DRC; el encoder no se recrea por cadencia medida. La dependencia ffmpeg del build requiere backend VAAPI completo en Linux/AMD (CR-039). La ruta hardware verifica el contrato AVC Constrained Baseline Level 4.2, 4:2:0, sin B-frames, Annex B e IDR con SPS/PPS; si la inicialización, configuración o codificación no lo cumple, reinicia con OpenH264 CPU conservando dimensiones y FPS; Cemu publica AU Annex B al IPC SDK y el Servidor las relaya cifradas sin transcodificar al Android que se autenticó por TCP 8425. Inputs y `stream_start/stop` siguen por el canal Pairing NDJSON. No se envía `session_key` a Cemu. Los callbacks de audio TV y DRC conservan las rutas locales/Android independientes de CR-012. Screenshots independientes de Cemu no cambian.
+Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el readback DRC alimenta OpenH264 software por defecto o un encoder H.264 hardware cuando la preferencia persistente `twinpad_hardware_acceleration` está activada y existe un backend utilizable. CR-036: el readback Vulkan del DRC acepta los formatos RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K (buffer de 3840×2160×4 por slot, 3 slots), convierte BGRA a RGB copiando/intercambiando los canales B↔R en el FrameLoop, registra todo descarte en el log (una vez por sesión, con motivo) y repite el último frame ya escalado cada ≤100 ms sin frame nuevo del DRC; el encoder no se recrea por cadencia medida. La dependencia ffmpeg del build requiere backend VAAPI completo en Linux/AMD (CR-039). La ruta hardware verifica el contrato AVC Baseline (66) o Main (77), nivel ≤4.2, 4:2:0, sin B-frames, Annex B e IDR con SPS/PPS (CR-041); si la inicialización, configuración o codificación no lo cumple, reinicia con OpenH264 CPU conservando dimensiones y FPS; Cemu publica AU Annex B al IPC SDK y el Servidor las relaya cifradas sin transcodificar al Android que se autenticó por TCP 8425. Inputs y `stream_start/stop` siguen por el canal Pairing NDJSON. No se envía `session_key` a Cemu. Los callbacks de audio TV y DRC conservan las rutas locales/Android independientes de CR-012. Screenshots independientes de Cemu no cambian.
 
 ## 2. Fit with the architecture
 
@@ -42,7 +42,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 | Servidor PC → Cemu Plugin | SPEC-006 `input_report` snapshot por NDJSON/LF | conexión primaria IPC; snapshot inicial + cada actualización aceptada |
 | Cemu → Servidor PC | SPEC-006 anuncio + `game_frame(fmt=h264,ts_capture_us,idr)` | IPC TCP localhost NDJSON; AU Annex B Base64URL, timestamp monotónico de encoder e indicador IDR (CR-015) |
 | Servidor PC → Android media | SPEC-003 v1.5.0 §§4.2–4.3 | listener TCP 8425, mutual HMAC, HKDF-SHA256, AES-256-GCM, counter por conexión |
-| Cemu → codec | CR-020 / SPEC-003 §4.3 | Hardware FFmpeg opt-in con fallback OpenH264 CPU; Constrained Baseline L4.2, 4:2:0, sin B-frames, Annex B con SPS/PPS cada IDR |
+| Cemu → codec | CR-020 / SPEC-003 §4.3 | Hardware FFmpeg opt-in con fallback OpenH264 CPU; contrato AVC Baseline/Main nivel ≤4.2 (CR-041), 4:2:0, sin B-frames, Annex B con SPS/PPS cada IDR; conversión RGB8→YUV SSSE3 con fallback escalar bit-exacto y NV12 directo para hardware (CR-043) |
 | Cemu salida TV → dispositivo de audio PC | callback TV de Cemu y `g_tvAudio` | Solo salida local PC; no se captura ni publica en Twinpad; independiente del estado Android (CR-012) |
 | Cemu audio DRC → Servidor PC | SPEC-005 / SPEC-006 `game_audio_*` | PCM estéreo GamePad/DRC por canal IPC de audio existente; única fuente de Cemu que se retransmite a Android |
 | Cemu salida GamePad DRC → dispositivo PC | callback DRC de Cemu y `g_padAudio` | Conserva salida local y control de volumen DRC; además del PCM IPC, no combinado con TV (CR-012) |
@@ -236,6 +236,8 @@ desconexión reseatea la demanda y para la captura.
 | 1.6.0 | 2026-10-29 | Product owner + Twinpad team (CR-038) | El HLE `camera` notifica transiciones OpenCam/CloseCam como `camera_request` Cemu→Servidor→Android; Android activa la cámara frontal solo con cambio de selección + demanda vigente |
 | 1.7.0 | 2026-10-29 | Product owner + Twinpad team (CR-035) | Micrófono bajo demanda: el HLE `mic` emite `mic_request` en MICOpen/MICClose (DRC0); `mic_chunk` s16le mono 32 kHz encola en cola drop-old de 1 s y alimenta `mic_updateOnAXFrame` solo con cola fresca; Android captura con AudioRecord solo con juego «cemu» Y demanda vigente |
 | 1.8.0 | 2026-10-29 | Product owner + Twinpad team (CR-036) | Readback del DRC acepta RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K con conversión B↔R; descartes con log y repetición del último frame cada ≤100 ms; sin recreación de encoder por cadencia; dependencia ffmpeg requiere VAAPI en Linux/AMD (CR-039) |
+| 1.9.0 | 2026-10-30 | Product owner + Twinpad team (CR-041) | Contrato de perfil AVC relajado a Baseline (66) o Main (77) nivel ≤4.2 para admitir el encoder VAAPI freeworld; fallback OpenH264 CPU intacto |
+| 1.10.0 | 2026-10-30 | Product owner + Twinpad team (CR-043) | Codec: conversión RGB8→YUV SSSE3 con dispatch runtime y fallback escalar bit-exacto (TEST-0105, 4.36x a 1080p) y consumo NV12 directo del encoder hardware sin copias por filas ni interleave por píxel |
 | 1.1.1 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Alinea los colores yaw/pitch/roll de Cemu con Android y documenta la orientación absoluta reportada |
 | 1.1.2 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Corrige el signo de pitch en la conversión de Cemu al VPAD y afirma el signo en TEST-077 |
 | 1.1.3 | 2026-10-22 | Product owner + Twinpad team (CR-018) | Elimina el desfase gráfico de 90° en roll y añade aserción de roll cero hacia la derecha en TEST-079 |

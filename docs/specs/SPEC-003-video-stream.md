@@ -4,7 +4,7 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.10.0 |
+| Version | 1.11.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
@@ -52,7 +52,7 @@ Ambos derivan `media_key = HKDF-SHA256(ikm=session_key, salt=nonce_c||nonce_s, i
 
 Cada registro servidor→Android tiene `length:u32 BE` (bytes que siguen, incluidos counter y tag), `counter:u64 BE`, `ciphertext[length-24]` (incluye tag GCM de 16 B). Máximo `length=4 MiB`; mínimo 24 B. AES-256-GCM nonce = `00000000:u32 BE || counter:u64 BE`; AAD = bytes wire `length || counter`. `counter` inicia en 0 y aumenta exactamente en uno; longitud inválida, truncamiento, salto/repetición o tag erróneo cierra el canal.
 
-Plaintext: `fn:u64 BE || ts_capture_us:u64 BE || flags:u8 || AnnexB access_unit`. `fn` comienza en cero y aumenta estrictamente; `ts_capture_us` es monótono desde inicio del encoder; bit 0 de flags indica IDR y bits 1–7 deben ser cero. H.264/AVC Constrained Baseline, nivel 4.2, YUV 4:2:0; sin B-frames. Cemu usa OpenH264 CPU por defecto. CR-036: Cemu no recrea el encoder por cambios de cadencia medida; la cadencia solo alimenta la metadata del rate-control y el encoder se recrea únicamente cuando cambian las dimensiones o el bitrate configurados. Con plugin conectado y sin frame nuevo del DRC en 100 ms, Cemu publica una repetición del último frame (mismo contrato de AU, sin `stream_gap`). La preferencia persistente local `twinpad_hardware_acceleration` (false por defecto) habilita el intento de un encoder hardware disponible; si el encoder no puede inicializarse/configurarse o falla el contrato AVC, Cemu reinicia la codificación con OpenH264 CPU, sin alterar las dimensiones ni el FPS configurados. El cambio de preferencia se aplica en el siguiente frame/configuración vigente. Ambas rutas emiten Annex B con SPS/PPS en cada IDR. Longitudes fuera de rango, AU vacía o flags inválidos cierran canal; el servidor no modifica el payload.
+Plaintext: `fn:u64 BE || ts_capture_us:u64 BE || flags:u8 || AnnexB access_unit`. `fn` comienza en cero y aumenta estrictamente; `ts_capture_us` es monótono desde inicio del encoder; bit 0 de flags indica IDR y bits 1–7 deben ser cero. H.264/AVC Baseline (66, con o sin `constraint_set0`) o Main (77), nivel ≤4.2, YUV 4:2:0; sin B-frames (CR-041: el driver VAAPI freeworld no expone Constrained Baseline y el contrato estricto rebota; la ruta hardware descarta cualquier candidato negociado fuera de este contrato y reinicia con OpenH264 CPU). Cemu usa OpenH264 CPU por defecto. CR-036: Cemu no recrea el encoder por cambios de cadencia medida; la cadencia solo alimenta la metadata del rate-control y el encoder se recrea únicamente cuando cambian las dimensiones o el bitrate configurados. Con plugin conectado y sin frame nuevo del DRC en 100 ms, Cemu publica una repetición del último frame (mismo contrato de AU, sin `stream_gap`). La preferencia persistente local `twinpad_hardware_acceleration` (false por defecto) habilita el intento de un encoder hardware disponible; si el encoder no puede inicializarse/configurarse o falla el contrato AVC, Cemu reinicia la codificación con OpenH264 CPU, sin alterar las dimensiones ni el FPS configurados. El cambio de preferencia se aplica en el siguiente frame/configuración vigente. Ambas rutas emiten Annex B con SPS/PPS en cada IDR. Longitudes fuera de rango, AU vacía o flags inválidos cierran canal; el servidor no modifica el payload.
 
 Los nonces frescos derivan subclave nueva en cada conexión; no hay reanudación de clave/counter. Cerrar el socket Pairing revoca y cierra inmediatamente su canal media asociado. El canal solo recibe la fuente seleccionada; el servidor conserva como máximo una AU pendiente por cliente (latest-frame-wins), no decodifica ni recodifica y nunca sirve a clientes no autenticados.
 ## 5. Outputs
@@ -164,7 +164,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 | Control `stream_start`/`stream_stop` | este documento §4.1; NDJSON por SPEC-001 §4.2 | v1.5.0; control solo en conexión Pairing |
 | Canal media H.264 cifrado | este documento §4.2–4.3 | TCP 8425; HMAC/HKDF/AES-256-GCM; Annex B; CR-014 |
 | Autenticación de la sesión | SPEC-001 §7/§8 | sin duplicación: se referencia |
-| Perfil de bitstream | este documento §4.3 | AVC Constrained Baseline Level 4.2, YUV 4:2:0, sin B-frames |
+| Perfil de bitstream | este documento §4.3 | AVC Baseline (66) o Main (77), nivel ≤4.2, YUV 4:2:0, sin B-frames (CR-041) |
 
 ## 13. Examples (Given / When / Then)
 
@@ -243,6 +243,7 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.8.0 | 2026-10-27 | Product owner (CR-027) | `video_config` admite y reenvía `bitrate_kbps` (1.000–30.000, default 8.000); trigger §8.1 incluye el cambio de bitrate |
 | 1.9.0 | 2026-10-28 | Product owner (CR-029) | FPS unlimited: sin pacing ni tope 30/60; `stream_start.fps` metadata 0–255 (`0` = unlimited); `video_config` sin fps |
 | 1.10.0 | 2026-10-28 | Product owner (CR-030) | `video_config` reenvía w/h a Cemu; el DRC se escala (nearest, sin upscale) antes del encode; trigger §8.1 define el escalado |
+| 1.11.0 | 2026-10-30 | Product owner (CR-041) | Contrato de perfil relajado a Baseline (66) o Main (77), nivel ≤4.2, para admitir el encoder VAAPI freeworld; 4:2:0 y sin B-frames sin cambios |
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |

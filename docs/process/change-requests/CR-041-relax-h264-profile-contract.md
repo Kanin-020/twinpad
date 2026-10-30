@@ -23,3 +23,9 @@ El driver VAAPI con contrato estricto (Constrained Baseline nivel 4.2) rebota de
 - SPEC-003: 1.10.0 → 1.11.0
 - DES-003: 0.2.0 → 0.3.0
 - DES-004: 1.9.0 → 1.10.0
+
+## Verificación física (2026-10-30, sesión WWHD + teléfono)
+- nvenc: `result=-1` (sin backend suscept); amf: `result=-1313558101` (no soportado). Nada que corregir en repo.
+- vaapi freeworld: `avcodec_open2` OK (`result=0`) pero el driver negocia **High (100)** sin la opción `profile`, fuera del contrato → descartado. En la rama vaapi se añade `av_dict_set("profile", "main")`: dentro del contrato (77); si el driver no soporta Main, el descarte queda fail-loud con motivo.
+- Seguido del primer arranque con `profile=main`: el backend abre, pero en el tick 0 el pipeline interno de VAAPI responde EAGAIN y el código lo trataba como fallo → fallback a CPU. Fix: `async_depth=1` + flag `bufferedOutput` en `TwinpadFfmpegEncoder` + conservación del backend en EAGAIN (aviso único en log).
+- **Resuelto y verificado** (sesión física 11:12–11:13, 5 ventanas de 5 s): `frame_encoded=frame_sent=drc_callback=150–151/5s` (30 fps, 100% de la cadencia del DRC), `hardware_encoder avg 17–19 ms` CPU, 0 fallbacks. El contrato de perfil (66/77/578, nivel ≤42, b=0) se sigue validando en la salida de cada IDR (`HasH264ContractProfile`) y pasa con el SPS Main del driver.

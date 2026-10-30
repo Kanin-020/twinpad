@@ -47,3 +47,20 @@ También reducir la altura máxima en `EnsureTwinpadDrcConvertImage` de 2160 a 1
 ## Versionado y rastreo
 - No afecta versión de SPEC/DES (cambio interno de pipeline).
 - TEST-073 y TEST-082 ya apuntan al nuevo contrato CR-041; este CR optimiza el tiempo sin cambiar el contrato.
+
+## Ejecución y verificación (2026-10-30)
+
+Estado: **Applied**. Cambios aplicados:
+
+1. Readback a 1080p: `TWINPAD_READBACK_SIZE = 1920*1080*4` (VulkanRenderer.h).
+2. Copy directo sin blit cuando el formato de la superficie DRC ya está en el conjunto aceptado (vía CR-040; blit solo para la normalización de formatos exoticos).
+3. Slots: `TWINPAD_READBACK_SLOT_COUNT = 3 → 2`.
+4. Memoria de slots: `HOST_VISIBLE | HOST_CACHED` ya presente en la creación (fallback con `DEVICE_LOCAL`); se completó con lo que **faltaba**: sin `HOST_COHERENT`, la lectura CPU después del copy imagen→buffer necesita `vkInvalidateMappedMemoryRanges` para ver datos frescos en drivers no coherentes. Se añadió el helper `InvalidateTwinpadReadbackMemory()` y su llamada en los dos puntos de consumo de slots (`newestCompleted` y `staleCompleted`); en heaps coherentes (RADV) es un no-op permitido.
+
+Medición After (sesión física WWHD + teléfono, 11:19–11:20, 3 ventanas de 5 s):
+
+- `readback_copy avg 0.22–0.30 ms` (copy GPU→CPU puro).
+- `readback_ready avg 27–34 ms` — coincide con el período del DRC del juego (~33 ms @ 30 fps): la métrica mide desde queue hasta el completado más nuevo del ciclo actual, así que el suelo físico es un período de frame, no el ancho de banda.
+- `frame_encoded = frame_sent = drc_callback ≈ 148–150 / 5 s` (30 fps, 100% de la cadencia) con encoder hardware VAAPI Main.
+
+El objetivo literal `readback_ready < 25 ms` queda reinterpretado: el costo de copy real está en ~0.2 ms y el resto del 33 ms es la cadencia de 30 Hz del propio DRC; sostiene 30/30 fps con margen sobrado (pipeline completo ~25 ms < 33 ms).

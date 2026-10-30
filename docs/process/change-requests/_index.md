@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-040 |
+| CR | CR-044 |
 
 ## Open / In review
 
@@ -36,6 +36,9 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-043 | Codec Cemu: conversión RGB8→YUV con SSSE3 (dispatch runtime, fallback escalar bit-exacto, TEST-0105 4.36x a 1080p) y consumo NV12 directo del encoder hardware; sin cambio de wire (aplicado en DES-004 1.10.0, DES-003 0.3.0 y Cemu) | DES-003, DES-004 | 2026-10-30 | [CR-043-ssse3-yuv-conversion-nv12-path.md](CR-043-ssse3-yuv-conversion-nv12-path.md) |
+| CR-042 | Readback del DRC optimizado a 1080p: copy directo sin blit (vía CR-040), memoria HOST_CACHED con fallback, 2 slots e invalidación CPU en el consumo (aplicado en VulkanRenderer/Cemu; After medido: copy 0.2 ms, readback_ready ≈1 período de frame del DRC, 30/30 fps con VAAPI) | DES-004 | 2026-10-29 | [CR-042-optimize-readback.md](CR-042-optimize-readback.md) |
+| CR-041 | Contrato H.264 relajado a Baseline (66) o Main (77), nivel ≤4.2, para admitir el encoder VAAPI freeworld (aplicado en SPEC-003 1.11.0, DES-003 0.3.0, DES-004 1.9.0, traceability TEST-073/082 y Cemu) | SPEC-003, DES-003, DES-004 | 2026-10-29 | [CR-041-relax-h264-profile-contract.md](CR-041-relax-h264-profile-contract.md) |
 | CR-035 | Micrófono del teléfono bajo demanda: `mic_request` Cemu→Android desde MICOpen/MICClose del HLE `mic` y `mic_chunk` Android→Cemu PCM s16le mono 32 kHz (aplicado en SPEC-006 1.20.0, SPEC-005 1.4.0, DES-004, core, server, Cemu y Android) | SPEC-005, SPEC-006, DES-004 | 2026-10-29 | [CR-035-phone-microphone-to-cemu.md](CR-035-phone-microphone-to-cemu.md) |
 | CR-036 | Continuidad del video de la Segunda pantalla: repetición ≤100 ms, sin recreación por cadencia y defecto de readback BGRA/4K (aplicado en SPEC-003 1.8.0, SPEC-006 1.21.0, DES-004 1.8.0 y Cemu) | SPEC-003, SPEC-006, DES-004 | 2026-10-29 | [CR-036-video-continuity-scene-changes.md](CR-036-video-continuity-scene-changes.md) |
 | CR-038 | Cámara del teléfono bajo demanda: `camera_request` Cemu→Servidor→Android desde las transiciones HLE `camera` (aplicado en SPEC-006 1.19.0, DES-002/004, core, server, Cemu y Android) | SPEC-006, DES-002, DES-004 | 2026-10-29 | [CR-038-camera-video-on-demand.md](CR-038-camera-video-on-demand.md) |
@@ -73,4 +76,4 @@
 |---|---|
 | Open | 2 |
 | Median time open → applied | ≤1 día (CR-036: 2026-10-28 → 2026-10-29) |
-| Last reviewed | 2026-10-29 |
+| Last reviewed | 2026-10-30 |
