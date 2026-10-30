@@ -5,7 +5,7 @@
 | ID | CR-039 |
 | Title | Usar el encoder H.264 por hardware disponible (h264_vaapi) para eliminar el cuello de botella de OpenH264 CPU |
 | Type | `Behavior change` |
-| Status | `Applied` (pendiente de verificación física del usuario) |
+| Status | `Applied` (verificación física 2026-10-30) |
 | Author | Twinpad team (agente) |
 | Created | 2026-10-29 |
 | Decided | 2026-10-29 |
@@ -91,7 +91,7 @@ Medición de CR-036 (2026-10-29): OpenH264 CPU sostiene ~7-8 fps (pipeline ≈20
 - [x] Copia local del driver a `integrations/cemu/bin/va-freeworld`
 - [x] Documentar el procedimiento (instalar `mesa-va-drivers-freeworld` sincronizado con la versión de mesa del sistema, o mantener la copia local)
 - [x] TEST-082 revisado (sin cambio de contrato; verificación física pendiente del usuario)
-- [ ] Verificación física (fps de emisión y carga CPU/GPU): relanzar Cemu y confirmar `[TwinpadVideo] encoder=hardware backend=h264_vaapi` en el log
+- [x] Verificación física (2026-10-30): `encoder=hardware backend=h264_vaapi` activo en sesión WWHD + teléfono; 3 ventanas de 5 s con `frame_encoded=frame_sent=148–151/5s` (30 fps, 100% de la cadencia del DRC), `hardware_encoder avg 17–19 ms` CPU, 0 fallbacks. Complementos que hicieron fallar la sesión: `profile=main` + `async_depth=1` (CR-041 verificación) y conservación del backend en EAGAIN (documentado en CR-041).
 
 ## Changelog
 
@@ -99,3 +99,4 @@ Medición de CR-036 (2026-10-29): OpenH264 CPU sostiene ~7-8 fps (pipeline ≈20
 |---|---|---|---|
 | 0.1.0 | 2026-10-29 | Twinpad team (agente) | Opened y decidido por el owner; evidencia del probe VAAPI |
 | 0.2.0 | 2026-10-29 | Twinpad team (agente) | Diagnóstico corregido (el faltante era el driver VA-API del sistema, no ffmpeg); aplicación del retry freeworld en código y copia local del driver; pendiente verificación física |
+| 0.3.0 | 2026-10-30 | Twinpad team (agente) | Verificación física completada: encoder hardware VAAPI activo, 30/30 fps, 0 fallbacks (ver CR-041 para los suplementos profile=main/async_depth/EAGAIN) |
