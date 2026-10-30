@@ -105,19 +105,13 @@ struct SessionReply {
 }
 
 /// Cuerpo de la señal `Response` del portal: `(code, payload)`.
+/// Solo los campos con uso: el resto (id/position/size/mapping_id) no aportan
+/// a la conversación del portal y se omiten del struct.
 #[derive(DeserializeDict, Type, Debug)]
 #[zvariant(signature = "dict")]
 struct StreamEntry {
-    #[allow(dead_code)]
-    id: Option<String>,
-    #[allow(dead_code)]
-    position: Option<(i32, i32)>,
-    #[allow(dead_code)]
-    size: Option<(i32, i32)>,
-    #[allow(dead_code)]
+    /// 1 = monitor, 2 = ventana (xdg-desktop-portal ScreenCast).
     source_type: Option<u32>,
-    #[allow(dead_code)]
-    mapping_id: Option<String>,
 }
 
 /// Respuesta `Start`: lista de streams concedidos.
@@ -226,13 +220,9 @@ async fn conn_and_setup() -> Result<PortalSetup, ()> {
     let (node_id, granted) = start_session(&conn, &session_path).await.inspect_err(|_| {
         println!("capture: Start fallo (owner canceló o señal perdida)");
     })?;
-    println!("capture: portal fase 4/5 — nodo {node_id} concedido");
-    let _ = (
-        granted.id,
-        granted.position,
-        granted.size,
-        granted.source_type,
-        granted.mapping_id,
+    println!(
+        "capture: portal fase 4/5 — nodo {node_id} concedido (source_type={:?})",
+        granted.source_type
     );
     let fd = open_remote(&conn, &session_path).await?;
     println!("capture: portal fase 5/5 — fd de PipeWire abierto");
