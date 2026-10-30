@@ -4,12 +4,13 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-045 |
+| CR | CR-046 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-045 | Cola de muestras de motion pendientes: drenaje completo por frame del VPAD (los tirones del gyro); captura en vivo: descarte 44 % → 1.4 %, 0 saltos de orientación; TEST-0111/0112 | DES-004 | Applied (2026-10-30) | Buffy (agente) | [CR-045-motion-sample-queue-drain.md](CR-045-motion-sample-queue-drain.md) |
 | CR-044 | Teclado del juego (swkbd): Android IME en Twinpad en lugar del overlay de Cemu (mensajería `keyboard_request`/`keyboard_input`; supresión del overlay con Twinpad conectado; TEST-0106–0110 verdes en host) | SPEC-006, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-044-cemu-keyboard-to-android-ime.md](CR-044-cemu-keyboard-to-android-ime.md) |
 | CR-039 | Encoder H.264 por hardware: driver VA-API freeworld (fallback `LIBVA_DRIVERS_PATH` en Cemu + copia local; verificado físicamente 2026-10-30: VAAPI activo, 30/30 fps) | SPEC-003, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-039-cemu-hardware-encoder-vaapi.md](CR-039-cemu-hardware-encoder-vaapi.md) |
 
