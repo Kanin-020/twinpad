@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-046 |
+| CR | CR-052 |
 
 ## Open / In review
 
@@ -37,6 +37,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-051 | Latencia del canal media: SNDBUF/TCP_NODELAY en el relay binario, MediaHub despierta con Condvar e IDR inmediata al (re)conectar (aplicado en DES-004 1.14.0 y código server/Cemu; TEST-0113 y TEST-072 extendido) | DES-004 | 2026-10-31 | [CR-051-media-relay-latency-and-idr-join.md](CR-051-media-relay-latency-and-idr-join.md) |
 | CR-043 | Codec Cemu: conversión RGB8→YUV con SSSE3 (dispatch runtime, fallback escalar bit-exacto, TEST-0105 4.36x a 1080p) y consumo NV12 directo del encoder hardware; sin cambio de wire (aplicado en DES-004 1.10.0, DES-003 0.3.0 y Cemu) | DES-003, DES-004 | 2026-10-30 | [CR-043-ssse3-yuv-conversion-nv12-path.md](CR-043-ssse3-yuv-conversion-nv12-path.md) |
 | CR-034 | Cámara del teléfono hacia Cemu: `camera_frame` H.264 (320x240, 30 fps) con lente seleccionable en el drawer (frontal por defecto) y opt-in toggle; Cemu decodifica a NV12 en la superficie CAM (aplicado en SPEC-006 1.22.0, DES-004 1.11.0, core/server/Android/Cemu; TEST-093/094/095/096; reconocimiento físico del NV12 en banco pendiente) | SPEC-006, DES-004 | 2026-10-30 | [CR-034-phone-camera-to-cemu.md](CR-034-phone-camera-to-cemu.md) |
 | CR-042 | Readback del DRC optimizado a 1080p: copy directo sin blit (vía CR-040), memoria HOST_CACHED con fallback, 2 slots e invalidación CPU en el consumo (aplicado en VulkanRenderer/Cemu; After medido: copy 0.2 ms, readback_ready ≈1 período de frame del DRC, 30/30 fps con VAAPI) | DES-004 | 2026-10-29 | [CR-042-optimize-readback.md](CR-042-optimize-readback.md) |

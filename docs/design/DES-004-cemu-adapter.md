@@ -4,7 +4,7 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.11.0 |
+| Version | 1.14.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
@@ -157,6 +157,21 @@ juego y demanda reagrupada), `confirm` queda decidido y `cancel` cierra el
 form sin decidir (el form queda sin validar; «retrocede»). Sin Twinpad, el
 overlay local del swkbd funciona exactamente como siempre.
 
+### 7.4 IDR inmediata al (re)conectar el canal media (CR-051)
+
+SPEC-003 §8.2 manda que al (re)entrar un suscriptor al canal media el
+servidor solicita IDR nueva. El Servidor dispara la solicitud justo tras
+autenticar el cliente (después del nonce server): si el plugin Cemu está
+vivo le envía una línea `{"type":"video_force_idr"}` por el IPC primario;
+sin plugin o sin juego vivo la solicitud no tiene efecto. El adaptador
+recibe la línea en su bucle de lectura, la valida (tipo exacto, sin más
+campos relevantes) y marca la IDR del siguiente frame publicado
+(`m_forceNextIdr`, atómica porque ahora cruza del hilo de lectura al de
+encode): el primer AU que ve el teléfono es IDR con SPS/PPS en vez de
+esperar la cadencia periódica de ~1 s del encoder. Sin cambio en el relay
+binario ni en el perfil AVC; se añade esta línea server→Cemu al juego de
+mensajes del IPC primario junto a `video_config`/`camera_frame`.
+
 ## 7. Concurrency
 
 | Concern | Approach |
@@ -226,6 +241,7 @@ overlay local del swkbd funciona exactamente como siempre.
 | VPAD Player 1 temporal cuando falta, restauración de asignación y no persistencia | `InputManager::update_twinpad_vpad`, `InputManager::save` | TEST-064; compilado en Cemu debug, assertions y smoke de título pendientes |
 | Micrófono del teléfono bajo demanda: transiciones MICOpen/MICClose → `mic_request`, cola s16 drop-old de 1 s, consumo de 96 muestras por frame AX con precedencia sobre el micrófono local | `mic.cpp`, `TwinpadClient::PublishMicRequest/FeedMicChunk/ConsumeMicSamples`, `PairingMicController` | TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
 | Teclado del juego como Android IME (CR-044, §7.3): transiciones del HLE `swkbd` → `keyboard_request` (texto+techo, `on=false` al cerrar suprimen el teclado emulado), overlay Twinpad con demanda vigente y `keyboard_input` (update/confirm/cancel) aplicado al formString en el hilo de render | `swkbd.cpp` (`swkbd_publishKeyboardRequest`, `swkbd_applyTwinpadKeyboardInput`, `swkbd_cancelInput`), `TwinpadClient::PublishKeyboardRequest/FeedKeyboardInput/ConsumeKeyboardInput`, `KeyboardCodec`, `KeyboardOverlayController` | TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
+| IDR inmediata al (re)conectar el canal media (CR-051, §7.4): `video_force_idr` server→Cemu marca la IDR del siguiente frame publicado | `TwinpadClient::RequestKeyframe` + bucle de lectura, `GameRegistry::send_cemu_video_force_idr` y hook del listener media (Servidor) | TEST-0113 |
 
 ## 13. Related decisions
 
@@ -282,6 +298,7 @@ overlay local del swkbd funciona exactamente como siempre.
 | 1.7.0 | 2026-10-29 | Product owner + Twinpad team (CR-035) | Micrófono bajo demanda: el HLE `mic` emite `mic_request` en MICOpen/MICClose (DRC0); `mic_chunk` s16le mono 32 kHz encola en cola drop-old de 1 s y alimenta `mic_updateOnAXFrame` solo con cola fresca; Android captura con AudioRecord solo con juego «cemu» Y demanda vigente |
 | 1.11.0 | 2026-10-30 | Product owner (CR-034) | Cámara del teléfono a Cemu: `camera_frame` decodificado a NV12 en la superficie CAM; envío opt-in del drawer con lente seleccionable (frontal por defecto); TEST-093..096 |
 | 1.12.0 | 2026-10-30 | Product owner (CR-044) | Teclado del juego como Android IME: `kb_requestShow/Hide` del HLE `swkbd` suprime el teclado emulado, overlay de teclado en la app bajo demanda y `kb_event` (código virtual + modifiers) drenado en el hilo HLE; TEST-0106..0109 |
+| 1.14.0 | 2026-10-31 | Buffy (agente) (CR-051) | Latencia de re-join del video: el Servidor dispara `video_force_idr` hacia el plugin tras autenticar cada cliente media (SPEC-003 §8.2); el adaptador marca IDR del siguiente frame en vez de esperar la cadencia periódica (~1 s); SNDBUF/TCP_NODELAY del socket media acotados como la sesión NDJSON; el hub de media despierta al relay con Condvar en lugar de sondeo. TEST-0113 |
 | 1.13.0 | 2026-10-30 | Buffy (CR-045) | Cola FIFO acotada (32 slots, drop-old) de muestras de motion en `TwinpadClient` y drenaje completo por frame del VPAD: cada muestra se procesa con su Δt propio; sin pérdida de muestras intermedias en giros rápidos (la captura en vivo midió 44 % → 1.4 % de descarte y 0 saltos de orientación); TEST-0111/0112 |
 | 1.12.1 | 2026-10-30 | Product owner (CR-044) | Corrige §7.3, diagrama de secuencia y mapeo de componentes al mecanismo real implementado y aprobado (SPEC-006 1.23.2): `keyboard_request`/`keyboard_input` de texto completo (base64url UTF-8, techo en la demanda) sustituyen a `kb_requestShow/Hide` + `kb_event`, con cola drop-old 8 de transiciones aplicadas en el hilo de render al formString del HLE `swkbd`, `confirm` queda decidido y `cancel` cierra el form sin decidir; TEST-0106..0110 |
 | 1.8.0 | 2026-10-29 | Product owner + Twinpad team (CR-036) | Readback del DRC acepta RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K con conversión B↔R; descartes con log y repetición del último frame cada ≤100 ms; sin recreación de encoder por cadencia; dependencia ffmpeg requiere VAAPI en Linux/AMD (CR-039) |

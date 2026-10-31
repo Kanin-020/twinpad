@@ -486,6 +486,18 @@ impl GameRegistry {
         self.send_cemu_camera_frame(line)
     }
 
+    /// Solicita a Cemu una IDR inmediata (CR-051, SPEC-003 §8.2). Se dispara
+    /// cuando un cliente media se (re)autentica: el teléfono recupera la
+    /// imagen en el siguiente frame sin esperar la cadencia periódica de
+    /// IDR (~1 s) del encoder. No se persiste: sin Cemu vivo no hay efecto.
+    pub fn send_cemu_video_force_idr(&self) -> bool {
+        let mut games = lock_or_reset(&self.games);
+        let Some(entry) = games.get_mut("cemu") else {
+            return false;
+        };
+        Self::write_input(entry, "{\"type\":\"video_force_idr\"}")
+    }
+
     /// Entrega el snapshot inicial a un Plugin recién seleccionado.
     pub fn send_input_snapshot(&self, game_id: &str, snapshot: &str) -> bool {
         let mut games = lock_or_reset(&self.games);
@@ -898,6 +910,36 @@ mod tests {
         assert_eq!(received, format!("{line}\n"));
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_camera_frame(line));
+    }
+
+    // TEST-0113 — verifies SPEC-003 §8.2 (CR-051): the IDR request reaches only the
+    // live Cemu Plugin, as a single exact line, and is a no-op without it.
+    #[test]
+    fn video_force_idr_reaches_only_live_cemu() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        assert!(!registry.send_cemu_video_force_idr());
+
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_video_force_idr());
+        let mut received = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut received)
+            .unwrap();
+        assert_eq!(received, "{\"type\":\"video_force_idr\"}\n");
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_video_force_idr());
     }
 
     // TEST-0107 — verifies SPEC-006 (CR-044): `keyboard_input` reaches only the live Cemu

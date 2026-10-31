@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0106 |
+| TEST | TEST-0114 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -88,6 +88,7 @@
 | REQ-004 | SPEC-003 | DES-004 | TEST-070 | Draft | Test Rust `selected_stream_resolution_scales_rgb_and_preserves_aspect_ratio`: redimensionamiento al límite configurado manteniendo aspecto y tamaño RGB correcto |
 | REQ-004 | SPEC-003 | DES-003 | TEST-071 | Draft | Tests `core::media_crypto` y `MediaCryptoTest`: HMAC-SHA256/RFC4231, vectores compartidos HMAC/HKDF Rust↔Kotlin, framing length/counter, AES-GCM roundtrip, tag inválido, replay/salto y oversized record (CR-014) |
 | REQ-004 | SPEC-003 | DES-003 | TEST-072 | Draft | `server::media::tests`: loopback TCP con challenge-response HMAC, espera de selección/stream_start, relay de IDR+P autenticados en counters consecutivos y cierre con revocación; proof inválido se cierra sin respuesta (CR-014) |
+| REQ-004 | SPEC-003 | DES-004 | TEST-0113 | Passed (2026-10-31, host) | CR-051: Test Rust `video_force_idr_reaches_only_live_cemu` (`server::games::tests`) — `{"type":"video_force_idr"}` llega como línea exacta solo al plugin Cemu vivo y es no-operación sin él (SPEC-003 §8.2 implementado: el Servidor dispara la solicitud al autenticar cada cliente media); TEST-072 (loopback del relay) extiende su aserción con el disparo del gancho post-handshake |
 | REQ-004/006 | SPEC-003/006 | DES-004 | TEST-073 | Draft | `TwinpadClient_h264_encoder_test` prueba el encoder OpenH264 real: SPS/PPS + IDR inicial y tras reset, contrato de perfil CR-041 (Baseline 66 o Main 77, nivel ≤4.2) y timestamps de captura crecientes (CR-014/CR-015); validación IPC autenticada pendiente de integración |
 | REQ-004 | SPEC-003 | DES-003 | TEST-074 | Draft | Instrumentación `H264SurfaceDecoderTest` con MediaCodec y Surface real: ignora P-frame previo a IDR y hasta nuevo IDR tras discontinuidad/cambio de dimensiones; verifica cerrar y recrear el decoder conectado a la misma Surface durante reconexión. `MediaCryptoTest` verifica por socket local handshake/HKDF/AES-GCM y no entrega registro manipulado; E2E físico instrumentado asociado a TEST-056/057 (CR-014). `StreamCodecTest.stream_start_accepts_h264_media_contract…` (TEST-027 bloque) añade cobertura CR-029: `fps` 0 (unlimited) y 255 aceptados como metadata, −1/256 rechazados como inválidos |
 | REQ-004 | SPEC-003 | DES-004 | TEST-075 | Draft | `VulkanRenderer_twinpad_readback_test` verifica selección del readback terminado más reciente, slots no terminados/libres y el sentinel cuando el anillo tiene menos de tres buffers asignados; Cemu compara ese sentinel con la capacidad del array para evitar acceso fuera de rango. El E2E de FPS requiere medir en dispositivo físico |

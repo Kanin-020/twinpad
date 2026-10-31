@@ -143,6 +143,11 @@ fn main() {
                 Arc::new(move |session_id| session_registry.selected_game(session_id));
             let media_game: Arc<twinpad_server::media::MediaGameLookup> =
                 Arc::new(move |session_id| media_registry_for_lookup.media_game(session_id));
+            // CR-051 (SPEC-003 §8.2): cada cliente media recién autenticado
+            // obliga IDR al plugin; sin plugin vivo la solicitud no hace nada.
+            let games_for_media = Arc::clone(&game_registry);
+            let on_media_joined: Arc<twinpad_server::media::MediaJoinedHook> =
+                Arc::new(move || games_for_media.send_cemu_video_force_idr());
             std::thread::spawn(move || {
                 println!(
                     "Canal media autenticado activo en 0.0.0.0:{} (SPEC-003).",
@@ -154,6 +159,7 @@ fn main() {
                     hub,
                     selected,
                     media_game,
+                    on_media_joined,
                 );
             });
         }

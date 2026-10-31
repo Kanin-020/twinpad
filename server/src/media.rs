@@ -5,7 +5,8 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use twinpad_core::media_crypto::{
     MAX_MEDIA_RECORD_BYTES, client_proof, derive_media_key, open_record, seal_record, server_proof,
@@ -14,6 +15,18 @@ use twinpad_core::{SessionId, SessionKey};
 
 pub const MEDIA_PORT: u16 = twinpad_core::media_crypto::MEDIA_PORT;
 const MEDIA_HANDSHAKE_BYTES: usize = 16 + 32 + 32;
+/// CR-051: SNDBUF del socket media acotado (misma técnica anti-lag de la
+/// sesión NDJSON en main.rs): escribir AU antiguas al buffer del kernel
+/// reventaría el relay en el tramo hacia el teléfono.
+const MEDIA_STREAM_SND_BUF_BYTES: usize = 4 * 1024 * 1024;
+/// CR-051: tipo del enganche post-handshake; el server lo conecta a
+/// `send_cemu_video_force_idr` para que el teléfono (re)conectado reciba
+/// IDR inmediata (SPEC-003 §8.2) sin esperar la cadencia periódica de
+/// ~1 s del encoder.
+pub type MediaJoinedHook = dyn Fn() -> bool + Send + Sync;
+/// CR-051: tope de espera en el hub; acota la reevaluación de estado
+/// externo al hub (selección/超前 media pair) sin sondeo activo.
+const HUB_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Debug)]
 pub struct AccessUnit {
@@ -31,27 +44,88 @@ pub struct MediaSource {
     pub latest: AccessUnit,
 }
 
+/// CR-051: el hub despierta a los relays al publicar/caducar una fuente
+/// (Condvar) en lugar de que cada relay sondee con `sleep`. Predicado y
+/// bloqueo comparten exclusión, sin carrera de notificación perdida.
 #[derive(Default)]
 pub struct MediaHub {
-    sources: std::sync::Mutex<BTreeMap<String, MediaSource>>,
+    sources: Mutex<BTreeMap<String, MediaSource>>,
+    changed: Condvar,
 }
 
 impl MediaHub {
     pub fn publish(&self, source: MediaSource) {
         if let Ok(mut sources) = self.sources.lock() {
             sources.insert(source.game_id.clone(), source);
+            self.changed.notify_all();
         }
     }
 
     pub fn clear_game(&self, game_id: &str) {
         if let Ok(mut sources) = self.sources.lock() {
             sources.remove(game_id);
+            self.changed.notify_all();
         }
     }
 
-    fn latest_for(&self, game_id: &str) -> Option<MediaSource> {
-        self.sources.lock().ok()?.get(game_id).cloned()
+    /// Espera hasta que la fuente `game_id` tenga una AU que satisfaga
+    /// `forwardable` (o expira el timeout). Evalúa el predicado bajo el
+    /// mismo lock que notifica `publish`, de modo que ninguna AU vale
+    /// cero. `None` solo al agotar el timeout; el caller repite sus
+    /// lookups externos (selección/pair Activados).
+    pub fn wait_for_forwardable(
+        &self,
+        game_id: &str,
+        forwardable: impl Fn(&AccessUnit) -> bool,
+        timeout: Duration,
+    ) -> Option<MediaSource> {
+        let mut guard = self
+            .sources
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(source) = guard
+                .get(game_id)
+                .filter(|source| forwardable(&source.latest))
+                .cloned()
+            {
+                return Some(source);
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            let Ok((next, result)) = self.changed.wait_timeout(guard, deadline - now) else {
+                return None;
+            };
+            if result.timed_out() {
+                return None;
+            }
+            guard = next;
+        }
     }
+
+    /// Espera cualquier cambio del hub hasta `timeout`: despierta con
+    /// publish/clear_game aunque no haya fuente para el juego consultado.
+    pub fn wait_for_change(&self, timeout: Duration) {
+        let guard = self
+            .sources
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = self.changed.wait_timeout(guard, timeout);
+    }
+}
+
+/// Socket listo para streaming: TCP_NODELAY + SNDBUF acotado (CR-051:
+/// mismo anti-lag aplicado por `StreamSink::prepare_for_streaming` a la
+/// sesión NDJSON, ahora al canal binario media y a las conexiones de la
+/// respuesta).
+fn prepare_stream_socket(stream: &TcpStream) {
+    use socket2::SockRef;
+    let sock = SockRef::from(stream);
+    let _ = sock.set_tcp_nodelay(true);
+    let _ = sock.set_send_buffer_size(MEDIA_STREAM_SND_BUF_BYTES);
 }
 
 pub type MediaCredential = (Arc<SessionKey>, Arc<AtomicBool>);
@@ -65,6 +139,7 @@ pub fn run_media_listener(
     hub: Arc<MediaHub>,
     selected_game: Arc<SelectedGameLookup>,
     media_game: Arc<MediaGameLookup>,
+    on_media_joined: Arc<MediaJoinedHook>,
 ) {
     for incoming in listener.incoming() {
         let Ok(stream) = incoming else { continue };
@@ -72,7 +147,8 @@ pub fn run_media_listener(
         let hub = Arc::clone(&hub);
         let selected = Arc::clone(&selected_game);
         let media = Arc::clone(&media_game);
-        std::thread::spawn(move || handle_media_client(stream, keys, hub, selected, media));
+        let joined = Arc::clone(&on_media_joined);
+        std::thread::spawn(move || handle_media_client(stream, keys, hub, selected, media, joined));
     }
 }
 
@@ -82,7 +158,9 @@ fn handle_media_client(
     hub: Arc<MediaHub>,
     selected_game: Arc<SelectedGameLookup>,
     media_game: Arc<MediaGameLookup>,
+    on_media_joined: Arc<MediaJoinedHook>,
 ) {
+    prepare_stream_socket(&stream);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
     let mut request = [0_u8; MEDIA_HANDSHAKE_BYTES];
@@ -121,6 +199,10 @@ fn handle_media_client(
         return;
     }
     let media_key = derive_media_key(&key.0, &nonce_c, &nonce_s);
+    // CR-051: SPEC-003 §8.2 — el servidor solicita IDR para el nuevo
+    // suscriptor al (re)entrar el canal media; el plugin la emite en el
+    // siguiente frame en lugar de esperar la cadencia periódica.
+    let _ = on_media_joined();
     let mut counter = 0_u64;
     let mut current_game = None::<String>;
     let mut last_fn = None;
@@ -131,7 +213,9 @@ fn handle_media_client(
             current_game = None;
             last_fn = None;
             last_timestamp_us = None;
-            std::thread::sleep(Duration::from_millis(5));
+            // CR-051: la espera despierta con cualquier publicar/caducar;
+            // el timeout acota la reevaluación de la selección.
+            hub.wait_for_change(Duration::from_millis(5));
             continue;
         };
         if current_game.as_deref() != Some(game_id.as_str()) {
@@ -140,11 +224,17 @@ fn handle_media_client(
             last_timestamp_us = None;
         }
         if media_game(&session_id).as_deref() != Some(game_id.as_str()) {
-            std::thread::sleep(Duration::from_millis(2));
+            hub.wait_for_change(Duration::from_millis(2));
             continue;
         }
-        let Some(source) = hub.latest_for(&game_id) else {
-            std::thread::sleep(Duration::from_millis(2));
+        // CR-051: una sola espera resuelve "AU nueva (o IDR si es el
+        // primer envío)"; antes eran sondeos con sleep de 1–2 ms que
+        // reconsultaban el casi todo loop.
+        let forwardable = |au: &AccessUnit| match last_fn {
+            None => au.idr,
+            Some(last) => au.fn_ > last && au.timestamp_us > last_timestamp_us.unwrap_or(0),
+        };
+        let Some(source) = hub.wait_for_forwardable(&game_id, forwardable, HUB_WAIT_TIMEOUT) else {
             continue;
         };
         if source.width < 16
@@ -154,16 +244,6 @@ fn handle_media_client(
             || source.latest.annex_b.is_empty()
         {
             return;
-        }
-        if last_fn.is_none() && !source.latest.idr {
-            std::thread::sleep(Duration::from_millis(1));
-            continue;
-        }
-        if last_fn.is_some_and(|last| source.latest.fn_ <= last)
-            || last_timestamp_us.is_some_and(|last| source.latest.timestamp_us <= last)
-        {
-            std::thread::sleep(Duration::from_millis(1));
-            continue;
         }
         let mut plaintext = Vec::with_capacity(17 + source.latest.annex_b.len());
         plaintext.extend_from_slice(&source.latest.fn_.to_be_bytes());
@@ -185,9 +265,8 @@ fn handle_media_client(
         };
         last_fn = Some(source.latest.fn_);
         last_timestamp_us = Some(source.latest.timestamp_us);
-        // CR-029: sin pacing por fps; la próxima iteración espera por la
-        // AU nueva (1 ms de poll) y retransmite en cuanto llega.
-        std::thread::sleep(Duration::from_millis(1));
+        // CR-029: sin pacing por fps; el bucle vuelve a esperar en el hub
+        // (Condvar) hasta la AU siguiente y retransmite en cuanto llega.
     }
 }
 
@@ -281,9 +360,24 @@ mod tests {
             Arc::new(move |_| media_game_for_lookup.lock().unwrap().clone());
         let hub = Arc::new(MediaHub::default());
         hub.publish(h264_source(0, 100, true, b"idr-sps-pps"));
+        // CR-051 (SPEC-003 §8.2): el servidor pide IDR al (re)conectar el
+        // canal media; el hook se dispara tras el handshake exitoso.
+        let media_joined_count = Arc::new(std::sync::Mutex::new(0_u32));
+        let joined_for_client = Arc::clone(&media_joined_count);
+        let on_media_joined: Arc<MediaJoinedHook> = Arc::new(move || {
+            *joined_for_client.lock().unwrap() += 1;
+            true
+        });
         let server_hub = Arc::clone(&hub);
         let server_thread = std::thread::spawn(move || {
-            handle_media_client(server, keys, server_hub, selected, media_game);
+            handle_media_client(
+                server,
+                keys,
+                server_hub,
+                selected,
+                media_game,
+                on_media_joined,
+            );
         });
 
         let nonce_c = [0x5a; 32];
@@ -318,6 +412,7 @@ mod tests {
         assert_eq!(&idr[8..16], &100_u64.to_be_bytes());
         assert_eq!(idr[16], 1);
         assert_eq!(&idr[17..], b"idr-sps-pps");
+        assert_eq!(*media_joined_count.lock().unwrap(), 1);
 
         hub.publish(h264_source(1, 200, false, b"p-frame"));
         let p_record = read_record(&mut client).unwrap();
@@ -355,8 +450,9 @@ mod tests {
         let selected: Arc<SelectedGameLookup> = Arc::new(|_| None);
         let media_game: Arc<MediaGameLookup> = Arc::new(|_| None);
         let hub = Arc::new(MediaHub::default());
+        let on_media_joined: Arc<MediaJoinedHook> = Arc::new(|| false);
         let server_thread = std::thread::spawn(move || {
-            handle_media_client(server, keys, hub, selected, media_game);
+            handle_media_client(server, keys, hub, selected, media_game, on_media_joined);
         });
         let mut request = Vec::with_capacity(MEDIA_HANDSHAKE_BYTES);
         request.extend_from_slice(&session_id.0);
