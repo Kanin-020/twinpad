@@ -16,6 +16,9 @@
 # Cargo config local del equipo (rutas de usuario, p. ej. pipewire-dev)
 /.cargo/
 
+# Vendor local del server (cache regenerable con `cargo vendor server/vendor`)
+/server/vendor/
+
 artifacts
 
 reference
