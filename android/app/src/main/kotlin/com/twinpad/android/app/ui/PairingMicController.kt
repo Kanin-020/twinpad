@@ -20,6 +20,31 @@ class PairingMicController(
     private val context: Context,
     private val onChunk: (String) -> Unit,
 ) {
+    /**
+     * Lint no infiere que la construcción de `AudioRecord` está protegida por
+     * `hasPermission()` (verificado en `start()` tras `checkSelfPermission` y
+     * en `PairingActivity.onCreate` con runtime request de RECORD_AUDIO).
+     * Se silencia el warning aquí mediante anotación explícita (CR-047 §6 del
+     * checklist de gates: `ktlint`/`detekt` y tests verdes sin warnings de
+     * permiso en build).
+     */
+    @Suppress("MissingPermission")
+    private fun makeAudioRecord(): AudioRecord =
+        AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            MicChunkCodec.SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            maxOf(
+                AudioRecord.getMinBufferSize(
+                    MicChunkCodec.SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                ).takeIf { it > 0 } ?: Int.MAX_VALUE,
+                chunkSamples * BUFFER_MULTIPLE,
+            ),
+        )
+
     /** Fragmentos de captura: 15 ms a 32 kHz (480 muestras). */
     private val chunkSamples = MicChunkCodec.SAMPLE_RATE * 15 / 1000
 
@@ -53,22 +78,11 @@ class PairingMicController(
         thread = null
     }
 
+    @Suppress("MissingPermission")
     private fun captureLoop() {
-        val minBufferSize =
-            AudioRecord.getMinBufferSize(
-                MicChunkCodec.SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-            ).takeIf { it > 0 } ?: return
         val record =
             try {
-                AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    MicChunkCodec.SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    maxOf(minBufferSize, chunkSamples * BUFFER_MULTIPLE),
-                )
+                makeAudioRecord()
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "AudioRecord no disponible", e)
                 return
