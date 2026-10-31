@@ -43,6 +43,9 @@ class CameraStreamEncoder(
         running = true
         created.start()
         worker = Thread({ drain(created) }, "camera-encoder").apply { start() }
+        // Diagnóstico CR-034: identificar el codificador de la plataforma
+        // (un codec del fabricante que no arranca produce cámaras "muertas").
+        android.util.Log.i("PairingCamera", "encoder H.264 ${created.codecInfo.name} listo")
         return surface
     }
 

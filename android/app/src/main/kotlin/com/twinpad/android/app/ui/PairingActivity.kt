@@ -234,6 +234,7 @@ class PairingActivity : AppCompatActivity() {
                 cameraStreamEnabled = enabled
                 cameraStreamLens = lens
                 cameraStreamSettingsLoaded = true
+                android.util.Log.i("PairingCamera", "toggle drawer cámara enabled=$enabled lens=$lens")
                 cameraController.stopStream()
                 applyCameraDemand()
             }
@@ -317,6 +318,13 @@ class PairingActivity : AppCompatActivity() {
     private val applyCameraDemand: () -> Unit = {
         val demandActive =
             viewModel.selectedGameId.value == "cemu" && viewModel.cameraRequested.value
+        // Diagnóstico CR-034: la decisión completa de gating deja huella por
+        // exactamente la ventana sin logs que dejó el 1-s disconnect.
+        android.util.Log.i(
+            "PairingCamera",
+            "applyCameraDemand juego=${viewModel.selectedGameId.value} " +
+                "demanda=${viewModel.cameraRequested.value} toggle=$cameraStreamEnabled",
+        )
         if (demandActive && cameraStreamEnabled) {
             cameraController.startStream(this@PairingActivity, cameraStreamLens) { line ->
                 viewModel.sendSessionLine(line)

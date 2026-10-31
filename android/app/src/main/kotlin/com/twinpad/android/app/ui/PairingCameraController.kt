@@ -82,7 +82,12 @@ class PairingCameraController(
     /** Para el envío de `camera_frame` (CR-034); desvincula el bind de
      * CameraX si él mismo lo inició, sin tocar el QR. */
     fun stopStream() {
-        if (encoder == null) return
+        if (encoder == null) {
+            // Diagnóstico CR-034: distinguir paradas reales de llamadas redundantes.
+            android.util.Log.i("PairingCamera", "stopStream ignorado: sin stream activo")
+            return
+        }
+        android.util.Log.i("PairingCamera", "stopStream: cerrando stream de cámara")
         cameraProvider?.unbindAll()
         encoder?.stop()
         encoder = null
@@ -98,7 +103,11 @@ class PairingCameraController(
         lens: CameraLens,
         onLine: (String) -> Unit,
     ) {
-        if (encoder != null) return
+        if (encoder != null) {
+            android.util.Log.i("PairingCamera", "startStream ignorado: stream ya activo")
+            return
+        }
+        android.util.Log.i("PairingCamera", "startStream lens=$lens")
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             try {
@@ -107,6 +116,7 @@ class PairingCameraController(
                 val streamEncoder = CameraStreamEncoder(onLine)
                 val surface = streamEncoder.start()
                 encoder = streamEncoder
+                android.util.Log.i("PairingCamera", "encoder de stream preparado con superficie")
                 val preview =
                     Preview.Builder()
                         .setResolutionSelector(
