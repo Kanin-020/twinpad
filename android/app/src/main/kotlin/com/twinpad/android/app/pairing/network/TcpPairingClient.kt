@@ -60,6 +60,10 @@ class TcpPairingClient {
                     val pairingSocket = Socket()
                     pairingSocket.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
                     pairingSocket.soTimeout = FIVE_SECONDS_MS // sin respuesta en 5 s → E1
+                    // CR-049: Nagle absent — sin esto, los input_report (y las
+                    // líneas mic_chunk/camera_frame) pueden esperar el ACK diferido
+                    // del segmento anterior (paridad: H264MediaClient línea 60).
+                    pairingSocket.tcpNoDelay = true
                     socket = pairingSocket
                     connectedHost = addr
                     startWriter(pairingSocket)

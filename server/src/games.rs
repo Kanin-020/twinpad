@@ -113,6 +113,16 @@ impl GameRegistry {
         if games.contains_key(&info.game_id) {
             return Err(RegisterError::Duplicate);
         }
+        // CR-049: el servidor escribe input_report (y video_config/mic/camera
+        // requests) sobre este socket con write_all+flush; `flush` es no-op en
+        // TcpStream y sin TCP_NODELAY la línea queda retenida por Nagle hasta
+        // el ACK diferido del segmento anterior (decenas de ms por tramo, peor
+        // caso ~200 ms del stall clásico Nagle/ACK-diferido). El tramo con el
+        // teléfono (stream de sesión) ya corre NODELAY (StreamSink).
+        {
+            use socket2::SockRef;
+            let _ = SockRef::from(&stream).set_tcp_nodelay(true);
+        }
         games.insert(
             info.game_id.clone(),
             GameEntry {
