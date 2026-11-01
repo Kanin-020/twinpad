@@ -191,7 +191,10 @@ class PairingStateMachine {
                 }
                 is HandshakeMessage.Error ->
                     failAttempt(wireCodeToPairingError(msg.code))
-                is HandshakeMessage.Request, is HandshakeMessage.Proof ->
+                is HandshakeMessage.Request, is HandshakeMessage.Proof,
+                // CR-055: un ping/pong durante el Handshake también es fuera
+                // de secuencia (SPEC-001 §9 E3).
+                is HandshakeMessage.Ping, is HandshakeMessage.Pong ->
                     // Mensaje fuera de secuencia (SPEC-001 §9 E3).
                     failAttempt(PairingError.Rejected)
             }
@@ -205,12 +208,25 @@ class PairingStateMachine {
             is PairingEvent.WireMessage ->
                 if (event.line == null) {
                     // SESIÓN: corte de conexión estando vinculado (SPEC-002 §9).
+                    // CR-055 HB4/HB6: el heartbeat vencido llega aquí con la
+                    // misma señal que un corte (sin error propio).
                     state = PairingUiState.Failure(PairingError.SessionEnded)
                     client = null
                     listOf(Effect.ShowError(PairingError.SessionEnded))
                 } else {
-                    // Tráfico de sesión posterior: fuera del alcance de SPEC-002.
-                    emptyList()
+                    // CR-055 (SPEC-001 §4.3 HB2): responder `pong` con eco de
+                    // `t`. Las demás líneas son tráfico de sesión posterior
+                    // (fuera del alcance de SPEC-002).
+                    val message = runCatching { HandshakeCodec.decode(event.line) }.getOrNull()
+                    when (message) {
+                        is HandshakeMessage.Ping ->
+                            listOf(
+                                Effect.SendLine(
+                                    HandshakeCodec.encode(HandshakeMessage.Pong(message.t)),
+                                ),
+                            )
+                        else -> emptyList()
+                    }
                 }
             else -> emptyList()
         }

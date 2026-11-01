@@ -5,7 +5,7 @@
 | ID | CR-055 |
 | Title | Heartbeat de sesión `ping`/`pong` (S3) y expiración de sesiones zombi |
 | Type | New behavior |
-| Status | `Approved` |
+| Status | `Applied (owner-requested)` |
 | Author | Buffy (agente) |
 | Created | 2026-11-01 |
 | Decided | 2026-11-01 |
@@ -179,15 +179,16 @@ SPEC-005 §8.3, que asumen detección oportuna del corte.
 
 ## 7. Execution checklist
 
-- [ ] Target document(s) updated (SPEC-001 1.1.0, changelog con CR-055)
-- [ ] Dependent documents updated (DES-001)
-- [ ] Tests added/updated (TEST-0120, TEST-0121, TEST-0122)
-- [ ] `testing/traceability.md` rows updated (including CR history table)
-- [ ] Indexes (`_index.md`) updated
-- [ ] Code change merged (if any)
+- [x] Target document(s) updated (SPEC-001 1.1.0, changelog con CR-055)
+- [x] Dependent documents updated (DES-001)
+- [x] Tests added/updated (TEST-0120, TEST-0121, TEST-0122)
+- [x] `testing/traceability.md` rows updated (including CR history table)
+- [x] Indexes (`_index.md`) updated
+- [x] Code change merged (if any)
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Opened y aprobado en la misma iteración (orden directa del owner) |
+| 0.2.0 | 2026-11-01 | Buffy (agente) | Applied: SPEC-001 1.1.0, DES-001 0.2.0, core/server/android implementados; TEST-0120/0121/0122 verdes |

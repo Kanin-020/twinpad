@@ -379,9 +379,9 @@ class PairingViewModel(
         val effects = machine.onEvent(event)
         _uiState.value = machine.state
         if (_uiState.value is PairingUiState.Linked) {
-            // En U4 no hay timeouts de lectura: la sesión espera tráfico
-            // de SPECs posteriores (DES-002 §8).
-            network.disableReadTimeout()
+            // CR-055 HB5: en U4 el watchdog de silencio (15 s sin ninguna línea)
+            // declara la conexión terminada; el pong mantiene viva la sesión.
+            network.armSessionWatchdog()
             // SPEC-004 §6 H0→H1: canal operativo, reporte inicial en reposo
             // (solo en la transición; Linked persiste en los eventos posteriores).
             if (gamepad.state == com.twinpad.android.app.hid.GamepadState.OFFLINE) {

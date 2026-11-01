@@ -355,6 +355,18 @@ fn main() {
                             })
                         });
 
+                        // CR-055 (SPEC-001 §4.3 HB1): latido `ping`/`pong` por
+                        // el mismo socket de control; cada ping viaja como
+                        // unidad atómica bajo el lock de línea de la sesión.
+                        let (ping_thread, pings_sent) =
+                            twinpad_server::heartbeat::spawn_ping_sender(
+                                session_alive,
+                                stream.try_clone().ok(),
+                                write_lock.0.clone(),
+                                Arc::clone(&session_running),
+                                twinpad_server::heartbeat::production_ping_interval(),
+                            );
+
                         // SPEC-005 §3/§5: no audio is sent until the SDK
                         // provides a real PCM source. Never synthesize a tone
                         // when the game has no captured audio.
@@ -367,27 +379,27 @@ fn main() {
                             Arc::clone(&session_running),
                         );
 
-                        // El hilo retiene `stream` abierto (lectura keepalive;
-                        // EOF = el cliente cerró). Aquí llegan los
-                        // `input_report` de la app (SPEC-004, ADR-007) y el
-                        // `video_config` del menú de la app.
+                        // El hilo retiene `stream` abierto (lectura del
+                        // heartbeat). Aquí llegan los `input_report` de la app
+                        // (SPEC-004, ADR-007) y el `video_config` del menú de
+                        // la app.
                         let mut last_seq: Option<u32> = None;
                         let reader_cfg = std::sync::Arc::clone(&video_config_shared);
                         let session_input_snapshot_for_reader = Arc::clone(&session_input_snapshot);
-                        use std::io::{BufRead, BufReader};
-                        // §9: el handshake armó SO_RCVTIMEO (prueba 10 s) sobre
-                        // este MISMO fd: en sesión v1 no hay tráfico periódico
-                        // (U4), dejarlo expira la lectura y mata la sesión sin
-                        // input. Reset a bloqueo indefinido: EOF es la única
-                        // señal de fin (el emisor descubre el corte al fallar
-                        // su escritura).
-                        let _ = stream.set_read_timeout(None);
+                        use std::io::BufReader;
+                        // CR-055 (SPEC-001 §4.3): el timeout de lectura (que el
+                        // handshake armó a 10 s para el proof, §9) queda
+                        // gobernado por el deadline del heartbeat: solo un
+                        // `pong` aceptado por HB3 refresca la vida de la
+                        // ligadura y el vencimiento (HB4) mata la sesión zombi
+                        // con el mismo fin observable que el EOF (HB6).
+                        let mut heartbeat =
+                            twinpad_server::heartbeat::SessionHeartbeat::new(pings_sent.clone());
                         let mut reader = BufReader::new(stream);
                         let mut line = String::new();
                         loop {
-                            line.clear();
-                            match reader.read_line(&mut line) {
-                                Ok(0) | Err(_) => {
+                            match heartbeat.read_line(&mut reader, &mut line) {
+                                twinpad_server::heartbeat::HeartbeatRead::Ended => {
                                     // El cliente cerró: liberar la sesión y
                                     // detener los emisores antes de join.
                                     session_running
@@ -397,11 +409,26 @@ fn main() {
                                     println!("Sesión finalizada.");
                                     break;
                                 }
-                                Ok(_) => {
+                                twinpad_server::heartbeat::HeartbeatRead::Line => {
                                     // SPEC-004 §9: reporte con `seq` viejo se
                                     // descarta; aquí solo validamos y registramos.
                                     let trimmed = line.trim_end();
                                     if trimmed.is_empty() {
+                                        continue;
+                                    }
+                                    // CR-055: eco del latido (HB2/HB3). Un `t`
+                                    // inválido se descarta sin cerrar la sesión
+                                    // (§4.3, sin código E adicional).
+                                    if trimmed.starts_with("{\"type\":\"pong\"") {
+                                        match twinpad_core::message::decode(trimmed) {
+                                            Ok(twinpad_core::message::HandshakeMsg::Pong { t }) => {
+                                                let refreshed = heartbeat.on_pong(t);
+                                                if !refreshed {
+                                                    println!("pong descartado por HB3.");
+                                                }
+                                            }
+                                            _ => println!("pong inválido descartado."),
+                                        }
                                         continue;
                                     }
                                     // Menú de la app (CR-001): cambio de calidad
@@ -575,6 +602,9 @@ fn main() {
                         }
                         session_running.store(false, std::sync::atomic::Ordering::Release);
                         release_input_owner(&input_owner_ref, session_id);
+                        if let Some(handle) = ping_thread {
+                            let _ = handle.join();
+                        }
                         if let Some(handle) = video_thread {
                             let _ = handle.join();
                         }

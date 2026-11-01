@@ -1,5 +1,7 @@
 package com.twinpad.android.app.pairing.network
 
+import com.twinpad.android.app.wire.ProtocolConstants
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,14 +24,19 @@ private const val FIVE_SECONDS_MS: Int = 5_000
 /**
  * Conexión TCP del lado app sobre WiFi LAN (ADR-002). Envía líneas NDJSON
  * y expone las recibidas como `Flow<String?>` (el `null` cierra: conexión
- * rechazada, timeout E1 o corte — SPEC-002 §10).
+ * rechazada, timeout E1, corte o silencio del heartbeat — SPEC-002 §10 y
+ * SPEC-001 §4.3 HB5, CR-055).
  *
  * Las líneas a enviar se encolan en [pendingWrites] y un único escritor las
  * drena en orden estricto una vez el socket está establecido (la máquina
  * emite `Connect` + `SendLine` seguidos; el envío no se pierde aunque el
  * handshake de TCP siga en curso — ENG P10: FIFO determinista).
  */
-class TcpPairingClient {
+class TcpPairingClient(
+    /** CR-055 (HB5): silencio máximo en sesión antes de declarar el corte.
+     * Inyectable para tests (producción: 15 s, el Servidor hace ping cada 5 s). */
+    private val sessionSilenceTimeoutMs: Int = ProtocolConstants.SESSION_HEARTBEAT_DEADLINE_MS,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lineChannel = Channel<String?>(capacity = Channel.UNLIMITED)
     private val pendingWrites = Channel<String>(capacity = Channel.UNLIMITED)
@@ -99,8 +106,9 @@ class TcpPairingClient {
         line: String,
     ) {
         if (!sessionMode.get() && line.contains("\"pair_ack\"")) {
-            // Handshake OK (§7 paso 11): el MISMO hilo lector desactiva timeout.
-            runCatching { s.soTimeout = 0 }
+            // Handshake OK (§7 paso 11): el MISMO hilo lector arma el watchdog
+            // de silencio del heartbeat (CR-055 HB5).
+            runCatching { s.soTimeout = sessionSilenceTimeoutMs }
             sessionMode.set(true)
         }
         lineChannel.trySend(line)
@@ -113,14 +121,9 @@ class TcpPairingClient {
         try {
             reader.readLine()
         } catch (e: SocketTimeoutException) {
-            if (!sessionMode.get()) {
-                null // E1 (SPEC-002 §9)
-            } else {
-                // En sesión el EOF es la única señal de fin (paridad server §8).
-                runCatching { s.soTimeout = 0 }
-                sessionMode.set(true)
-                reader.readLine()
-            }
+            // E1 en el handshake (SPEC-002 §9) o HB5 en sesión (CR-055):
+            // sin ninguna línea durante el timeout, la conexión terminó.
+            null
         }
 
     /** Inicia el único escritor: drena [pendingWrites] hacia `s` en FIFO. */
@@ -147,14 +150,14 @@ class TcpPairingClient {
         pendingWrites.trySend(line)
     }
 
-    /** Desactiva el timeout de lectura al entrar en U4 (la sesión no envía
-     * tráfico periódico hasta SPECs posteriores). NOTA: es best-effort — el
-     * mecanismo en carrera es el del lector (`sessionMode`): si la UI ya
-     * entró a Linked, este método no es necesario (el lector ya lo hizo).
-     * Se mantiene para paridad con la máquina de estados (SPEC-002 §8.3). */
-    fun disableReadTimeout() {
+    /** CR-055 (SPEC-001 §4.3 HB5): arma el watchdog de silencio al entrar en
+     * U4 — sin ninguna línea durante [sessionSilenceTimeoutMs], la conexión
+     * termina con el mismo fin observable que un corte. Best-effort: el
+     * mecanismo en carrera es el del lector (`sessionMode`); si la UI ya entró
+     * a Linked, el lector ya lo armó. */
+    fun armSessionWatchdog() {
         sessionMode.set(true)
-        runCatching { socket?.soTimeout = 0 }
+        runCatching { socket?.soTimeout = sessionSilenceTimeoutMs }
     }
 
     fun disconnect() {

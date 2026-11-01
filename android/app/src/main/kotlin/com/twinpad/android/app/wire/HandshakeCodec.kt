@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import java.util.Base64
 
 /**
@@ -40,6 +41,12 @@ sealed class HandshakeMessage {
 
     /** servidor → app: rechazo con código E1–E5. */
     data class Error(val code: String, val message: String) : HandshakeMessage()
+
+    /** servidor → app: latido de sesión (SPEC-001 §4.3 HB1, CR-055). */
+    data class Ping(val t: Long) : HandshakeMessage()
+
+    /** app → servidor: respuesta al latido (SPEC-001 §4.3 HB2, CR-055). */
+    data class Pong(val t: Long) : HandshakeMessage()
 }
 
 /**
@@ -63,6 +70,10 @@ object HandshakeCodec {
             is HandshakeMessage.Error ->
                 // JsonPrimitive.toString() emite el literal JSON escapado con comillas.
                 """{"type":"pair_error","code":"${msg.code}","message":${JsonPrimitive(msg.message)}}"""
+            is HandshakeMessage.Ping ->
+                """{"type":"ping","t":${msg.t}}"""
+            is HandshakeMessage.Pong ->
+                """{"type":"pong","t":${msg.t}}"""
         }
 
     fun decode(line: String): HandshakeMessage {
@@ -78,8 +89,18 @@ object HandshakeCodec {
             "pair_proof" -> decodeProof(obj)
             "pair_ack" -> decodeAck(obj)
             "pair_error" -> decodeError(obj)
+            "ping" -> HandshakeMessage.Ping(decodeHeartbeatCounter(obj))
+            "pong" -> HandshakeMessage.Pong(decodeHeartbeatCounter(obj))
             else -> throw unknownType(type)
         }
+    }
+
+    /** CR-055: `t` del heartbeat — entero no negativo (contador de pings). */
+    private fun decodeHeartbeatCounter(obj: JsonObject): Long {
+        val element = obj["t"] as? JsonPrimitive ?: throw PairingException(PairingError.InvalidResponse)
+        val value = element.longOrNull ?: throw PairingException(PairingError.InvalidResponse)
+        if (value < 0) throw PairingException(PairingError.InvalidResponse)
+        return value
     }
 
     private fun decodeRequest(obj: JsonObject): HandshakeMessage.Request {

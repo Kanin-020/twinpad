@@ -11,6 +11,10 @@ object ProtocolConstants {
     /** Bytes del token del QR (SPEC-001 §4.1). */
     const val TOKEN_BYTES: Int = 32
 
+    /** CR-055 (SPEC-001 §4.3 HB5): silencio máximo de la sesión (en ms) antes
+     * de declarar la conexión terminada; el Servidor hace `ping` cada 5 s. */
+    const val SESSION_HEARTBEAT_DEADLINE_MS: Int = 15_000
+
     // Límites del stream de video (SPEC-003 §4).
     const val MIN_DIM: Int = 16
     const val MAX_WIDTH: Int = 3840

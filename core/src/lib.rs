@@ -19,6 +19,7 @@ pub mod game;
 pub mod game_audio;
 pub mod game_media;
 pub mod handshake;
+pub mod heartbeat;
 pub mod input;
 pub mod media_crypto;
 pub mod message;

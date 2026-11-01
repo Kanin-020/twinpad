@@ -253,4 +253,51 @@ class PairingStateMachineTest {
         m.onEvent(PairingEvent.WireMessage(HandshakeCodec.encode(HandshakeMessage.Error("E3", "usado"))))
         assertEquals(PairingUiState.Failure(PairingError.Rejected), m.state)
     }
+
+    private fun linkedMachine(): PairingStateMachine {
+        val m =
+            machineIn(
+                PairingEvent.ScanRequested,
+                PairingEvent.CameraGranted,
+                PairingEvent.QrScanned(validQr),
+                // §7 completo: challenge → proof (ignorado) → ack.
+                PairingEvent.WireMessage(
+                    HandshakeCodec.encode(
+                        HandshakeMessage.Challenge(HandshakeCrypto.encodeB64(ByteArray(32) { 11 })),
+                    ),
+                ),
+                PairingEvent.WireMessage(HandshakeCodec.encode(HandshakeMessage.Ack(sessionId))),
+            )
+        assertEquals(PairingUiState.Linked(sessionId), m.state)
+        return m
+    }
+
+    // —— TEST-0122 — verifies SPEC-001 §4.3 HB2/HB5 (heartbeat, CR-055) ——
+
+    /** HB2: el `ping` del Servidor se responde con `pong` que ecúa el `t`. */
+    @Test
+    fun `linked machine answers ping with pong echoing t`() {
+        val m = linkedMachine()
+        val effects = m.onEvent(PairingEvent.WireMessage("""{"type":"ping","t":7}"""))
+        assertEquals(PairingUiState.Linked(sessionId), m.state)
+        val pong = effects.filterIsInstance<Effect.SendLine>().single()
+        assertEquals("""{"type":"pong","t":7}""", pong.line)
+    }
+
+    /** HB5: el silencio (la misma señal `null` que un corte) termina la sesión. */
+    @Test
+    fun `silence in linked session ends as SessionEnded`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+        assertEquals(PairingUiState.Failure(PairingError.SessionEnded), m.state)
+    }
+
+    /** El pong no altera el estado; otro tráfico de sesión pasa sin efecto. */
+    @Test
+    fun `pong and unrelated session traffic keep linked state unchanged`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage("""{"type":"pong","t":1}"""))
+        m.onEvent(PairingEvent.WireMessage("""{"type":"stream_start","width":640}"""))
+        assertEquals(PairingUiState.Linked(sessionId), m.state)
+    }
 }

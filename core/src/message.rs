@@ -54,6 +54,19 @@ pub enum HandshakeMsg {
         /// Mensaje legible ≤ 200 chars.
         message: String,
     },
+    /// servidor → app: latido de sesión (§4.3 HB1). Solo se emite en S3.
+    #[serde(rename = "ping")]
+    Ping {
+        /// Contador de pings del Servidor; inicia en 0 y aumenta en uno
+        /// por cada `ping` (§4.3 HB1).
+        t: u64,
+    },
+    /// app → servidor: respuesta al latido (§4.3 HB2).
+    #[serde(rename = "pong")]
+    Pong {
+        /// Eco exacto del `t` del `ping` respondido (§4.3 HB3).
+        t: u64,
+    },
 }
 
 /// Serializa un mensaje a su línea NDJSON canónica (sin `\n` final).
@@ -103,6 +116,9 @@ fn validate(msg: &HandshakeMsg) -> PairResult<()> {
             }
             Ok(())
         }
+        // §4.3: `t` es un contador; su rango lo arbitra la política de
+        // liveness de `heartbeat` (HB3), no el codec del mensaje.
+        HandshakeMsg::Ping { .. } | HandshakeMsg::Pong { .. } => Ok(()),
     }
 }
 

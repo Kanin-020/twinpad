@@ -7,12 +7,12 @@
 |---|---|
 | ID | DES-001 |
 | Title | Realización del protocolo de Pairing y Handshake (SPEC-001) |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-001 (parcial: núcleo puro completo; adaptadores I/O diferidos — ver §14) |
 | Depends on | ADR-001 (stack), ADR-002 (transporte), ADR-004 (QR + challenge) |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-11-01 |
 
 ## 1. Overview
 
@@ -45,6 +45,7 @@ erDiagram
 - `Token([u8;32])`, `Nonce([u8;32])`, `SessionId([u8;16])`, `SessionKey([u8;32])`: Newtypes; la clave deriva por HKDF y no sale del proceso (R5/R6).
 - `HandshakeMsg`: enum de los 5 mensajes de SPEC-001 §4.2.
 - `ServerHandshake` / `ClientHandshake`: estados `WaitRequest → WaitProof → Established` (servidor) y `Start → WaitAck` (cliente), con invariantes de SPEC-001 §14.
+- `PongLiveness` (CR-055, DES-001 §4.1): política pura de liveness del heartbeat de SPEC-001 §4.3 — sin I/O, reloj y deadline por parámetro; vive por ligadura S3 junto a la sesión en el registro del adaptador.
 
 ## 4. Interfaces
 
@@ -60,6 +61,8 @@ erDiagram
 | `handshake::ServerHandshake::step(&mut self, Option<&HandshakeMsg>, now_ms, ServerEntropy)` | máquina servidor; `ServerEntropy{nonce_s, session_id}` aporta aleatoriedad del adaptador | sin I/O |
 | `handshake::ClientHandshake::step(&mut self, Option<&HandshakeMsg>, now_ms)` | máquina cliente | sin I/O |
 | `crypto::is_expired(issued_at_ms, now_ms) -> bool` | `now - issued > 300_000` (R3) | frontera exacta en tests |
+| `heartbeat::PongLiveness::with_deadline(deadline_ms, now_ms)` | HB4: ventana sin `pong` válido; frontera exacta 15 000/15 001 ms | pura; deadline inyectable (producción 15 s, §12.x) |
+| `heartbeat::PongLiveness::accept(t, last_sent_t, now_ms)` | HB3: eco estrictamente nuevo y ≤ último `ping`; inválido descartado sin cerrar | `last_sent_t` lo aporta el adaptador (contador de pings) |
 
 Transcript fijo para `proof`: `encode(pair_request) ‖ encode(pair_challenge) ‖ nonce_s ‖ nonce_c` (bytes NDJSON de los dos primeros; este documento precisa el «‖» de SPEC-001 §7.8).
 
@@ -144,6 +147,10 @@ Dependencias nuevas de `core` (revisadas según ENG §11: mantenimiento, sin `un
 | §8.2 reanudación | registro de sesiones en `server/` (diferido); `core` aporta verificación de proof | TEST-007 (pendiente de adaptador) |
 | §8.3 revocación | registro de sesiones en `server/` (diferido) | TEST-008 (pendiente de adaptador) |
 | R7 regeneración automática del QR | temporizador del `server/` (diferido) | TEST-009 (pendiente de adaptador) |
+| §4.3 HB1/HB2 (emisión y eco `ping`/`pong`) | `core::message` (codec) + adaptadores (`server::heartbeat`, `TcpPairingClient`) | TEST-0121, TEST-0122 |
+| §4.3 HB3 (validación de `t` con anti-replay) | `core::heartbeat::PongLiveness` | TEST-0120 |
+| §4.3 HB4 (expiración de sesión zombi server-side, sin EOF) | `server::heartbeat` (hilo pinger + lector con deadline) | TEST-0121 |
+| §4.3 HB5 (watchdog de silencio en la app) | `TcpPairingClient` (`soTimeout` en S3) + `PairingStateMachine` | TEST-0122 |
 
 ## 13. Related decisions
 
@@ -170,3 +177,4 @@ Dependencias nuevas de `core` (revisadas según ENG §11: mantenimiento, sin `un
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Diseño inicial: núcleo puro del protocolo de SPEC-001; adaptadores diferidos |
+| 0.2.0 | 2026-11-01 | Buffy (agente) | CR-055: heartbeat de sesión §4.3 — política pura `core::heartbeat::PongLiveness` (reloj inyectado, HB3/HB4), adaptador `server::heartbeat` (ping cada 5 s + expiración zombi) y watchdog de silencio en la app (HB5); TEST-0120/0121/0122 |

@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0120 |
+| TEST | TEST-0123 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -48,6 +48,9 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-0115 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_round_trips_and_rejects_bad_fields` (`core::game::tests`) — round-trip listo y E4 estricto del contrato de la línea: ventana 10–10000 ms, etapa/evento fuera de catálogo, etapa repetida, `avg_us > max_us`, campo desconocido y contadores fuera de rango se rechazan como `MalformedMessage` |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0118 | Passed (2026-10-31, host) | CR-054: Tests Rust del framing del canal media binario (`core::game_media::tests`) — round-trip del header de 32 B little-endian (magic «TW», `gfn`/`ts`/`idr`/`w`/`h`/`len`/`fmt`, reservado en 0), catálogo de rechazos (len 0, len > 4 MiB, magic corrupto, `idr`=2, `fmt`≠1, buffer mal medido, dimensiones fuera de 16–3840/16–2160 y límites exactos válidos) y línea `game_media_start` decodificando como `GameMsg::GameMediaStart` con `game_id` inválido → E4 |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0119 | Passed (2026-10-31, host) | CR-054: Test de integración binario (`server/tests/sdk_media_binary_integration.rs`) — handshake `game_media_start` + AU [header][anexo] sobre el listener loopback: ingestión en `GameRegistry::latest_frame` Y `MediaHub` (AU más reciente ganada), conexión sin juego vivo cerrada tras el handshake sin ingest (§14) y header con `len` sobre el techo cierra el canal dejando intacto el AU previo válido |
+| REQ-002 | SPEC-001 | DES-001 | TEST-0120 | Passed (2026-11-01, host) | CR-055: Tests de la política de liveness pura (`core::heartbeat::tests`) — dentro/vencido del deadline, defensa anti-replay (el pong eco de un `t` ya visto no refresca) y delta negativo rechazado |
+| REQ-002 | SPEC-001 | DES-001 | TEST-0121 | Passed (2026-11-01, host) | CR-055: Test de integración del heartbeat de sesión (`server/tests/heartbeat_session.rs`) — ping/pong en loopback mantiene la sesión viva y un EOF limpio sigue cerrándola; pong sin cesar → cierre de sesión zombi; pong obsoleto (replay) no la salva; el lector de sesión posee el deadline (no hay timers externos) |
+| REQ-002 | SPEC-002 | DES-002 | TEST-0122 | Passed (2026-11-01, host) | CR-055: Tests Kotlin `PairingStateMachineTest` (HB2/HB5) — en Linked el `ping` se responde con `pong` ecuando `t`, pong y tráfico de sesión no alteran el estado, y la señal nula del watchdog de silencio (HB5, 15 s) termina como `SessionEnded` igual que un corte |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0116 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_drains_latest_line_per_live_game` (`server::games::tests`) — `push_video_stage_stats` solo acepta juego vivo, la última línea de ventana reemplaza a la previa, `pop_video_stage_stats` la consume una vez (sin reencolar) y un juego extraño nunca recibe telemetría ajena |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0117 | Passed (2026-10-31, host) | CR-053: Test Kotlin `VideoStageStatsCodecTest` (wire Android) — decodificación estricta paridad con core (ventana fuera de rango, etapa/evento de catálogo, `avg_us > max_us`, `count < 1`, tupla incompleta, etapa repetida, evento desconocido y línea no JSON → null) y formateo compacto del HUD «pix 210 µs (480 µs) · b64 55 µs (90 µs) · 120 ev»; contenido vacío → línea oculta |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
@@ -170,6 +173,8 @@
 ## Change history
 
 | CR | Changes | Date | Status |
+|---|---|---|---|
+| CR-055 | SPEC-001 1.1.0 y DES-001 0.2.0: heartbeat de sesión §4.3 — el Servidor emite `ping{t}` cada 5 s en S3 (HB1), la app responde `pong{t}` con eco de `t` (HB2); liveness server-side solo por pong válido con anti-replay (HB3, `core::heartbeat::PongLiveness` pura con paso de reloj) y expiración de sesión zombi a los 15 s sin pong (HB4, el lector tiene el deadline); watchdog de silencio de 15 s en la app (HB5); la expiración es equivalente a un corte sin códigos E (HB6); TEST-0120/0121/0122 | 2026-11-01 | Applied (owner-requested) |
 |---|---|---|---|
 | CR-054 | DES-004 1.17.0: canal media binario Plugin→Servidor en 127.0.0.1:8426 — handshake `game_media_start` (GameMsg nuevo, CR-054) y AU H.264 como [header 32 B LE][anexo] sin base64+JSON (§7.6); ingest idéntica a la NDJSON (`store_access_unit`+`MediaHub::publish`), sin liveness propio y con fallback NDJSON en el hilo de envío de Cemu; peers mixtos compatibles en ambos sentidos; TEST-0118/0119 | 2026-10-31 | Applied (owner-requested) |
 | CR-053 | DES-004 1.16.0: `video_stage_stats` juego→server→app — el Plugin publica en cada flush de 5 s la ventana de métricas por etapa (la misma con la que construye el log `[TwinpadPerf]`), el Servidor valida/drena la última por juego a la sesión seleccionada y el HUD del teléfono la muestra como segunda línea (promedio (máximo) por etapa, catálogo canónico, validación estricta; TEST-0115/0116/0117) | 2026-10-31 | Applied (owner-requested) |

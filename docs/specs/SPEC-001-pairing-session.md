@@ -7,13 +7,13 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
 | Realized by | DES-001 (núcleo puro implementado en `core/`; adaptadores TCP/servidor pendientes) |
-| Verified by | TEST-001 … TEST-009 (registrados en `testing/traceability.md`, aún sin código) |
-| Last updated | 2026-10-07 |
+| Verified by | TEST-001 … TEST-009, TEST-0120 … TEST-0122 (registrados en `testing/traceability.md`) |
+| Last updated | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -28,6 +28,7 @@ Los términos de dominio (Pairing, QR de vinculación, Framebuffer, Signature HI
 - **Session key**: clave simétrica derivada del token (HKDF-SHA256, §7 paso 8); nunca viaja por la red.
 - **Handshake**: el intercambio acotado de mensajes de §7 sobre la conexión TCP abierta tras el escaneo del QR. El término no designa aquí ninguna otra secuencia.
 - **Nonce**: cadena aleatoria de 32 bytes codificada base64url (`nonce_s` del servidor, `nonce_c` del cliente).
+- **Heartbeat**: intercambio periódico `ping`/`pong` de §4.3 durante S3 que mantiene viva la ligadura y hace observable un corte silencioso (sin EOF) en cualquier extremo.
 
 ## 3. Preconditions
 
@@ -72,6 +73,26 @@ Transporte: conexión TCP hacia `server_addr:server_port`. Cada mensaje es una l
 
 Un mensaje recibido con `type` desconocido, campo faltante o campo con longitud/valor fuera de constraints se rechaza por E4 o E5 según la tabla §9.
 
+### 4.3 Heartbeat de sesión (S3)
+
+El Servidor envía `ping` por el socket de control cada 5 000 ms y la app responde `pong`. Ambos mensajes son líneas UTF-8 JSON + LF, como §4.2.
+
+| Message | Direction | Field | Type | Constraints | Required |
+|---|---|---|---|---|---|
+| `ping` | servidor → app | `type` | string | fijo `ping` | yes |
+| | | `t` | integer (uint64) | contador de pings del Servidor; inicia en 0 y aumenta en uno por cada `ping` | yes |
+| `pong` | app → servidor | `type` | string | fijo `pong` | yes |
+| | | `t` | integer (uint64) | eco exacto del `t` del `ping` respondido | yes |
+
+Reglas del heartbeat:
+
+- **HB1:** el Servidor emite `ping` solo en S3, nunca durante el Handshake (§7).
+- **HB2:** por cada `ping` recibido la app envía exactamente un `pong` (eco de `t`).
+- **HB3:** un `pong` aceptado requiere `t` estrictamente mayor que el último `pong` aceptado y menor o igual que el último `ping` enviado. Un `pong` fuera de ese rango se descarta sin cerrar la sesión y no refresca la vida.
+- **HB4:** si el Servidor no acepta ningún `pong` válido durante 15 000 ms, declara la sesión caída: transición S3→S1 (§6) con los mismos side effects que un corte de conexión, incluido el cierre de su canal media asociado (invariante «Pairing activo» de SPEC-003).
+- **HB5:** si la app no recibe ninguna línea del Servidor durante 15 000 ms estando en S3, declara la sesión caída: transición S3→S1 (§6), idéntica a un corte de conexión.
+- **HB6:** la expiración del heartbeat no emite `pair_error` ni ningún código E (§9): su comportamiento observable es el de un corte de conexión.
+
 ## 5. Outputs
 
 | Result | Value / shape | Condition |
@@ -96,6 +117,8 @@ Estados (lado app; el servidor mantiene un registro espejo por conexión): `S1 D
 
 Invariantes del ciclo: de S2 solo se sale a S3 vía `pair_ack` o a S1 por error; un token expira (R3) o se consume (R2), nunca ambos.
 
+En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expiración produce S3→S1 con los side effects de «corte de conexión», incluido el cierre del canal media asociado (SPEC-003).
+
 ## 7. Main flow (Handshake exitoso)
 
 1. El Jugador pide el QR en la PC: el Servidor PC genera un token de 32 bytes con su RNG criptográfico, registra la hora local de emisión y muestra el QR (§4.1).
@@ -112,6 +135,7 @@ Invariantes del ciclo: de S2 solo se sale a S3 vía `pair_ack` o a S1 por error;
 9. El servidor reconstruye `session_key` con su token y verifica `proof` de forma exacta recorriendo todos los bytes (comparación sin salida temprana, defensiva frente a timing).
 10. Éxito: el servidor marca el token consumido, genera `session_id` (16 bytes aleatorios) y envía `pair_ack` (`session_id`). Ambos quedan en S3.
 11. La app muestra "Vinculado" (parte del flujo; UI final definida en su SPEC).
+12. Con ambos extremos en S3, el heartbeat de §4.3 queda activo: el Servidor envía `ping` (`t=0`) y la app responde `pong`.
 
 ## 8. Alternative flows
 
@@ -145,6 +169,8 @@ Invariantes del ciclo: de S2 solo se sale a S3 vía `pair_ack` o a S1 por error;
 
 Sin respuesta a `pair_challenge` en 10 s: el servidor cierra la conexión sin `pair_ack`; el token no queda consumido (§14).
 
+El heartbeat (§4.3 HB4–HB6) no genera códigos E: su expiración equivale a un corte de conexión en S3 (§6).
+
 ## 10. Edge cases
 
 | Case | Expected behavior |
@@ -176,6 +202,7 @@ Sin respuesta a `pair_challenge` en 10 s: el servidor cierra la conexión sin `p
 | Payload del QR (`twinpad://v1#…`) | este SPEC §4.1 | la versión va dentro del esquema URI; cambio de versión → CR |
 | Mensajes del Handshake (NDJSON) | este SPEC §4.2 | añadir/quitar campos o tipos exige CR |
 | Primitivas criptográficas | este SPEC §7 pasos 8–9 y R4 | el DES precisa la revisión criptográfica del Eng lead |
+| Mensajes de heartbeat (`ping`/`pong`) | este SPEC §4.3 | añadir/quitar tipos exige CR |
 
 ## 13. Examples (Given / When / Then)
 
@@ -214,6 +241,16 @@ Scenario: Regeneración automática del QR
   Given un QR mostrado cuyo token alcanza los 300 s sin consumirse
   When el token expira
   Then el Servidor PC muestra automáticamente un QR nuevo con un token nuevo, sin intervención del Jugador
+
+Scenario: Heartbeat mantiene viva la sesión ociosa
+  Given una sesión S3 sin tráfico de medios ni inputs
+  When el Servidor envía pings cada 5 s y la app responde pong
+  Then la sesión permanece en S3 (HB1–HB2)
+
+Scenario: Teléfono desaparece sin EOF (sesión zombi)
+  Given una sesión S3 activa
+  When el celular pierde la red sin cerrar el TCP (sin EOF hacia el servidor)
+  Then el Servidor deja de aceptar pongs y a los 15 000 ms declara la sesión caída (HB4), cerrando la ligadura y su canal media
 ```
 
 ## 14. Invariants
@@ -223,6 +260,7 @@ Scenario: Regeneración automática del QR
 - En S2 el token sigue de un solo uso: un intento abortado no lo consume; solo el paso 10 lo hace.
 - Dentro de S3, cada `session_id` identifica exactamente una ligadura activa con su propia `session_key`; un reinicio del servidor elimina todas las ligaduras (la reanudación §8.2 ya no es posible).
 - `session_key` nunca sale de la memoria del proceso y no se firma en ningún mensaje (solo derivados como `proof`).
+- El heartbeat de §4.3 no consume ni renueva tokens (R2/R3 intactos) y no modifica `session_id` ni `session_key`; solo mantiene viva la ligadura de S3.
 
 ## 15. What "complies" means
 
@@ -241,6 +279,9 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | §8.2 reanudación | TEST-007 |
 | §8.3 revocación | TEST-008 |
 | R7 regeneración automática del QR al expirar | TEST-009 |
+| HB1–HB3 (emisión, eco de `t` y validación del rango) | TEST-0120, TEST-0122 |
+| HB4 expiración server-side (sesión zombi sin EOF) | TEST-0120, TEST-0121 |
+| HB5 silencio del Servidor percibido por la app | TEST-0122 |
 
 ## 17. Open questions
 
@@ -265,4 +306,5 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: QR de vinculación + Handshake autenticado; validez QR 5 min (decisión del dueño) |
 | 0.2.0 | 2026-10-07 | Twinpad team | OQ-1 resuelta: regeneración automática del QR al expirar (R7, TEST-009) |
 | 0.3.0 | 2026-10-07 | Twinpad team | OQ-2 resuelta: primitivas HKDF-SHA256 + HMAC-SHA256 definitivas; Status → `In review` |
+| 1.1.0 | 2026-11-01 | Buffy (agente) | CR-055: heartbeat `ping`/`pong` en S3 (§4.3, HB1–HB6) con expiración de sesión zombi; TEST-0120/0121/0122 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
