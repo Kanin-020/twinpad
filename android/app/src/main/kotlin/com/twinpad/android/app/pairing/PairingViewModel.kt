@@ -151,10 +151,21 @@ class PairingViewModel(
         // Main (ENG P10: el efecto pesado vive en el hilo correcto).
         viewModelScope.launch(Dispatchers.Default) {
             network.lines.collect { line ->
-                if (_uiState.value is PairingUiState.Linked) {
-                    onStreamLine(line) // SPEC-003: tráfico de sesión
-                } else {
-                    feed(PairingEvent.WireMessage(line))
+                // CR-055 HB2: el heartbeat vive en la máquina de estados.
+                // La ruta de medios de U4 no debe tragarse el `ping`: el server
+                // vence HB4 a los 15 s si la app no contesta y mata la sesión.
+                // La ruta rápida de `type` evita tocar el payload de medios.
+                when {
+                    line != null && lineType(line) == "ping" -> {
+                        // Diagnóstico CR-055 (sin token ni datos del payload:
+                        // R3). Con esto la huella del logcat es definitiva:
+                        // la línea aparece ⇔ la app con este build recibe
+                        // el `ping` del server y lo ruta a la máquina.
+                        Log.i("PairingVM", "ping recibido: se responderá con pong")
+                        feed(PairingEvent.WireMessage(line))
+                    }
+                    _uiState.value is PairingUiState.Linked -> onStreamLine(line) // SPEC-003: tráfico de sesión
+                    else -> feed(PairingEvent.WireMessage(line))
                 }
             }
         }
