@@ -22,6 +22,8 @@ struct Harness {
     accepted: Arc<AtomicU64>,
     /// La sesión terminó (EOF, error de E/S o vencimiento HB4).
     ended: Arc<AtomicBool>,
+    /// Causa del fin (diagnóstico HB6: Eof vs Deadline vs IoError).
+    cause: Arc<std::sync::Mutex<Option<heartbeat::EndCause>>>,
 }
 
 /// Lado servidor: emisor HB1 + lector con deadline HB4 sobre un socket real.
@@ -30,17 +32,22 @@ fn spawn_harness(interval_ms: u64, deadline_ms: u64) -> Harness {
     let addr = listener.local_addr().unwrap();
     let accepted = Arc::new(AtomicU64::new(0));
     let ended = Arc::new(AtomicBool::new(false));
+    let cause = Arc::new(std::sync::Mutex::new(None::<heartbeat::EndCause>));
     let accepted_clone = Arc::clone(&accepted);
     let ended_clone = Arc::clone(&ended);
+    let cause_clone = Arc::clone(&cause);
     std::thread::spawn(move || {
         let (server, _) = listener.accept().unwrap();
-        let stop = Arc::new(AtomicBool::new(false));
+        // Mismo sentido de la bandera que en producción (main.rs): `running`
+        // nace TRUE ("sesión viva") y se apaga al terminar (EndCause). El
+        // emisor HB1 comparte exactamente ese `Arc<AtomicBool>`.
+        let running = Arc::new(AtomicBool::new(true));
         let write_lock: Arc<std::sync::Mutex<()>> = Arc::new(std::sync::Mutex::new(()));
         let (pinger, pings) = heartbeat::spawn_ping_sender(
             true,
             server.try_clone().ok(),
             write_lock.clone(),
-            Arc::clone(&stop),
+            Arc::clone(&running),
             Duration::from_millis(interval_ms),
         );
         let mut heartbeat = heartbeat::SessionHeartbeat::with_deadline(deadline_ms, pings.clone());
@@ -63,8 +70,11 @@ fn spawn_harness(interval_ms: u64, deadline_ms: u64) -> Harness {
                     // Otras líneas de sesión (inputs, video_config) no se
                     // procesan aquí: no refrescan la vida (HB3/HB4).
                 }
-                HeartbeatRead::Ended => {
-                    stop.store(true, Ordering::Release);
+                HeartbeatRead::Ended(cause) => {
+                    *cause_clone.lock().unwrap() = Some(cause);
+                    // EndCause en main.rs: apagar la sesión detiene TODO
+                    // emisor que comparta la bandera (video/audio/pings).
+                    running.store(false, Ordering::Release);
                     ended_clone.store(true, Ordering::Release);
                     break;
                 }
@@ -78,6 +88,7 @@ fn spawn_harness(interval_ms: u64, deadline_ms: u64) -> Harness {
         addr,
         accepted,
         ended,
+        cause,
     }
 }
 
@@ -133,6 +144,13 @@ fn zombie_session_pinging_then_silent_is_expired() {
         wait_until(|| h.ended.load(Ordering::Acquire), 3_000),
         "HB4: sin `pong` válido durante el deadline la sesión zombi expira"
     );
+    // La causa reportada al log del server es el deadline, no un EOF:
+    // el teléfono "zombi" nunca cerró su lado del socket.
+    assert_eq!(
+        *h.cause.lock().unwrap(),
+        Some(heartbeat::EndCause::Deadline),
+        "la causa del fin zombi es HB4 (sin pong), no un corte del cliente"
+    );
 }
 
 /// TEST-0121 — verifies SPEC-001 (§4.3 HB3: echos viejos no refrescan la vida).
@@ -166,6 +184,11 @@ fn replayed_stale_pongs_do_not_refresh_liveness() {
         h.accepted.load(Ordering::Acquire),
         1,
         "solo el primer eco (t=0) fue aceptado; los repetidos se descartan"
+    );
+    assert_eq!(
+        *h.cause.lock().unwrap(),
+        Some(heartbeat::EndCause::Deadline),
+        "los ecos repetidos también expiran por deadline HB4"
     );
 }
 
@@ -213,6 +236,91 @@ fn fresh_pongs_keep_session_alive_and_eof_still_ends_it() {
     assert!(
         wait_until(|| h.ended.load(Ordering::Acquire), 1_000),
         "el EOF del socket termina la sesión (HB6, mismo fin observable)"
+    );
+    // Fidelidad del log: un corte del cliente termina con Eof o IoError —
+    // el kernel puede mandar RST en lugar de FIN si el cliente cierra con
+    // pings en vuelo — pero NUNCA Deadline (HB4 es solo silencio sin pong
+    // con el socket sano).
+    assert_ne!(
+        *h.cause.lock().unwrap(),
+        Some(heartbeat::EndCause::Deadline),
+        "el corte del cliente nunca se reporta como HB4"
+    );
+}
+
+/// TEST-0125 — verifies SPEC-001 (§4.3 HB1, wiring CR-055). Regresión exacta
+/// del hallazgo en producción (la sesión “se cortaba” sola): la bandera que
+/// comparte el emisor con video/audio es `session_running` (true = sesión
+/// viva). Con la semántica invertida previa (`stop`: true = deténte), el
+/// emisor abandonaba el bucle al leer la sesión viva y NO salía ningún
+/// `ping` — el lector declaraba HB4 a los 15 s en toda sesión.
+#[test]
+fn session_running_true_emits_pings_and_false_stops_them() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    // Construcción EXACTA del wiring de producción (main.rs): la bandera
+    // nace TRUE ("sesión viva") y el emisor DEBE emitir pings con ella en
+    // alto; se apaga (store(false), como el EndCause) para detenerlo.
+    let running = Arc::new(AtomicBool::new(true));
+    let (pings_tx, pings_rx) = std::sync::mpsc::channel::<heartbeat::SentPings>();
+    let done = Arc::new(AtomicBool::new(false));
+    let running_in_thread = Arc::clone(&running);
+    let done_in_thread = Arc::clone(&done);
+    std::thread::spawn(move || {
+        let (server, _) = listener.accept().unwrap();
+        let write_lock: Arc<std::sync::Mutex<()>> = Arc::new(std::sync::Mutex::new(()));
+        let (pinger, pings) = heartbeat::spawn_ping_sender(
+            true,
+            server.try_clone().ok(),
+            write_lock,
+            Arc::clone(&running_in_thread),
+            Duration::from_millis(20),
+        );
+        let _ = pings_tx.send(pings);
+        if let Some(handle) = pinger {
+            let _ = handle.join(); // termina solo al caer `running`
+        }
+        done_in_thread.store(true, Ordering::Release);
+    });
+
+    let client = TcpStream::connect(addr).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_millis(2_000)))
+        .unwrap();
+    let mut reader = BufReader::new(client.try_clone().unwrap());
+    let pings = pings_rx.recv().unwrap();
+
+    // (1) Con `session_running=true` (estado EXACTO del wiring vivo) el emisor
+    //     DEBE enviar pings. Bajo el wiring invertido, el emisor salía al ver
+    //     `true` y aquí no llegaría NUNCA.
+    let mut got_ping = false;
+    let mut buf = String::new();
+    for _ in 0..50 {
+        buf.clear();
+        if reader.read_line(&mut buf).unwrap_or(0) == 0 {
+            break;
+        }
+        if let Ok(HandshakeMsg::Ping { .. }) = message::decode(buf.trim_end()) {
+            got_ping = true;
+            break;
+        }
+    }
+    assert!(
+        got_ping,
+        "HB1 wiring (CR-055): con `session_running=true` el emisor debe emitir pings"
+    );
+    assert!(
+        pings.load() >= 1,
+        "el contador HB1 refleja el ping efectivamente enviado (HB3)"
+    );
+
+    // (2) Apagar la bandera (equivalente exacto del EndCause en main.rs) con
+    //     session_running=running=false detiene al emisor limpio.
+    running.store(false, Ordering::Release);
+    assert!(
+        wait_until(|| done.load(Ordering::Acquire), 1_000),
+        "el emisor se detiene y se une al caer la bandera de sesión"
     );
 }
 

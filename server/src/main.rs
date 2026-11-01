@@ -358,6 +358,10 @@ fn main() {
                         // CR-055 (SPEC-001 §4.3 HB1): latido `ping`/`pong` por
                         // el mismo socket de control; cada ping viaja como
                         // unidad atómica bajo el lock de línea de la sesión.
+                        // La bandera compartida es SU MISMA `session_running`
+                        // con el MISMO sentido que video/audio (true = viva):
+                        // fijado por TEST-0125 (evita regresar a la semántica
+                        // invertida que dejaba la sesión sin pings → HB4).
                         let (ping_thread, pings_sent) =
                             twinpad_server::heartbeat::spawn_ping_sender(
                                 session_alive,
@@ -399,9 +403,24 @@ fn main() {
                         let mut line = String::new();
                         loop {
                             match heartbeat.read_line(&mut reader, &mut line) {
-                                twinpad_server::heartbeat::HeartbeatRead::Ended => {
-                                    // El cliente cerró: liberar la sesión y
-                                    // detener los emisores antes de join.
+                                twinpad_server::heartbeat::HeartbeatRead::Ended(cause) => {
+                                    // El cliente cerró o el deadline HB4 venció:
+                                    // liberar la sesión y detener los emisores
+                                    // antes de join. La causa SE imprime para el
+                                    // diagnóstico del corte (comportamiento sin
+                                    // cambios: los tres fines son equivalentes,
+                                    // SPEC-001 §4.3 HB6).
+                                    println!(
+                                        "Sesión finalizada. Causa: {}",
+                                        match cause {
+                                            twinpad_server::heartbeat::EndCause::Eof =>
+                                                "EOF — el teléfono cerró la conexión",
+                                            twinpad_server::heartbeat::EndCause::Deadline =>
+                                                "HB4 — sin `pong` válido en 15 s (sesión zombi)",
+                                            twinpad_server::heartbeat::EndCause::IoError =>
+                                                "error de E/S (reset/corte abrupto)",
+                                        }
+                                    );
                                     session_running
                                         .store(false, std::sync::atomic::Ordering::Release);
                                     registry_ref.remove(&session_id);
@@ -423,7 +442,11 @@ fn main() {
                                         match twinpad_core::message::decode(trimmed) {
                                             Ok(twinpad_core::message::HandshakeMsg::Pong { t }) => {
                                                 let refreshed = heartbeat.on_pong(t);
-                                                if !refreshed {
+                                                if refreshed {
+                                                    // Diagnóstico CR-055 (t es un contador, no es token):
+                                                    // el eco HB3 aceptó: la vida de la sesión se refresca.
+                                                    println!("pong aceptado t={t}.");
+                                                } else {
                                                     println!("pong descartado por HB3.");
                                                 }
                                             }
