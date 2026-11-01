@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0123 |
+| TEST | TEST-0126 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -50,7 +50,10 @@
 | REQ-006 | SPEC-006 | DES-004 | TEST-0119 | Passed (2026-10-31, host) | CR-054: Test de integración binario (`server/tests/sdk_media_binary_integration.rs`) — handshake `game_media_start` + AU [header][anexo] sobre el listener loopback: ingestión en `GameRegistry::latest_frame` Y `MediaHub` (AU más reciente ganada), conexión sin juego vivo cerrada tras el handshake sin ingest (§14) y header con `len` sobre el techo cierra el canal dejando intacto el AU previo válido |
 | REQ-002 | SPEC-001 | DES-001 | TEST-0120 | Passed (2026-11-01, host) | CR-055: Tests de la política de liveness pura (`core::heartbeat::tests`) — dentro/vencido del deadline, defensa anti-replay (el pong eco de un `t` ya visto no refresca) y delta negativo rechazado |
 | REQ-002 | SPEC-001 | DES-001 | TEST-0121 | Passed (2026-11-01, host) | CR-055: Test de integración del heartbeat de sesión (`server/tests/heartbeat_session.rs`) — ping/pong en loopback mantiene la sesión viva y un EOF limpio sigue cerrándola; pong sin cesar → cierre de sesión zombi; pong obsoleto (replay) no la salva; el lector de sesión posee el deadline (no hay timers externos) |
+| REQ-002 | SPEC-001 | DES-001 | TEST-0125 | Passed (2026-11-01, host) | CR-055 (regresión del wiring): la bandera compartida del emisor HB1 es `session_running` con el MISMO sentido que video/audio (true = sesión viva) — con la bandera en alto salen pings y al caer se detiene limpio. Reproduce exactamente el defecto en producción (semántica invertida `stop`: sin ping, HB4 a los 15 s en toda sesión) |
 | REQ-002 | SPEC-002 | DES-002 | TEST-0122 | Passed (2026-11-01, host) | CR-055: Tests Kotlin `PairingStateMachineTest` (HB2/HB5) — en Linked el `ping` se responde con `pong` ecuando `t`, pong y tráfico de sesión no alteran el estado, y la señal nula del watchdog de silencio (HB5, 15 s) termina como `SessionEnded` igual que un corte |
+| REQ-002 | SPEC-002 | DES-002 | TEST-0123 | Passed (2026-11-01, host) | CR-055 (regresión del cableado, reporte «la sesión se corta» del owner): Tests Kotlin `PairingViewModelTest` con TCP loopback real — en U4 el `ping` del Servidor llega a la máquina por el colector de `PairingViewModel` (la ruta de medios la tragaba: el Servidor vencía HB4 a los 15 s y mataba la sesión durante el stream); el eco `pong{t:0}` sale por el socket |
+| REQ-002 | SPEC-002 | DES-002 | TEST-0124 | Passed (2026-11-01, host) | CR-060: Tests Kotlin `PairingStateMachineTest` — entrada manual del código sin cámara (§8.4): desde U1 un `QrScanned` válido pasa directo a Handshaking con `Connect`+`pair_request` y SIN efectos de cámara; payload inválido desde U1 → E5 sin abrir conexión; blancos al inicio/fin se recortan y blancos en el medio son E5 |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0116 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_drains_latest_line_per_live_game` (`server::games::tests`) — `push_video_stage_stats` solo acepta juego vivo, la última línea de ventana reemplaza a la previa, `pop_video_stage_stats` la consume una vez (sin reencolar) y un juego extraño nunca recibe telemetría ajena |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0117 | Passed (2026-10-31, host) | CR-053: Test Kotlin `VideoStageStatsCodecTest` (wire Android) — decodificación estricta paridad con core (ventana fuera de rango, etapa/evento de catálogo, `avg_us > max_us`, `count < 1`, tupla incompleta, etapa repetida, evento desconocido y línea no JSON → null) y formateo compacto del HUD «pix 210 µs (480 µs) · b64 55 µs (90 µs) · 120 ev»; contenido vacío → línea oculta |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
@@ -174,6 +177,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-060 | SPEC-002 1.11.0 y DES-002 0.4.0: entrada manual del código de vinculación sin cámara (§8.4, R20) — `QrScanned` desde U1 con el mismo parser estricto y handshake del §7; trim de blancos de borde (§10); la PC ya imprime el payload copiable junto al QR, sin cambio de server; TEST-0124 | 2026-11-01 | Applied (owner-requested) |
 | CR-055 | SPEC-001 1.1.0 y DES-001 0.2.0: heartbeat de sesión §4.3 — el Servidor emite `ping{t}` cada 5 s en S3 (HB1), la app responde `pong{t}` con eco de `t` (HB2); liveness server-side solo por pong válido con anti-replay (HB3, `core::heartbeat::PongLiveness` pura con paso de reloj) y expiración de sesión zombi a los 15 s sin pong (HB4, el lector tiene el deadline); watchdog de silencio de 15 s en la app (HB5); la expiración es equivalente a un corte sin códigos E (HB6); TEST-0120/0121/0122 | 2026-11-01 | Applied (owner-requested) |
 |---|---|---|---|
 | CR-054 | DES-004 1.17.0: canal media binario Plugin→Servidor en 127.0.0.1:8426 — handshake `game_media_start` (GameMsg nuevo, CR-054) y AU H.264 como [header 32 B LE][anexo] sin base64+JSON (§7.6); ingest idéntica a la NDJSON (`store_access_unit`+`MediaHub::publish`), sin liveness propio y con fallback NDJSON en el hilo de envío de Cemu; peers mixtos compatibles en ambos sentidos; TEST-0118/0119 | 2026-10-31 | Applied (owner-requested) |
