@@ -52,6 +52,10 @@
     <string name="editor_save">Guardar</string>
     <string name="editor_done">Listo</string>
     <string name="hud_chip_text">%1$s render · %2$s recibidos · %3$s Mbps</string>
+    <!-- CR-054: bloque separado del HUD con las etapas del Plugin. -->
+    <string name="hud_stage_title">Métricas avanzadas</string>
+    <string name="settings_advanced_metrics">Métricas avanzadas</string>
+    <string name="settings_show_advanced_metrics">Mostrar métricas avanzadas</string>
     <!-- CR-044: overlay del teclado del juego; la escritura vive en el IME. -->
     <string name="keyboard_hint">Teclado del juego…</string>
 

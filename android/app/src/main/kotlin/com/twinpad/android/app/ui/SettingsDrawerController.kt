@@ -42,6 +42,9 @@ internal interface SettingsDrawerHost {
      * inicial y cambio de usuario comparten esta notificación. */
     fun onNintendoDistributionToggled(enabled: Boolean)
 
+    /** CR-054: bloque «Métricas avanzadas» del HUD activado/desactivado. */
+    fun onAdvancedMetricsToggled(enabled: Boolean)
+
     /** CR-034: stream de cámara (on/off) con la lente vigente. Restauración
      * inicial y cambio de usuario comparten esta notificación; el host
      * reevalúa la demanda (CR-038) y arranca/para/reinicia la lente. */
@@ -91,6 +94,8 @@ internal class SettingsDrawerController(
         host.onNintendoDistributionToggled(settings.nintendoDistribution)
         host.onGyroMonitorToggled(settings.showGyroMonitor)
         activity.findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
+        activity.findViewById<SwitchMaterial>(R.id.switch_advanced_metrics).isChecked = settings.showAdvancedMetrics
+        host.onAdvancedMetricsToggled(settings.showAdvancedMetrics)
         activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream).isChecked = settings.cameraStream
         val lensCheckedId =
             if (settings.cameraLens == CameraLens.FRONT) R.id.camera_lens_front else R.id.camera_lens_back
@@ -179,6 +184,12 @@ internal class SettingsDrawerController(
             .setOnCheckedChangeListener { _, checked ->
                 host.onNintendoDistributionToggled(checked)
                 persist { it.copy(nintendoDistribution = checked) }
+            }
+        // CR-054: métricas por etapa del Plugin; el host re-renderiza el HUD.
+        activity.findViewById<SwitchMaterial>(R.id.switch_advanced_metrics)
+            .setOnCheckedChangeListener { _, checked ->
+                host.onAdvancedMetricsToggled(checked)
+                persist { it.copy(showAdvancedMetrics = checked) }
             }
         // CR-034: toggle + lente; el host decide arrancar/parar/reiniciar.
         activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream)

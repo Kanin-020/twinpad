@@ -72,6 +72,8 @@ class PairingActivity : AppCompatActivity() {
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
+    /** CR-054: bloque «Métricas avanzadas» del HUD vigente (drawer). */
+    private var advancedMetricsVisible = false
 
     /** CR-032: distribución Nintendo vigente; la superficie lo aplica
      * al adjuntarse (onCreate restauración → attach posterior). */
@@ -204,6 +206,13 @@ class PairingActivity : AppCompatActivity() {
 
             override fun onHudRestored(visible: Boolean) {
                 hudVisible = visible
+            }
+
+            /** CR-054: el bloque de métricas por etapa es un elemento
+             * separado delHUD («Métricas avanzadas») con su propio switch. */
+            override fun onAdvancedMetricsToggled(enabled: Boolean) {
+                advancedMetricsVisible = enabled
+                renderHudChip()
             }
 
             override fun onGyroMonitorToggled(visible: Boolean) {
@@ -466,13 +475,15 @@ class PairingActivity : AppCompatActivity() {
                 "%.1f".format(stats.kbps / KBPS_PER_MBPS),
             )
         chip.isVisible = true
-        // CR-053: etapas del Plugin en la última ventana de muestreo.
+        // CR-054: las métricas por etapa viven en un bloque separado
+        // («Métricas avanzadas») con su propio interruptor del drawer.
         val metrics = viewModel.videoStageStats.value
         val formatted = metrics?.let(VideoStageStatsCodec::format)
-        if (formatted == null) {
+        if (!advancedMetricsVisible || formatted == null) {
             stageLine.isVisible = false
         } else {
-            stageLine.text = formatted
+            stageLine.text =
+                getString(R.string.hud_stage_title) + "\n" + formatted
             stageLine.isVisible = true
         }
     }

@@ -30,6 +30,9 @@ data class AndroidSettings(
     val cameraStream: Boolean = false,
     /** CR-034: lente usada cuando [cameraStream] está activada. */
     val cameraLens: CameraLens = CameraLens.FRONT,
+    /** CR-054: bloque «Métricas avanzadas» del HUD con las etapas del
+     * pipeline del Plugin (`video_stage_stats`); opt-in del drawer. */
+    val showAdvancedMetrics: Boolean = false,
 ) {
     fun videoConfigLine(): String =
         buildString {
@@ -82,6 +85,8 @@ internal class AndroidSettingsStore(context: Context) {
                 } else {
                     CameraLens.FRONT
                 },
+            // CR-054: métricas avanzadas opt-in, off por defecto.
+            showAdvancedMetrics = preferences.getBoolean(KEY_ADVANCED_METRICS, false),
         )
 
     fun save(settings: AndroidSettings) {
@@ -103,6 +108,7 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_NINTENDO_DISTRIBUTION, settings.nintendoDistribution)
             .putBoolean(KEY_CAMERA_STREAM, settings.cameraStream)
             .putString(KEY_CAMERA_LENS, settings.cameraLens.name)
+            .putBoolean(KEY_ADVANCED_METRICS, settings.showAdvancedMetrics)
             .apply()
     }
 
@@ -119,5 +125,6 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_NINTENDO_DISTRIBUTION = "nintendo_distribution"
         const val KEY_CAMERA_STREAM = "camera_stream"
         const val KEY_CAMERA_LENS = "camera_lens"
+        const val KEY_ADVANCED_METRICS = "show_advanced_metrics"
     }
 }

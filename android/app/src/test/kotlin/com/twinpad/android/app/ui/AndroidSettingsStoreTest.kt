@@ -27,6 +27,10 @@ class AndroidSettingsStoreTest {
         assertEquals(35, settings.audioVolumePercent)
         assertEquals(false, settings.showHud)
         assertEquals(false, settings.showControls)
+        // CR-054: la preferencia es local (no altera ningún wire).
+        val advanced = settings.copy(showAdvancedMetrics = true)
+        assertEquals(true, advanced.showAdvancedMetrics)
+        assertEquals(settings.videoConfigLine(), advanced.videoConfigLine())
     }
 
     @Test
@@ -43,6 +47,8 @@ class AndroidSettingsStoreTest {
         assertEquals(true, defaults.showControls)
         // CR-032: la distribución de cara arranca en Xbox/Play.
         assertEquals(false, defaults.nintendoDistribution)
+        // CR-054: las métricas avanzadas arrancan apagadas (opt-in).
+        assertEquals(false, defaults.showAdvancedMetrics)
     }
 
     @Test

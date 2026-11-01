@@ -119,6 +119,13 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_show_fps" />
 
+        <!-- CR-054: métricas por etapa del Plugin, opt-in, off por defecto. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_advanced_metrics"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_show_advanced_metrics" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
