@@ -30,6 +30,18 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/pairing_title" />
 
+        <!-- CR-060: alternativa sin cámara (SPEC-002 §8.4); solo visible en U1. -->
+        <Button
+            android:id="@+id/btn_typed_code"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/pairing_typed_code_button"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/btn_scan" />
+
         <androidx.camera.view.PreviewView
             android:id="@+id/camera_preview"
             android:layout_width="0dp"

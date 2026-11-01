@@ -288,6 +288,11 @@ class PairingActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_scan).setOnClickListener {
             viewModel.onEvent(PairingEvent.ScanRequested)
         }
+        // CR-060 (SPEC-002 §8.4): el payload textual que la PC ya imprime
+        // junto al QR se escribe/pega aquí; misma ruta que el QR sin cámara.
+        findViewById<Button>(R.id.btn_typed_code).setOnClickListener {
+            showTypedCodeDialog()
+        }
         findViewById<Button>(R.id.btn_cancel).setOnClickListener {
             viewModel.onEvent(PairingEvent.Cancelled)
         }
@@ -300,6 +305,29 @@ class PairingActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_close_drawer).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
         }
+    }
+
+    /** CR-060: diálogo de entrada manual del payload de vinculación.
+     * Vacío o inválido → la máquina responde E5 (§9); la cámara nunca se
+     * solicita en esta vía (R20). Función-propiedad para mantener el
+     * recuento de funciones bajo el umbral de detekt. */
+    private val showTypedCodeDialog: () -> Unit = {
+        val input = android.widget.EditText(this)
+        input.hint = getString(R.string.pairing_typed_code_hint)
+        input.inputType = android.text.InputType.TYPE_CLASS_TEXT or
+            android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        input.importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.pairing_typed_code_title)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val typed = input.text?.toString().orEmpty()
+                if (typed.isNotBlank()) {
+                    viewModel.onEvent(PairingEvent.QrScanned(typed))
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /** Carga el perfil del juego y, solo para Cemu con demanda vigente, activa
@@ -565,6 +593,7 @@ class PairingActivity : AppCompatActivity() {
         val session = findViewById<View>(R.id.session_view)
         val title = findViewById<View>(R.id.pairing_title)
         val btnScan = findViewById<View>(R.id.btn_scan)
+        val btnTypedCode = findViewById<View>(R.id.btn_typed_code)
         val preview = findViewById<PreviewView>(R.id.camera_preview)
         val txtStatus = findViewById<TextView>(R.id.txt_status)
         val btnCancel = findViewById<View>(R.id.btn_cancel)
@@ -574,6 +603,7 @@ class PairingActivity : AppCompatActivity() {
             if (state is PairingUiState.Failure) getString(state.error.resId()) else ""
         btnRetry.isVisible = state is PairingUiState.Failure
         txtError.isVisible = state is PairingUiState.Failure
+        btnTypedCode.isVisible = state == PairingUiState.Idle
         when (state) {
             PairingUiState.Idle -> {
                 session.isVisible = false

@@ -141,6 +141,54 @@ class PairingStateMachineTest {
         assertEquals(PairingUiState.Failure(PairingError.CameraDenied), m.state)
     }
 
+    // ---- TEST-0124 — verifies SPEC-002 (§8.4: entrada manual sin cámara) ----
+
+    @Test
+    fun `typed code from idle reaches Handshaking without any camera effect`() {
+        val m = PairingStateMachine()
+        val effects = m.onEvent(PairingEvent.QrScanned(validQr))
+        assertEquals(PairingUiState.Handshaking, m.state)
+
+        // La vía del código escrito jamás toca la cámara (SPEC-002 §11-R20).
+        assertFalse(effects.any { it is Effect.RequestCamera })
+        assertFalse(effects.any { it is Effect.StartCamera })
+        assertFalse(effects.any { it is Effect.StopCamera })
+
+        // Mismo resultado del §7: Connect + pair_request (SPEC-001 §7 paso 5).
+        val connect = effects.filterIsInstance<Effect.Connect>().single()
+        assertEquals("127.0.0.1", connect.addr)
+        assertEquals(8420, connect.port)
+        val request = effects.filterIsInstance<Effect.SendLine>().single()
+        val decoded = HandshakeCodec.decode(request.line)
+        assertTrue(decoded is HandshakeMessage.Request)
+    }
+
+    @Test
+    fun `invalid typed code from idle produces E5 without opening a connection`() {
+        val m = PairingStateMachine()
+        val effects = m.onEvent(PairingEvent.QrScanned("texto sin scheme twinpad://v1#s=1"))
+        assertEquals(PairingUiState.Failure(PairingError.QrInvalid), m.state)
+        assertFalse(effects.any { it is Effect.Connect })
+        assertFalse(effects.any { it is Effect.SendLine })
+        assertFalse(effects.any { it is Effect.StopCamera })
+    }
+
+    @Test
+    fun `typed code edge blanks are trimmed and inner blanks are E5`() {
+        // Blancos al inicio/fin: se recortan antes de validar (§10, CR-060).
+        val trimmed = PairingStateMachine()
+        trimmed.onEvent(PairingEvent.QrScanned("   $validQr   \n"))
+        assertEquals(PairingUiState.Handshaking, trimmed.state)
+
+        // Blancos en el medio: E5 sin abrir conexión.
+        val inner = PairingStateMachine()
+        inner.onEvent(PairingEvent.QrScanned("twinpad://v1#s=127.0.0.1&p=8420&t=$tokenStr\n "))
+        assertEquals(PairingUiState.Handshaking, inner.state)
+        val spaced = PairingStateMachine()
+        spaced.onEvent(PairingEvent.QrScanned("twinpad://v1#s=127.0.0.1 &p=8420&t=$tokenStr"))
+        assertEquals(PairingUiState.Failure(PairingError.QrInvalid), spaced.state)
+    }
+
     // ---- TEST-013 — verifies SPEC-002 (§9 E2/E3 desde pair_error) ----
 
     @Test

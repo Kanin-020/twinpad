@@ -7,16 +7,16 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.3.5 |
+| Version | 0.4.0 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
 | Depends on | DES-001, ADR-001 (stack), ADR-002 (transporte), ADR-004 (QR + challenge) |
-| Last updated | 2026-10-29 |
+| Last updated | 2026-11-01 |
 
 ## 1. Overview
 
-La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El acelerómetro y el giroscopio capturados a `SENSOR_DELAY_GAME` forman el snapshot wire `motion` con timestamp monotónico, remapeado al marco AndroidDSU de referencia landscape, exclusivo de la orientación landscape fija de la app (CR-022, CR-037); el sensor de orientación remapeado a pantalla alimenta solo el monitor local (CR-021).
+La lógica de vinculación vive en una máquina de estados pura en Kotlin (`PairingStateMachine`) dentro del módulo `:app`, testeada 100 % en JVM: recibe eventos (escaneo, mensajes wire, permisos, acciones del usuario) y emite comandos declarativos (abrir cámara, conectar TCP, enviar mensaje, mostrar texto). Los efectos (cámara, socket, UI) son adaptadores que obedecen comandos — el núcleo no importa clases de Android ni de red (ENG §5 P11). El Handshake del lado app se re-implementa en Kotlin puro (`KotlinHandshakeClient`) con `javax.crypto.Mac` (HmacSHA256) y HKDF sobre `Mac`, sin JNI: la frontera FFI está reservada a `hid/` y `sdk/` (ENG §2). La UI usa Views XML con dos pantallas (Pairing y cámara) sobre un único `PairingViewModel`; las cadenas de UI son recursos de strings (SPEC-002 R4). La Activity declara landscape habitual fijo y usa immersive mode para ocultar las barras del sistema. El acelerómetro y el giroscopio capturados a `SENSOR_DELAY_GAME` forman el snapshot wire `motion` con timestamp monotónico, remapeado al marco AndroidDSU de referencia landscape, exclusivo de la orientación landscape fija de la app (CR-022, CR-037); el sensor de orientación remapeado a pantalla alimenta solo el monitor local (CR-021). La entrada manual del código de vinculación (SPEC-002 §8.4, CR-060) reutiliza el evento `QrScanned` desde U1 con el mismo parser estricto: un diálogo de la Activity recibe el payload textual que la PC ya imprime junto al QR; la máquina recorta blancos de borde y nunca emite efectos de cámara en esa vía.
 
 ## 2. Fit with the architecture
 
@@ -149,6 +149,7 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | §9 E5 + §8.1 PERMISO | `QrParser` + máquina | TEST-012 |
 | §9 E2/E3 desde `pair_error` | máquina + codec | TEST-013 |
 | §10 edge cases (cancelar, fondo, código desconocido, rotación de mensajes) | máquina | TEST-014 |
+| §8.4 entrada manual del código sin cámara (U1 → U3 y E5; trim de borde) (CR-060) | `PairingStateMachine` + diálogo en `PairingActivity` | TEST-0124 |
 | §11 R4 strings en recursos | `res/values/strings.xml` | revisión + TEST-013 (afirma resId/texto) |
 | CR-011: landscape inmersivo y marco gyro | Manifest + `PairingActivity` | TEST-059 (instrumentado en dispositivo Android) |
 | CR-016/CR-021: monitor Android opt-in local y captura/serialización de muestras inerciales | `PairingActivity`, `GyroMonitorView`, `ProfileGyroController`, `InputCodec` | TEST-060, TEST-078, TEST-083 |
@@ -185,3 +186,4 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | 0.3.3 | 2026-10-26 | Product owner + Twinpad team (CR-022) | El snapshot inercial se envía ya en el marco AndroidDSU: accel `(-x, -z, y)`, gyro `(x, -z, y)` |
 | 0.3.4 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU pasa a landscape exclusivo de la app: accel `(y, -z, x)`, gyro `(-y, -z, x)` |
 | 0.3.5 | 2026-10-29 | Product owner + Twinpad team (CR-038) | La cámara frontal se rige por demanda: `camera_request` de Cemu + juego «cemu» seleccionado canalizados como estado combinado del ViewModel; sin cambio wire de App→Servidor |
+| 0.4.0 | 2026-11-01 | Product owner + Twinpad team (CR-060) | Entrada manual del código de vinculación sin cámara: diálogo en `PairingActivity` + `QrScanned` en U1 con trim de borde; misma validación y handshake que el QR, sin efectos de cámara |

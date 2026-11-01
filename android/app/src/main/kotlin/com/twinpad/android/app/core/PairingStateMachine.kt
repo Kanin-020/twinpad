@@ -120,6 +120,9 @@ class PairingStateMachine {
                 state = PairingUiState.Failure(PairingError.CameraDenied)
                 listOf(Effect.ShowError(PairingError.CameraDenied))
             }
+            // CR-060 (SPEC-002 §8.4): el código escrito entra en U1 con el
+            // MISMO evento y validación que el QR, sin tocar la cámara.
+            is PairingEvent.QrScanned -> onQrScanned(event.raw, fromCamera = false)
             is PairingEvent.Retry ->
                 if (priorError != null) {
                     priorError = null
@@ -132,7 +135,7 @@ class PairingStateMachine {
 
     private fun onScanning(event: PairingEvent): List<Effect> =
         when (event) {
-            is PairingEvent.QrScanned -> onQrScanned(event.raw)
+            is PairingEvent.QrScanned -> onQrScanned(event.raw, fromCamera = true)
             is PairingEvent.Cancelled -> cancelAttempt(from = PairingUiState.Scanning)
             is PairingEvent.AppBackgrounded -> cancelAttempt(from = PairingUiState.Scanning)
             is PairingEvent.CameraDenied -> {
@@ -142,23 +145,31 @@ class PairingStateMachine {
             else -> emptyList()
         }
 
-    /** SPEC-002 §7 pasos 2–4: validar payload, conectar, enviar request. */
-    private fun onQrScanned(raw: String): List<Effect> {
+    /** SPEC-002 §7 pasos 2–4: validar payload, conectar, enviar request.
+     * CR-060 (§8.4): la misma ruta sirve al código escrito sin cámara
+     * (`fromCamera = false`): solo se libera la cámara si en realidad se
+     * abrió. Blancos al inicio/fin del payload se recortan; en el medio
+     * siguen siendo E5 (§10). */
+    private fun onQrScanned(
+        raw: String,
+        fromCamera: Boolean,
+    ): List<Effect> {
+        val cameraStop = if (fromCamera) listOf<Effect>(Effect.StopCamera) else emptyList()
         val payload =
             try {
-                QrParser.parse(raw)
+                QrParser.parse(raw.trim())
             } catch (e: PairingException) {
                 state = PairingUiState.Failure(e.error)
-                return listOf(Effect.StopCamera, Effect.ShowError(e.error))
+                return cameraStop + listOf(Effect.ShowError(e.error))
             }
         val (client, request) = ClientHandshake.start(payload.token)
         this.client = client
         state = PairingUiState.Handshaking
-        return listOf(
-            Effect.StopCamera,
-            Effect.Connect(payload.serverAddr, payload.serverPort),
-            Effect.SendLine(HandshakeCodec.encode(request)),
-        )
+        return cameraStop +
+            listOf(
+                Effect.Connect(payload.serverAddr, payload.serverPort),
+                Effect.SendLine(HandshakeCodec.encode(request)),
+            )
     }
 
     private fun onHandshaking(event: PairingEvent): List<Effect> =

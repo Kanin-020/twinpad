@@ -4,12 +4,13 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-060 |
+| CR | CR-061 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-060 | Método de vinculación alternativo al QR: código escrito (dispositivos sin cámara); SPEC-002 §8.4/R20, TEST-0124 | SPEC-002, DES-002 | Applied (2026-11-01) | Buffy (agente) | [CR-060-typed-pairing-code.md](CR-060-typed-pairing-code.md) |
 | CR-059 | Canal de inputs redundante por Bluetooth HID (fallback de red, handover por heartbeat/NFR-002; requiere nuevo ADR de perfil BT + receptor Windows) | SPEC-004, ADR-007, ADR-003 | Open | Buffy (agente) | [CR-059-bt-hid-fallback.md](CR-059-bt-hid-fallback.md) |
 | CR-058 | Degradación automática de bitrate por congestión: ventana D/P en el relay media, escalera 1/2→1/4→1/8→500 kbps con histéresis; cierra la OQ de §17 | SPEC-003, DES-004 | Open | Buffy (agente) | [CR-058-bitrate-degradation.md](CR-058-bitrate-degradation.md) |
 | CR-057 | Descubrimiento mDNS/zeroconf del Servidor PC (`_twinpad._tcp.local.`, NsdManager en Android): tolerancia a cambio de IP DHCP sin re-escanear | REQ-002, SPEC-001, SPEC-002, nuevo SPEC-009 | Open | Buffy (agente) | [CR-057-mdns-discovery.md](CR-057-mdns-discovery.md) |

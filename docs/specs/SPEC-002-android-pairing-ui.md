@@ -7,13 +7,13 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.10.0 |
+| Version | 1.11.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089 (registrados en `testing/traceability.md`) |
-| Last updated | 2026-10-28 |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089, TEST-0124 (registrados en `testing/traceability.md`) |
+| Last updated | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -28,15 +28,16 @@ Define el comportamiento observable de la app Twinpad en Android para vinculaci�
 
 ## 3. Preconditions
 
-- App instalada en Android 12+ (CTX-C1) con cámara operativa.
+- App instalada en Android 12+ (CTX-C1) con cámara operativa **o** el usuario puede copiar/escribir el código de vinculación (§8.4; CR-060).
 - PC y celular en la misma LAN (CTX-C2); la integración host del Plugin inició/reutilizó el Servidor PC y presenta un QR vigente (REQ-006/CR-010).
-- Ningún permiso concedido previamente: la cámara se solicita según §11-R2.
+- Ningún permiso concedido previamente: la cámara se solicita según §11-R2 (solo en la vía de escaneo).
 
 ## 4. Inputs
 
 | Input | Tipo | Constraints | Origen |
 |---|---|---|---|
 | Contenido del QR escaneado | string | debe cumplir SPEC-001 §4.1 (`twinpad://v1#…`) | cámara |
+| Código de vinculación escrito | string | debe cumplir SPEC-001 §4.1 (idéntico al contenido del QR); blancos al inicio/fin se recortan antes de validar | entrada manual de la Pantalla de Pairing (§8.4) |
 | Acción "escanear QR" | evento de usuario | — | Pantalla de Pairing |
 | Acción "cancelar" | evento de usuario | solo en Escaneando o Handshake | Pantalla de Pairing |
 | Acción "reintentar" | evento de usuario | solo tras error E1–E5 | Pantalla de Pairing |
@@ -68,6 +69,8 @@ Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Esca
 | From | Event | To | Side effects |
 |---|---|---|---|
 | U1 | Acción "escanear QR" | U2 | solicita permiso de cámara si no está concedido (§11-R2) |
+| U1 | código escrito válido (§8.4) | U3 | abre TCP a `server_addr:server_port` (SPEC-001 §7 paso 4); sin cámara |
+| U1 | código escrito inválido (E5, §9) | U5 | mensaje "QR no válido"; sin cámara |
 | U1 | Error previo + "reintentar" | U2 (permiso ok) o U1 (denegado) | limpia el mensaje de error |
 | U2 | QR válido decodificado (§4.1) | U3 | abre TCP a `server_addr:server_port` (SPEC-001 §7 paso 4) |
 | U2 | QR inválido (E5) | U5 | mensaje "QR no válido" |
@@ -118,6 +121,12 @@ Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 
 - **Flow:** la app cancela el intento (cámara y socket liberados) y vuelve a U1; al volver a primer plano muestra U1 sin error.
 - **Result:** intento abortado limpio; re-escanear inicia uno nuevo.
 
+### 8.4 Entrada manual del código sin cámara (CR-060)
+
+- **Trigger:** el dispositivo no tiene cámara (o su cámara no es usable) y el usuario elige la acción "vincular sin cámara" en U1.
+- **Flow:** la app presenta un cuadro de entrada; el usuario escribe o pega el payload textual que el Servidor PC muestra junto al QR (SPEC-001 §4.1). La app recorta blancos al inicio y al final y valida con el parser estricto §4.1 (E5 si falla, incluido cualquier blanco en el medio). Válido → pasa directo a U3 (Handshake del §7, mismos pasos 3–6); la cámara NUNCA se solicita en esta vía.
+- **Result:** un intento de vinculación equivalente al del escaneo; sin cambios de wire, token ni criptografía; el permiso R2 no aplica.
+
 ## 9. Errors
 
 | Code | Condition | Mensaje exacto en pantalla |
@@ -126,7 +135,7 @@ Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 
 | E2 | `pair_error` con código E2 (SPEC-001 §9) | "QR expirado, generar uno nuevo" (REQ-002 AC-3) |
 | E3 | `pair_error` con código E3 | "Vinculación rechazada" |
 | E4 | mensaje del servidor no parseable o fuera de constraints (SPEC-001 §4.2/SPEC-006) | "Respuesta no válida" |
-| E5 | payload del QR no conforme a SPEC-001 §4.1 | "QR no válido" |
+| E5 | payload no conforme a SPEC-001 §4.1, recibido por cámara O por código escrito (§8.4) | "QR no válido" |
 | PERMISO | permiso de cámara denegado (§8.1) | "Se necesita la cámara para escanear el QR" |
 | SESIÓN | corte de conexión estando en U4 | "Sesión terminada" |
 
@@ -143,6 +152,8 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 | `pair_error` con código desconocido (≠ E1–E5) | la app lo trata como E4: "Respuesta no válida" (SPEC-001 §4.2) |
 | Servidor cierra la conexión a mitad del Handshake | E1: "Servidor no disponible" |
 | QR válido pero del `token` de longitud incorrecta | E5 (falla la validación de §4.1 antes de abrir conexión) |
+| Código escrito con blancos al inicio/fin (CR-060) | la app los recorta antes de validar; blancos en el medio son E5 "QR no válido" |
+| Sistema sin cámara, código escrito elegido (CR-060) | la app no consulta la cámara ni muestra el preview; el flujo es U1 → U3 |
 
 ## 11. Business rules
 
@@ -165,6 +176,7 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R17 (CR-030):** la opción de resolución del drawer (960×540, 1280×720, 1920×1080) define la resolución de emisión de la pantalla del GamePad (DRC): la app la envía en `video_config` (`w`/`h`), el Servidor la reenvía a Cemu y el Plugin escala el framebuffer del GamePad antes de codificar (SPEC-003 §3). No cambia la resolución general del juego en la TV. Si la resolución elegida es mayor que la nativa del DRC, se conserva la nativa. La resolución por defecto es 1920×1080 (CR-031).
 - **R18 (CR-031):** los interruptores "Mostrar fps" (chip HUD) y "Mostrar botones" (controles táctiles) están **activados por defecto** en una instalación nueva; siguen siendo preferencia local persistente (R14 y SPEC-008).
 - **R19 (CR-032):** el drawer de ajustes incluye el interruptor "Distribución Nintendo": preferencia local persistente, **apagada por defecto**. Activado, los cuatro botones de cara se muestran y se envían en distribución Nintendo (A derecha, B abajo, X arriba, Y izquierda; intercambio A↔B y X↔Y respecto del default Xbox/Play); se aplica en caliente y también al mando físico conectado al teléfono (CR-028). La Signature HID de SPEC-004 §4 no cambia. Ver TEST-089/090.
+- **R20 (CR-060):** la entrada manual del código (§8.4) no solicita permiso de cámara (R2 se exige solo en la vía de escaneo) y no registra el texto del código en logs (R3).
 
 ## 12. Contracts
 
@@ -230,6 +242,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Landscape habitual fijo, barras del sistema inmersivas | TEST-059 |
 | Monitor gyro opt-in dibuja orientación absoluta de sensor y paleta semántica (CR-016/CR-018) | TEST-078 |
 | Interruptor "Distribución Nintendo": default apagado, sin efecto sobre el wire (CR-032) | TEST-089 |
+| Entrada manual del código (§8.4: U1 → U3 y E5, sin cámara; trim §10) (CR-060) | TEST-0124 |
 
 ## 17. Open questions
 
@@ -255,6 +268,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.8.0 | 2026-10-28 | Product owner (CR-030) | R17: la opción de resolución del drawer define la resolución de emisión del GamePad (DRC), reenviada vía `video_config` w/h y aplicada en Cemu |
 | 1.9.0 | 2026-10-28 | Product owner (CR-031) | Defaults de fábrica: 1920×1080 (R17), contain (R12), bitrate 30.000 kbps (R15); R18: "Mostrar fps" y "Mostrar botones" activados por defecto |
 | 1.10.0 | 2026-10-28 | Product owner (CR-032) | R19: interruptor "Distribución Nintendo" en el drawer (preferencia local persistente, apagado por defecto), táctil y mando físico, wire sin cambios; TEST-089/090 |
+| 1.11.0 | 2026-11-01 | Buffy (agente) (CR-060) | Entrada manual del código de vinculación sin cámara (§3, §4, §8.4, §9-E5, §10, §11-R20); wire y criptografía sin cambios; TEST-0124 |
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |

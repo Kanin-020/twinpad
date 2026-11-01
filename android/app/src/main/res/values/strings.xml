@@ -6,6 +6,10 @@
     <string name="pairing_scan_button">Escanear QR</string>
     <string name="pairing_cancel_button">Cancelar</string>
     <string name="pairing_retry_button">Reintentar</string>
+    <!-- CR-060: alternativa sin cámara (SPEC-002 §8.4). -->
+    <string name="pairing_typed_code_button">Vincular sin cámara</string>
+    <string name="pairing_typed_code_title">Vincular con código</string>
+    <string name="pairing_typed_code_hint">Pega el código twinpad://v1#… de la PC</string>
     <string name="pairing_scanning">Apunta la cámara al QR de la PC…</string>
     <string name="pairing_handshaking">Conectando con la PC…</string>
     <string name="pairing_linked">Vinculado</string>
