@@ -4,12 +4,16 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-055 |
+| CR | CR-060 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-059 | Canal de inputs redundante por Bluetooth HID (fallback de red, handover por heartbeat/NFR-002; requiere nuevo ADR de perfil BT + receptor Windows) | SPEC-004, ADR-007, ADR-003 | Open | Buffy (agente) | [CR-059-bt-hid-fallback.md](CR-059-bt-hid-fallback.md) |
+| CR-058 | Degradación automática de bitrate por congestión: ventana D/P en el relay media, escalera 1/2→1/4→1/8→500 kbps con histéresis; cierra la OQ de §17 | SPEC-003, DES-004 | Open | Buffy (agente) | [CR-058-bitrate-degradation.md](CR-058-bitrate-degradation.md) |
+| CR-057 | Descubrimiento mDNS/zeroconf del Servidor PC (`_twinpad._tcp.local.`, NsdManager en Android): tolerancia a cambio de IP DHCP sin re-escanear | REQ-002, SPEC-001, SPEC-002, nuevo SPEC-009 | Open | Buffy (agente) | [CR-057-mdns-discovery.md](CR-057-mdns-discovery.md) |
+| CR-056 | Reanudación del canal de control cableada: retención de ligadura 60 s (S4) + mensaje `pair_resume` (proof/script) con session_id preservado | SPEC-001, SPEC-002, SPEC-003 | Open | Buffy (agente) | [CR-056-control-channel-resume.md](CR-056-control-channel-resume.md) |
 | CR-045 | Cola de muestras de motion pendientes: drenaje completo por frame del VPAD (los tirones del gyro); captura en vivo: descarte 44 % → 1.4 %, 0 saltos de orientación; TEST-0111/0112 | DES-004 | Applied (2026-10-30) | Buffy (agente) | [CR-045-motion-sample-queue-drain.md](CR-045-motion-sample-queue-drain.md) |
 | CR-044 | Teclado del juego (swkbd): Android IME en Twinpad en lugar del overlay de Cemu (mensajería `keyboard_request`/`keyboard_input`; supresión del overlay con Twinpad conectado; TEST-0106–0110 verdes en host) | SPEC-006, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-044-cemu-keyboard-to-android-ime.md](CR-044-cemu-keyboard-to-android-ime.md) |
 | CR-039 | Encoder H.264 por hardware: driver VA-API freeworld (fallback `LIBVA_DRIVERS_PATH` en Cemu + copia local; verificado físicamente 2026-10-30: VAAPI activo, 30/30 fps) | SPEC-003, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-039-cemu-hardware-encoder-vaapi.md](CR-039-cemu-hardware-encoder-vaapi.md) |
@@ -20,6 +24,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-055 | Heartbeat de sesión `ping`/`pong` (S3) cada 5 s con expiración a los 15 s: detección de corte silencioso y cierre de sesiones zombi; TEST-0120/0121/0122 | SPEC-001, DES-001 | 2026-11-01 | [CR-055-session-heartbeat-zombie-expiry.md](CR-055-session-heartbeat-zombie-expiry.md) |
 | CR-024 | Corrección de ADR-003: HID nativo diferido, sin giroscopio comprometido (aplicado en ADR-003 1.1.0) | ADR-003, decisions/_index.md | 2026-10-27 | [CR-024-adr-003-hid-deferred.md](CR-024-adr-003-hid-deferred.md) |
 | CR-023 | Vía de giroscopio para terceros: SDK principal, Config externa sin movimiento, HID diferido (aplicado en REQ-007 0.2.0, SPEC-004 1.8.0, SPEC-006 1.14.0) | REQ-007, SPEC-004, SPEC-006 | 2026-10-27 | [CR-023-third-party-motion-via-sdk.md](CR-023-third-party-motion-via-sdk.md) |
 | CR-022 | Un único mapeo de ejes AndroidDSU (en Android) y ruta Cemu idéntica a DSU | SPEC-004, DES-002/004 | 2026-10-26 | [CR-022-motion-axis-mapping-single-source.md](CR-022-motion-axis-mapping-single-source.md) |
@@ -80,6 +85,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 2 |
+| Open | 6 |
 | Median time open → applied | ≤1 día (CR-036: 2026-10-28 → 2026-10-29) |
-| Last reviewed | 2026-10-30 |
+| Last reviewed | 2026-11-01 |
