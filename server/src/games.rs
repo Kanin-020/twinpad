@@ -48,7 +48,12 @@ pub enum RegisterError {
 
 struct GameEntry {
     info: GameInfo,
-    _stream: TcpStream,
+    /// CR-052: escritor del socket del plugin fuera del lock del mapa. El
+    /// envío toma el `Arc` bajo el lock del mapa (casi gratuito), suelta el
+    /// mapa y escribe bajo un lock por entrada: la escritura lenta de cámara/mic
+    /// de una entrada no bloquea el registro completo (inputs de cualquier
+    /// juego, listas y bajas siguen fluyendo).
+    writer: Arc<Mutex<TcpStream>>,
     /// Último `game_frame` publicado (AC-2); `None` hasta que el juego
     /// publique el primero (§10: capacidades sin usar → sin stream).
     last_frame: Option<GameFrame>,
@@ -127,7 +132,7 @@ impl GameRegistry {
             info.game_id.clone(),
             GameEntry {
                 info,
-                _stream: stream,
+                writer: Arc::new(Mutex::new(stream)),
                 last_frame: None,
                 audio_start: None,
                 audio_chunks: std::collections::VecDeque::new(),
@@ -428,12 +433,19 @@ impl GameRegistry {
     /// Conserva el último `input_report` aceptado para la sesión y lo reenvía
     /// únicamente al Plugin seleccionado. Devuelve false si no hay destino vivo.
     pub fn retain_and_send_input(&self, game_id: Option<&str>, line: &str) -> bool {
-        let Some(game_id) = game_id else { return false };
-        let mut games = lock_or_reset(&self.games);
-        let Some(entry) = games.get_mut(game_id) else {
-            return false;
-        };
-        Self::write_input(entry, line)
+        Self::write_line_to(self.game_writer(game_id), line)
+    }
+
+    /// CR-052: toma el escritor de una entrada bajo el lock del mapa y lo
+    /// devuelve SUELTO del mapa: la escritura al socket ocurre fuera del
+    /// lock global, así que un envío lento de una entrada no retiene las
+    /// escrituras de las demás ni las ops del registro (inputs, listas, bajas).
+    /// El `Arc` clonado se vuelve inválido solo cuando la entrada muere; el
+    /// bloqueo del escritor por entrada garantiza atomicidad NDJSON sin el mapa.
+    fn game_writer(&self, game_id: Option<&str>) -> Option<Arc<Mutex<TcpStream>>> {
+        let game_id = game_id?;
+        let games = lock_or_reset(&self.games);
+        games.get(game_id).map(|entry| Arc::clone(&entry.writer))
     }
 
     /// Envía al adaptador Cemu la resolución y el bitrate configurados en la
@@ -442,10 +454,6 @@ impl GameRegistry {
     /// captura+encoder. Cemu aplica w/h SOLO al framebuffer del GamePad
     /// (DRC); la resolución del juego en TV no cambia.
     pub fn send_cemu_video_config(&self, width: u16, height: u16, bitrate_kbps: u32) -> bool {
-        let mut games = lock_or_reset(&self.games);
-        let Some(entry) = games.get_mut("cemu") else {
-            return false;
-        };
         let (width, height) = (
             width.clamp(
                 twinpad_core::stream::MIN_DIM,
@@ -460,17 +468,13 @@ impl GameRegistry {
         let line = format!(
             "{{\"type\":\"video_config\",\"w\":{width},\"h\":{height},\"bitrate_kbps\":{bitrate_kbps}}}"
         );
-        Self::write_input(entry, &line)
+        Self::write_line_to(self.game_writer(Some("cemu")), &line)
     }
 
     /// Reenvía a Cemu una access unit de la cámara frontal (CR-034). No se
     /// persiste: si Cemu no está vivo el frame se descarta.
     pub fn send_cemu_camera_frame(&self, line: &str) -> bool {
-        let mut games = lock_or_reset(&self.games);
-        let Some(entry) = games.get_mut("cemu") else {
-            return false;
-        };
-        Self::write_input(entry, line)
+        Self::write_line_to(self.game_writer(Some("cemu")), line)
     }
 
     /// Reenvía a Cemu un chunk de PCM del micrófono del teléfono (CR-035).
@@ -491,20 +495,15 @@ impl GameRegistry {
     /// imagen en el siguiente frame sin esperar la cadencia periódica de
     /// IDR (~1 s) del encoder. No se persiste: sin Cemu vivo no hay efecto.
     pub fn send_cemu_video_force_idr(&self) -> bool {
-        let mut games = lock_or_reset(&self.games);
-        let Some(entry) = games.get_mut("cemu") else {
-            return false;
-        };
-        Self::write_input(entry, "{\"type\":\"video_force_idr\"}")
+        Self::write_line_to(
+            self.game_writer(Some("cemu")),
+            "{\"type\":\"video_force_idr\"}",
+        )
     }
 
     /// Entrega el snapshot inicial a un Plugin recién seleccionado.
     pub fn send_input_snapshot(&self, game_id: &str, snapshot: &str) -> bool {
-        let mut games = lock_or_reset(&self.games);
-        let Some(entry) = games.get_mut(game_id) else {
-            return false;
-        };
-        Self::write_input(entry, snapshot)
+        Self::write_line_to(self.game_writer(Some(game_id)), snapshot)
     }
 
     /// Mantiene el test de forwarding legacy centrado en Cemu.
@@ -513,13 +512,19 @@ impl GameRegistry {
         self.retain_and_send_input(Some("cemu"), line)
     }
 
-    fn write_input(entry: &mut GameEntry, line: &str) -> bool {
+    /// CR-052: escribe la línea completa (con '\n' y flush) bajo el lock del
+    /// escritor de la entrada — sin el lock del registro. Sin destino o con
+    /// mutex envenenado devuelve false.
+    fn write_line_to(writer: Option<Arc<Mutex<TcpStream>>>, line: &str) -> bool {
         use std::io::Write;
-        entry
-            ._stream
+        let Some(writer) = writer else { return false };
+        let mut stream = writer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        stream
             .write_all(line.as_bytes())
-            .and_then(|_| entry._stream.write_all(b"\n"))
-            .and_then(|_| entry._stream.flush())
+            .and_then(|_| stream.write_all(b"\n"))
+            .and_then(|_| stream.flush())
             .is_ok()
     }
 }
@@ -940,6 +945,67 @@ mod tests {
         assert_eq!(received, "{\"type\":\"video_force_idr\"}\n");
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_video_force_idr());
+    }
+
+    // TEST-0114 — verifies CR-052: a blocked write on one entry's socket (peer not
+    // draining) does not block registry operations; the map lock is released
+    // before the socket write happens.
+    #[test]
+    fn slow_entry_write_does_not_block_registry_operations() {
+        use std::io::Read;
+        use std::sync::atomic::AtomicBool;
+
+        let registry = GameRegistry::new();
+        let (server_side, mut peer) = loopback_pair();
+        // Un SNDBUF mínimo hace que una línea grande bloquee de forma
+        // determinista sin depender del buffer default del kernel.
+        socket2::SockRef::from(&server_side)
+            .set_send_buffer_size(4096)
+            .unwrap();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+
+        let writer = registry.game_writer(Some("cemu")).unwrap();
+        let payload = "x".repeat(8 * 1024 * 1024);
+        let write_done = Arc::new(AtomicBool::new(false));
+        let done_for_thread = Arc::clone(&write_done);
+        let payload_len = payload.len();
+        let write_thread = std::thread::spawn(move || {
+            let sent = GameRegistry::write_line_to(Some(writer), &payload);
+            done_for_thread.store(true, std::sync::atomic::Ordering::Release);
+            sent
+        });
+
+        std::thread::sleep(Duration::from_millis(100));
+        // Mientras el escritor está bloqueado (SNDBUF lleno, el par no lee),
+        // el registro sigue atendiendo operaciones sin el mapa retenido.
+        for _ in 0..25 {
+            assert!(registry.has_live_game("cemu"));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!write_done.load(std::sync::atomic::Ordering::Acquire));
+
+        peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut total = 0_usize;
+        let mut buffer = [0_u8; 16 * 1024];
+        while total <= payload_len {
+            match peer.read(&mut buffer) {
+                Ok(n) if n > 0 => total += n,
+                Ok(_) => break,
+                Err(_) => break,
+            }
+        }
+        assert!(total > payload_len);
+        assert!(write_thread.join().unwrap());
+        assert!(write_done.load(std::sync::atomic::Ordering::Acquire));
     }
 
     // TEST-0107 — verifies SPEC-006 (CR-044): `keyboard_input` reaches only the live Cemu

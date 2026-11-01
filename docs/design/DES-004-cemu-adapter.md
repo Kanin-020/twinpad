@@ -4,7 +4,7 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.14.0 |
+| Version | 1.15.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
@@ -178,6 +178,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 |---|---|
 | Inicio/reutilización del servidor y presentación QR | El host Cemu reutiliza el proceso local o lo inicia; consulta loopback y espera el anuncio Cemu antes de presentar QR |
 | Lectura/escritura IPC primary | TCP full-duplex; líneas NDJSON atómicas con LF |
+| Escrituras al Plugin (CR-052) | El Servidor escribe con writer por entrada (`Arc<Mutex<TcpStream>>`) SUELTO del lock del registro: una escritura lenta (cámara/mic hasta ~4 MiB) bloquea solo su entrada; inputs, listas y bajas de cualquier juego nunca esperan detrás de un socket que no drena |
 | Captura DRC, inputs y polling | La publicación DRC y el polling SDK no esperan por el socket Android; el snapshot input se protege con lock corto |
 | Audio/input sobre Pairing | El Servidor serializa control/input como hoy; video H.264 usa TCP 8425 cifrado independiente, priorizado y ligado al Pairing |
 | Encoder DRC | Hilo del adaptador procesa readback; preferencia hardware opt-in con fallback OpenH264 CPU, reinicializado si cambia la preferencia/configuración; sin B-frames y respetando dimensiones/FPS configurados |
@@ -298,6 +299,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | 1.7.0 | 2026-10-29 | Product owner + Twinpad team (CR-035) | Micrófono bajo demanda: el HLE `mic` emite `mic_request` en MICOpen/MICClose (DRC0); `mic_chunk` s16le mono 32 kHz encola en cola drop-old de 1 s y alimenta `mic_updateOnAXFrame` solo con cola fresca; Android captura con AudioRecord solo con juego «cemu» Y demanda vigente |
 | 1.11.0 | 2026-10-30 | Product owner (CR-034) | Cámara del teléfono a Cemu: `camera_frame` decodificado a NV12 en la superficie CAM; envío opt-in del drawer con lente seleccionable (frontal por defecto); TEST-093..096 |
 | 1.12.0 | 2026-10-30 | Product owner (CR-044) | Teclado del juego como Android IME: `kb_requestShow/Hide` del HLE `swkbd` suprime el teclado emulado, overlay de teclado en la app bajo demanda y `kb_event` (código virtual + modifiers) drenado en el hilo HLE; TEST-0106..0109 |
+| 1.15.0 | 2026-10-31 | Buffy (agente) (CR-052) | Concurrency: escritos al Plugin fuera del lock global del registro (writer por entrada, lock por entrada para atomicidad NDJSON); un socket lento ya no congela el forwarding de inputs ni las ops de detección. TEST-0114 |
 | 1.14.0 | 2026-10-31 | Buffy (agente) (CR-051) | Latencia de re-join del video: el Servidor dispara `video_force_idr` hacia el plugin tras autenticar cada cliente media (SPEC-003 §8.2); el adaptador marca IDR del siguiente frame en vez de esperar la cadencia periódica (~1 s); SNDBUF/TCP_NODELAY del socket media acotados como la sesión NDJSON; el hub de media despierta al relay con Condvar en lugar de sondeo. TEST-0113 |
 | 1.13.0 | 2026-10-30 | Buffy (CR-045) | Cola FIFO acotada (32 slots, drop-old) de muestras de motion en `TwinpadClient` y drenaje completo por frame del VPAD: cada muestra se procesa con su Δt propio; sin pérdida de muestras intermedias en giros rápidos (la captura en vivo midió 44 % → 1.4 % de descarte y 0 saltos de orientación); TEST-0111/0112 |
 | 1.12.1 | 2026-10-30 | Product owner (CR-044) | Corrige §7.3, diagrama de secuencia y mapeo de componentes al mecanismo real implementado y aprobado (SPEC-006 1.23.2): `keyboard_request`/`keyboard_input` de texto completo (base64url UTF-8, techo en la demanda) sustituyen a `kb_requestShow/Hide` + `kb_event`, con cola drop-old 8 de transiciones aplicadas en el hilo de render al formString del HLE `swkbd`, `confirm` queda decidido y `cancel` cierra el form sin decidir; TEST-0106..0110 |

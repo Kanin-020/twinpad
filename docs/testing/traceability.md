@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0114 |
+| TEST | TEST-0115 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -44,6 +44,7 @@
 | REQ-005 | SPEC-005 | `-` | TEST-039 | Draft | Rechazo de PCM sin juego/capability, fuente duplicada y forwarding PCM por TCP loopback (`server/tests/sdk_audio_integration.rs`) |
 | REQ-005 | SPEC-005 | `-` | TEST-040 | Draft | Writer de sesión: cada mensaje de video precede audio pendiente en el límite de mensaje (CR-003), `server` binario test `session_writer_sends_video_before_queued_audio` |
 | REQ-003 | SPEC-004 | `-` | TEST-043 | Draft | Campos touch DRC normalizados en `input_report` (CR-005); ver TEST-083 para el snapshot inercial vigente |
+| REQ-004 | SPEC-006 | DES-004 | TEST-0114 | Passed (2026-10-31, host) | CR-052: Test Rust `slow_entry_write_does_not_block_registry_operations` (`server::games::tests`) — con el socket del plugin tapado (SNDBUF 4 KiB, línea de 8 MiB y peer sin drenar) `has_live_game`/ops del registro siguen respondiendo mientras la escritura está bloqueada y la línea completa llega al drenar; garantiza que el writer por entrada (Arc, escritura fuera del lock del mapa) nunca congele inputs/listas/bajas de la sesión |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-045 | Draft | Adaptador Cemu: ciclo por título, reconexión, parser y mapeo/manejo exclusivo al VPAD (CR-005) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-046 | Draft | Aceptación Cemu: preferencia opt-in persistente/false por defecto, auto-connect inmediato al activarlo, no desconexión al desactivarlo, inicio manual solo con título y menú exacto “Iniciar conexión”, “Configuraciones” (CR-006); build verificado, prueba UI/config en Cemu pendiente |
