@@ -9,6 +9,7 @@
 //! con listener real, entropía del SO y QR en stdout (REQ-001 AC-1/2).
 
 pub mod audio;
+pub mod game_media;
 pub mod games;
 pub mod media;
 pub mod qr;

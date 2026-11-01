@@ -118,6 +118,29 @@ fn main() {
         }
     }
 
+    // CR-054: canal media binario del Plugin (H.264 sin base64+JSON).
+    match TcpListener::bind(("127.0.0.1", twinpad_core::game_media::MEDIA_IPC_PORT)) {
+        Ok(media_ipc_listener) => {
+            let games = Arc::clone(&game_registry);
+            let hub = Arc::clone(&media_hub);
+            std::thread::spawn(move || {
+                println!(
+                    "Canal media binario del SDK activo en 127.0.0.1:{} (CR-054).",
+                    twinpad_core::game_media::MEDIA_IPC_PORT
+                );
+                twinpad_server::game_media::run_media_ipc_listener(
+                    media_ipc_listener,
+                    games,
+                    Some(hub),
+                );
+            });
+        }
+        Err(_) => eprintln!(
+            "Twinpad: puerto media SDK {} en uso; canal binario desactivado (queda NDJSON).",
+            twinpad_core::game_media::MEDIA_IPC_PORT
+        ),
+    }
+
     match TcpListener::bind(("127.0.0.1", DEFAULT_AUDIO_IPC_PORT)) {
         Ok(audio_listener) => {
             let games = Arc::clone(&game_registry);

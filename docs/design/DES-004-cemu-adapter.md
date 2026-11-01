@@ -4,12 +4,12 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.16.0 |
+| Version | 1.17.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
 | Depends on | DES-003, ADR-007, ADR-008 |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-10-31 |
 
 ## 1. Overview
 
@@ -181,6 +181,42 @@ segunda línea del HUD bajo el chip de fps/Mbps con rótulos cortos:
 «pix 0.2 ms (0.5 ms) · b64 55 µs (90 µs) · 120 ev»; sin datos vigentes la
 línea se oculta. Atribución de tirones en vivo sin leer el log de Cemu.
 
+### 7.6 Canal media binario Plugin→Servidor (CR-054)
+
+El tramo Plugin→Servidor del video deja el NDJSON primario por un canal
+binario dedicado en loopback, puerto **8426** (mapa: 8421 IPC primario,
+8422 audio SDK, 8423 QR, 8424 hook E2E, 8425 media del teléfono, **8426
+media del SDK**). El Plugin abre la conexión, ejecuta el handshake NDJSON
+de una línea `{"type":"game_media_start","game_id":"cemu"}` y a partir de
+ahí envía cada AU H.264 como `[header de 32 bytes little-endian][anexo tal
+cual]`:
+
+| offset | tamaño | campo | válido |
+|---|---|---|---|
+| 0 | 2 | `magic` | `0x5457` («TW») |
+| 2 | 8 | `gfn` | monotónico desde 0 por conexión |
+| 10 | 8 | `ts_capture_us` | monotónico del encoder |
+| 18 | 1 | `idr` | 0 o 1 |
+| 19 | 2 | `w` | 16–3840 (SPEC-003 §4) |
+| 21 | 2 | `h` | 16–2160 (SPEC-003 §4) |
+| 23 | 4 | `len` | 1–4 MiB |
+| 27 | 1 | `fmt` | 1 (H.264) |
+| 28 | 4 | reservado | 0 |
+
+Reglas del canal: el Servidor valida el handshake (`GameMsg::GameMediaStart`,
+CR-054) y exige juego vivo (`has_live_game`, §14); un header inválido cierra
+el canal; la ingest es idéntica a la rama H.264 NDJSON (`store_access_unit` +
+`MediaHub::publish`, con la IDR-on-join de CR-051); **sin liveness propio** —
+la vida del juego sigue siendo la conexión primaria y el EOF binario no
+des-registra nada. En Cemu, el AU deja la cola de CR-048 sin serializar: la
+línea `game_frame` NDJSON (base64+JSON) se construye únicamente en el hilo de
+envío si el binario no está vivo (fallback) o para líneas puras
+(`video_stage_stats` de §7.5, que nunca viajan por el binario; con esto
+`base64_json` pasa a medir solo el fallback real). El intento de conexión se
+repite en cada ciclo de reconexión del IPC; server sin listener (o vuelo el
+canal) es silencioso y deja el NDJSON: peers mixtos compatibles en ambos
+sentidos.
+
 ### 7.4 IDR inmediata al (re)conectar el canal media (CR-051)
 
 SPEC-003 §8.2 manda que al (re)entrar un suscriptor al canal media el
@@ -268,6 +304,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | Teclado del juego como Android IME (CR-044, §7.3): transiciones del HLE `swkbd` → `keyboard_request` (texto+techo, `on=false` al cerrar suprimen el teclado emulado), overlay Twinpad con demanda vigente y `keyboard_input` (update/confirm/cancel) aplicado al formString en el hilo de render | `swkbd.cpp` (`swkbd_publishKeyboardRequest`, `swkbd_applyTwinpadKeyboardInput`, `swkbd_cancelInput`), `TwinpadClient::PublishKeyboardRequest/FeedKeyboardInput/ConsumeKeyboardInput`, `KeyboardCodec`, `KeyboardOverlayController` | TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
 | IDR inmediata al (re)conectar el canal media (CR-051, §7.4): `video_force_idr` server→Cemu marca la IDR del siguiente frame publicado | `TwinpadClient::RequestKeyframe` + bucle de lectura, `GameRegistry::send_cemu_video_force_idr` y hook del listener media (Servidor) | TEST-0113 |
 | HUD por etapas del pipeline de video (CR-053, §7.5): flush de 5 s → `video_stage_stats` juego→server→app, drenaje de última línea vigente y línea HUD «rótulo avg (max)» | `TwinpadClient::FlushVideoMetricsIfDue` (línea por el canal primario), `GameRegistry::push/pop_video_stage_stats`, drain de sesión (Servidor), `VideoStageStatsCodec`, `PairingViewModel/_videoStageStats`, `hud_stage` (PairingActivity) | TEST-0115, TEST-0116, TEST-0117 |
+| Canal media binario Plugin→Servidor (CR-054, §7.6): `game_media_start` + AU H.264 como [header 32 B LE][anexo] en 127.0.0.1:8426, ingest = `store_access_unit`+`MediaHub::publish`, sin liveness propio; fallback NDJSON en el hilo de envío | `core::game_media` (framing), `server::game_media` (listener), `TwinpadClient::ConnectMedia/CloseMedia/SendMediaFrame/SendBytes`, `VideoSendLoop` binario con fallback | TEST-0118, TEST-0119 |
 
 ## 13. Related decisions
 
@@ -326,6 +363,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | 1.12.0 | 2026-10-30 | Product owner (CR-044) | Teclado del juego como Android IME: `kb_requestShow/Hide` del HLE `swkbd` suprime el teclado emulado, overlay de teclado en la app bajo demanda y `kb_event` (código virtual + modifiers) drenado en el hilo HLE; TEST-0106..0109 |
 | 1.15.0 | 2026-10-31 | Buffy (agente) (CR-052) | Concurrency: escritos al Plugin fuera del lock global del registro (writer por entrada, lock por entrada para atomicidad NDJSON); un socket lento ya no congela el forwarding de inputs ni las ops de detección. TEST-0114 |
 | 1.16.0 | 2026-10-31 | Buffy (agente) (CR-053) | HUD por etapas: `video_stage_stats` Plugin→Servidor→app (ventana 5 s, misma pasada de contadores que `[TwinpadPerf]`), validación estricta y drenaje a la sesión seleccionada; segunda línea del HUD con promedio (máximo) por etapa. TEST-0115/0116/0117 |
+| 1.17.0 | 2026-10-31 | Buffy (agente) (CR-054) | Nuevo canal media binario Plugin→Servidor en 127.0.0.1:8426: handshake `game_media_start`, AU como [header 32 B LE][anexo] sin base64+JSON (§7.6); ingest idéntica a la NDJSON en `store_access_unit`+`MediaHub::publish`; el AU se encola sin serializar y la línea NDJSON queda de fallback en el hilo de envío; peers mixtos compatibles. TEST-0118/0119 |
 | 1.14.0 | 2026-10-31 | Buffy (agente) (CR-051) | Latencia de re-join del video: el Servidor dispara `video_force_idr` hacia el plugin tras autenticar cada cliente media (SPEC-003 §8.2); el adaptador marca IDR del siguiente frame en vez de esperar la cadencia periódica (~1 s); SNDBUF/TCP_NODELAY del socket media acotados como la sesión NDJSON; el hub de media despierta al relay con Condvar en lugar de sondeo. TEST-0113 |
 | 1.13.0 | 2026-10-30 | Buffy (CR-045) | Cola FIFO acotada (32 slots, drop-old) de muestras de motion en `TwinpadClient` y drenaje completo por frame del VPAD: cada muestra se procesa con su Δt propio; sin pérdida de muestras intermedias en giros rápidos (la captura en vivo midió 44 % → 1.4 % de descarte y 0 saltos de orientación); TEST-0111/0112 |
 | 1.12.1 | 2026-10-30 | Product owner (CR-044) | Corrige §7.3, diagrama de secuencia y mapeo de componentes al mecanismo real implementado y aprobado (SPEC-006 1.23.2): `keyboard_request`/`keyboard_input` de texto completo (base64url UTF-8, techo en la demanda) sustituyen a `kb_requestShow/Hide` + `kb_event`, con cola drop-old 8 de transiciones aplicadas en el hilo de render al formString del HLE `swkbd`, `confirm` queda decidido y `cancel` cierra el form sin decidir; TEST-0106..0110 |

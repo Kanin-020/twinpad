@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0118 |
+| TEST | TEST-0120 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -46,6 +46,8 @@
 | REQ-003 | SPEC-004 | `-` | TEST-043 | Draft | Campos touch DRC normalizados en `input_report` (CR-005); ver TEST-083 para el snapshot inercial vigente |
 | REQ-004 | SPEC-006 | DES-004 | TEST-0114 | Passed (2026-10-31, host) | CR-052: Test Rust `slow_entry_write_does_not_block_registry_operations` (`server::games::tests`) — con el socket del plugin tapado (SNDBUF 4 KiB, línea de 8 MiB y peer sin drenar) `has_live_game`/ops del registro siguen respondiendo mientras la escritura está bloqueada y la línea completa llega al drenar; garantiza que el writer por entrada (Arc, escritura fuera del lock del mapa) nunca congele inputs/listas/bajas de la sesión |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0115 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_round_trips_and_rejects_bad_fields` (`core::game::tests`) — round-trip listo y E4 estricto del contrato de la línea: ventana 10–10000 ms, etapa/evento fuera de catálogo, etapa repetida, `avg_us > max_us`, campo desconocido y contadores fuera de rango se rechazan como `MalformedMessage` |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0118 | Passed (2026-10-31, host) | CR-054: Tests Rust del framing del canal media binario (`core::game_media::tests`) — round-trip del header de 32 B little-endian (magic «TW», `gfn`/`ts`/`idr`/`w`/`h`/`len`/`fmt`, reservado en 0), catálogo de rechazos (len 0, len > 4 MiB, magic corrupto, `idr`=2, `fmt`≠1, buffer mal medido, dimensiones fuera de 16–3840/16–2160 y límites exactos válidos) y línea `game_media_start` decodificando como `GameMsg::GameMediaStart` con `game_id` inválido → E4 |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0119 | Passed (2026-10-31, host) | CR-054: Test de integración binario (`server/tests/sdk_media_binary_integration.rs`) — handshake `game_media_start` + AU [header][anexo] sobre el listener loopback: ingestión en `GameRegistry::latest_frame` Y `MediaHub` (AU más reciente ganada), conexión sin juego vivo cerrada tras el handshake sin ingest (§14) y header con `len` sobre el techo cierra el canal dejando intacto el AU previo válido |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0116 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_drains_latest_line_per_live_game` (`server::games::tests`) — `push_video_stage_stats` solo acepta juego vivo, la última línea de ventana reemplaza a la previa, `pop_video_stage_stats` la consume una vez (sin reencolar) y un juego extraño nunca recibe telemetría ajena |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0117 | Passed (2026-10-31, host) | CR-053: Test Kotlin `VideoStageStatsCodecTest` (wire Android) — decodificación estricta paridad con core (ventana fuera de rango, etapa/evento de catálogo, `avg_us > max_us`, `count < 1`, tupla incompleta, etapa repetida, evento desconocido y línea no JSON → null) y formateo compacto del HUD «pix 210 µs (480 µs) · b64 55 µs (90 µs) · 120 ev»; contenido vacío → línea oculta |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
@@ -169,6 +171,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-054 | DES-004 1.17.0: canal media binario Plugin→Servidor en 127.0.0.1:8426 — handshake `game_media_start` (GameMsg nuevo, CR-054) y AU H.264 como [header 32 B LE][anexo] sin base64+JSON (§7.6); ingest idéntica a la NDJSON (`store_access_unit`+`MediaHub::publish`), sin liveness propio y con fallback NDJSON en el hilo de envío de Cemu; peers mixtos compatibles en ambos sentidos; TEST-0118/0119 | 2026-10-31 | Applied (owner-requested) |
 | CR-053 | DES-004 1.16.0: `video_stage_stats` juego→server→app — el Plugin publica en cada flush de 5 s la ventana de métricas por etapa (la misma con la que construye el log `[TwinpadPerf]`), el Servidor valida/drena la última por juego a la sesión seleccionada y el HUD del teléfono la muestra como segunda línea (promedio (máximo) por etapa, catálogo canónico, validación estricta; TEST-0115/0116/0117) | 2026-10-31 | Applied (owner-requested) |
 | CR-052 | SPEC-006 1.20.0 y SPEC-005 1.4.0: micrófono del teléfono BAJO DEMANDA — `mic_request` Cemu→Android en transiciones MICOpen/MICClose del HLE `mic` (DRC0) y `mic_chunk` Android→Cemu (PCM s16le mono 32 kHz, cola drop-old de 1 s); el teléfono solo graba con juego «cemu» Y demanda vigente; TEST-0101/0102/0103/0104 | 2026-10-29 | Applied (owner-requested) |
 | CR-038 | SPEC-006 1.19.0: mensaje `camera_request` Cemu→Servidor→Android; Android solo enciende la cámara frontal con juego «cemu» Y demanda vigente del juego (HLE `camera`); TEST-097/098/099/0100 | 2026-10-29 | Applied (owner-requested) |

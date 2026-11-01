@@ -200,6 +200,15 @@ pub enum GameMsg {
         /// con `update` para dejar el form sin texto).
         text: String,
     },
+    /// juego → server (canal media binario, CR-054): handshake que precede
+    /// a todos los frames binarios de una conexión media del Plugin.
+    /// Reemplaza en ese canal al primer `game_frame` NDJSON de ADR-008,
+    /// que queda como fallback.
+    #[serde(rename = "game_media_start")]
+    GameMediaStart {
+        /// Identificación del juego que abre el canal.
+        game_id: String,
+    },
     /// juego → server → Android (CR-053): métricas por etapa del pipeline
     /// de video del Plugin en la ventana de muestreo, para el HUD del
     /// teléfono. Consulta DES-004 §7.4: los promedios/máximos por etapa
@@ -286,6 +295,9 @@ impl GameMsg {
     /// Valida rangos y formato de los campos (§4/§9).
     fn validate(&self) -> PairResult<()> {
         match self {
+            // CR-054: el handshake del canal media solo declara el juego;
+            // la pertenencia a una sesión viva la valida el server con su registro.
+            GameMsg::GameMediaStart { game_id } => validate_game_id(game_id),
             GameMsg::GameAnnounce { game } => validate_game(game),
             GameMsg::GamesAvailable { games } => {
                 for game in games {
@@ -1024,7 +1036,7 @@ mod tests {
         );
         // avg_us mayor que max_us.
         assert_eq!(
-            GameMsg::decode(&"{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"stages\":[{\"stage\":\"scale\",\"count\":10,\"avg_us\":481,\"max_us\":480}],\"events\":[]}"),
+            GameMsg::decode("{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"stages\":[{\"stage\":\"scale\",\"count\":10,\"avg_us\":481,\"max_us\":480}],\"events\":[]}"),
             Err(PairError::MalformedMessage)
         );
         // Evento fuera del catálogo.

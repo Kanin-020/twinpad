@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-054 |
+| CR | CR-055 |
 
 ## Open / In review
 
@@ -37,6 +37,7 @@
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
+| CR-054 | Canal media binario Plugin→Servidor en 127.0.0.1:8426: handshake `game_media_start` (variante `GameMsg` nueva, CR-054) y AU H.264 como [header de 32 B little-endian][anexo] sin base64+JSON (aplicado en DES-004 1.17.0, `core::game_media`, `server::game_media`, listener en `main.rs` y `TwinpadClient`); ingest idéntica a la NDJSON (`store_access_unit`+`MediaHub::publish`), sin liveness propio, fallback NDJSON en el hilo de envío y peers mixtos compatibles; TEST-0118/0119 | DES-004, core::game, core::game_media | 2026-10-31 | [CR-054-media-binary-channel-plugin-to-server.md](CR-054-media-binary-channel-plugin-to-server.md) |
 | CR-053 | HUD del stream con métricas por etapa del pipeline de video del Plugin: `video_stage_stats` juego→server→app (ventana 5 s, misma pasada de contadores que el log `[TwinpadPerf]`), validación estricta, drenaje de la última línea vigente a la sesión seleccionada y segunda línea del HUD con promedio (máximo); aplicado en DES-004 1.16.0, core/server/Cemu/Android; TEST-0115/0116/0117 | DES-004, core::game | 2026-10-31 | [CR-053-video-stage-stats-hud.md](CR-053-video-stage-stats-hud.md) |
 | CR-052 | Escrituras al Plugin fuera del lock global del registro: writer por entrada `Arc<Mutex<TcpStream>>` (input/listas/bajas nunca esperan detrás de un socket lento; aplicado en DES-004 1.15.0 y `server::games`; TEST-0114) | DES-004 | 2026-10-31 | [CR-052-entry-writes-outside-registry-lock.md](CR-052-entry-writes-outside-registry-lock.md) |
 | CR-051 | Latencia del canal media: SNDBUF/TCP_NODELAY en el relay binario, MediaHub despierta con Condvar e IDR inmediata al (re)conectar (aplicado en DES-004 1.14.0 y código server/Cemu; TEST-0113 y TEST-072 extendido) | DES-004 | 2026-10-31 | [CR-051-media-relay-latency-and-idr-join.md](CR-051-media-relay-latency-and-idr-join.md) |
