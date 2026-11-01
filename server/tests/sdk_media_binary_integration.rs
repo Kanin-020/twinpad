@@ -10,11 +10,10 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use twinpad_core::game::{GameInfo, GameMsg};
-use twinpad_core::game_media::{encode_header, GameMediaFrame, MAX_AU_BYTES};
+use twinpad_core::game_media::{GameMediaFrame, MAX_AU_BYTES, encode_header};
 use twinpad_server::game_media::run_media_ipc_listener;
 use twinpad_server::games::{GameRegistry, Publisher, run_ipc_listener};
 use twinpad_server::media::MediaHub;
-
 
 /// Listener IPC NDJSON + un juego vivo anunciarlo y sostener la conexión.
 fn spawn_live_game(registry: Arc<GameRegistry>, game_id: &str) {
@@ -126,8 +125,12 @@ fn binary_channel_requires_live_announced_game() {
 
     let mut stream = open_channel(&address, "ghost");
     let mut eof_probe = [0_u8; 256];
-    let closed =
-        wait_for(|| stream.read(&mut eof_probe).map(|read| read == 0).unwrap_or(true));
+    let closed = wait_for(|| {
+        stream
+            .read(&mut eof_probe)
+            .map(|read| read == 0)
+            .unwrap_or(true)
+    });
     assert!(closed, "el server cierra la conexión sin juego vivo");
     assert!(!registry.has_live_game("ghost"));
     assert!(hub_latest(&hub, "ghost").is_none());
@@ -151,8 +154,7 @@ fn binary_channel_closes_on_invalid_header() {
     corrupt[23..27].copy_from_slice(&(MAX_AU_BYTES as u32 + 1).to_le_bytes());
     stream.write_all(&corrupt).unwrap();
 
-    let stored =
-        wait_for(|| matches!(registry.latest_frame("cemu").map(|f| f.gfn), Some(1)));
+    let stored = wait_for(|| matches!(registry.latest_frame("cemu").map(|f| f.gfn), Some(1)));
     assert!(stored, "el AU gfn=1 es válido e ingresó");
     let published = wait_for(|| hub_latest(&hub, "cemu").is_some());
     assert!(published, "MediaHub publicó el AU gfn=1");
@@ -160,7 +162,11 @@ fn binary_channel_closes_on_invalid_header() {
 
     // El canal se cierra tras el header inválido (EOF al leer).
     let mut eof_probe = [0_u8; 256];
-    let closed =
-        wait_for(|| stream.read(&mut eof_probe).map(|read| read == 0).unwrap_or(true));
+    let closed = wait_for(|| {
+        stream
+            .read(&mut eof_probe)
+            .map(|read| read == 0)
+            .unwrap_or(true)
+    });
     assert!(closed, "header inválido cierra el canal (CR-054)");
 }

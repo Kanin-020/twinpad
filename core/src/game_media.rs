@@ -179,7 +179,10 @@ mod tests {
         assert_eq!(u16::from_le_bytes(header[0..2].try_into().unwrap()), 0x5457);
         assert!(header[28..32].iter().all(|&byte| byte == 0));
         let (gfn, ts, idr, w, h, len) = decode_header(&header).unwrap();
-        assert_eq!((gfn, ts, idr, w, h, len), (7, 1_234_567, true, 1280, 720, 640));
+        assert_eq!(
+            (gfn, ts, idr, w, h, len),
+            (7, 1_234_567, true, 1280, 720, 640)
+        );
     }
 
     /// TEST-0118b — CR-054: len 0, payload sobre el techo, magic erróneo,
@@ -228,7 +231,12 @@ mod tests {
     fn start_line_decodes() {
         let line = encode_start_line("cemu").unwrap();
         let msg = GameMsg::decode(&line).unwrap();
-        assert_eq!(msg, GameMsg::GameMediaStart { game_id: "cemu".into() });
+        assert_eq!(
+            msg,
+            GameMsg::GameMediaStart {
+                game_id: "cemu".into()
+            }
+        );
 
         // id de juego inválido → rechazado por la validación central.
         let bad = encode_start_line("Cemu").unwrap();

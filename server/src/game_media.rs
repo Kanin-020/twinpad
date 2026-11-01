@@ -20,9 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use twinpad_core::game::GameMsg;
-use twinpad_core::game_media::{
-    decode_header, header_valid, MEDIA_FRAME_HEADER_BYTES,
-};
+use twinpad_core::game_media::{MEDIA_FRAME_HEADER_BYTES, decode_header, header_valid};
 use twinpad_core::stream::FrameFormat;
 
 use crate::games::{GameFrame, GameRegistry};
@@ -72,15 +70,9 @@ fn handshake(stream: &mut TcpStream) -> Option<String> {
 
 /// Ingesta de un frame binario validado: registra y publica (CR-054),
 /// misma semántica que la rama H.264 NDJSON de `handle_game_connection`.
-fn ingest(
-    game_id: &str,
-    registry: &GameRegistry,
-    hub: Option<&Arc<MediaHub>>,
-    frame: GameFrame,
-) {
+fn ingest(game_id: &str, registry: &GameRegistry, hub: Option<&Arc<MediaHub>>, frame: GameFrame) {
     if registry.store_access_unit(game_id, frame.clone()) {
-        if let (Some(hub), Some(timestamp_us), Some(is_idr)) =
-            (hub, frame.ts_capture_us, frame.idr)
+        if let (Some(hub), Some(timestamp_us), Some(is_idr)) = (hub, frame.ts_capture_us, frame.idr)
         {
             hub.publish(crate::media::MediaSource {
                 game_id: game_id.to_owned(),

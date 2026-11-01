@@ -349,7 +349,9 @@ impl GameMsg {
                         || stat.count == 0
                         || stat.count > VIDEO_STAGE_COUNT_MAX
                         || stat.avg_us > stat.max_us
-                        || stages[..position].iter().any(|seen| seen.stage == stat.stage)
+                        || stages[..position]
+                            .iter()
+                            .any(|seen| seen.stage == stat.stage)
                     {
                         return Err(PairError::MalformedMessage);
                     }
@@ -358,7 +360,9 @@ impl GameMsg {
                     if !VIDEO_EVENT_NAMES.contains(&event.event.as_str())
                         || event.count == 0
                         || event.count > VIDEO_STAGE_COUNT_MAX
-                        || events[..position].iter().any(|seen| seen.event == event.event)
+                        || events[..position]
+                            .iter()
+                            .any(|seen| seen.event == event.event)
                     {
                         return Err(PairError::MalformedMessage);
                     }
@@ -1036,7 +1040,9 @@ mod tests {
         );
         // avg_us mayor que max_us.
         assert_eq!(
-            GameMsg::decode("{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"stages\":[{\"stage\":\"scale\",\"count\":10,\"avg_us\":481,\"max_us\":480}],\"events\":[]}"),
+            GameMsg::decode(
+                "{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"stages\":[{\"stage\":\"scale\",\"count\":10,\"avg_us\":481,\"max_us\":480}],\"events\":[]}"
+            ),
             Err(PairError::MalformedMessage)
         );
         // Evento fuera del catálogo.
