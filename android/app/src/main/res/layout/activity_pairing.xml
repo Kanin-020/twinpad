@@ -146,6 +146,21 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
 
+            <!-- CR-053: etapas del pipeline de video del Plugin (HUD). -->
+            <TextView
+                android:id="@+id/hud_stage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp"
+                android:layout_marginTop="2dp"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp"
+                android:textColor="@android:color/white"
+                android:textSize="11sp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/hud_chip" />
+
             <ImageButton
                 android:id="@+id/btn_settings"
                 android:layout_width="40dp"

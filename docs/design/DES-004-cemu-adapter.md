@@ -4,7 +4,7 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.15.0 |
+| Version | 1.16.0 |
 | Status | `Draft` |
 | Owner | Eng |
 | Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
@@ -157,6 +157,30 @@ juego y demanda reagrupada), `confirm` queda decidido y `cancel` cierra el
 form sin decidir (el form queda sin validar; «retrocede»). Sin Twinpad, el
 overlay local del swkbd funciona exactamente como siempre.
 
+### 7.5 HUD del teléfono con métricas por etapa (CR-053)
+
+El Plugin promedia por ventana de 5 s la duración de cada etapa del pipeline
+(`readback_copy`, `readback_ready`, `pixel_convert`, `scale`, `i420_convert`,
+`hardware_encoder`, `openh264`, `encode_pipeline`, `base64_json`, `ipc_send`)
+y cuenta los eventos de flujo (`drc_callback`…`frame_sent`; ver §7.4 y
+log `[TwinpadPerf]`). En cada flush (hilo FrameLoop, misma pasada
+`exchange(…,0)` que el log — snapshot único) compone una línea NDJSON
+`{"type":"video_stage_stats","window_ms":5000,"stages":[…],"events":[…]}`
+y la encola en la cola de envío del canal primario con la política drop-old
+del video: es telemetría, nunca bloquea al encoder; si se pierde, la ventana
+siguiente de 5 s repone datos.
+
+El Servidor valida la línea con la variante `GameMsg::VideoStageStats` (dir:
+ventana 10–10000 ms, catálogos canónicos, `count` 1–100000, `avg_us ≤ max_us`,
+sin entradas repetidas, sin campos desconocidos; igual catálogo en
+`core::game` y en el codec Android), retiene solo la última por juego en el
+registro (la nueva reemplaza a la previa) y la drena a cada sesión del
+teléfono con ese juego seleccionado — la misma ruta de demanda de
+rumble/cámara/mic/teclado. La app (`VideoStageStatsCodec`) la muestra como
+segunda línea del HUD bajo el chip de fps/Mbps con rótulos cortos:
+«pix 0.2 ms (0.5 ms) · b64 55 µs (90 µs) · 120 ev»; sin datos vigentes la
+línea se oculta. Atribución de tirones en vivo sin leer el log de Cemu.
+
 ### 7.4 IDR inmediata al (re)conectar el canal media (CR-051)
 
 SPEC-003 §8.2 manda que al (re)entrar un suscriptor al canal media el
@@ -243,6 +267,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | Micrófono del teléfono bajo demanda: transiciones MICOpen/MICClose → `mic_request`, cola s16 drop-old de 1 s, consumo de 96 muestras por frame AX con precedencia sobre el micrófono local | `mic.cpp`, `TwinpadClient::PublishMicRequest/FeedMicChunk/ConsumeMicSamples`, `PairingMicController` | TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
 | Teclado del juego como Android IME (CR-044, §7.3): transiciones del HLE `swkbd` → `keyboard_request` (texto+techo, `on=false` al cerrar suprimen el teclado emulado), overlay Twinpad con demanda vigente y `keyboard_input` (update/confirm/cancel) aplicado al formString en el hilo de render | `swkbd.cpp` (`swkbd_publishKeyboardRequest`, `swkbd_applyTwinpadKeyboardInput`, `swkbd_cancelInput`), `TwinpadClient::PublishKeyboardRequest/FeedKeyboardInput/ConsumeKeyboardInput`, `KeyboardCodec`, `KeyboardOverlayController` | TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
 | IDR inmediata al (re)conectar el canal media (CR-051, §7.4): `video_force_idr` server→Cemu marca la IDR del siguiente frame publicado | `TwinpadClient::RequestKeyframe` + bucle de lectura, `GameRegistry::send_cemu_video_force_idr` y hook del listener media (Servidor) | TEST-0113 |
+| HUD por etapas del pipeline de video (CR-053, §7.5): flush de 5 s → `video_stage_stats` juego→server→app, drenaje de última línea vigente y línea HUD «rótulo avg (max)» | `TwinpadClient::FlushVideoMetricsIfDue` (línea por el canal primario), `GameRegistry::push/pop_video_stage_stats`, drain de sesión (Servidor), `VideoStageStatsCodec`, `PairingViewModel/_videoStageStats`, `hud_stage` (PairingActivity) | TEST-0115, TEST-0116, TEST-0117 |
 
 ## 13. Related decisions
 
@@ -300,6 +325,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | 1.11.0 | 2026-10-30 | Product owner (CR-034) | Cámara del teléfono a Cemu: `camera_frame` decodificado a NV12 en la superficie CAM; envío opt-in del drawer con lente seleccionable (frontal por defecto); TEST-093..096 |
 | 1.12.0 | 2026-10-30 | Product owner (CR-044) | Teclado del juego como Android IME: `kb_requestShow/Hide` del HLE `swkbd` suprime el teclado emulado, overlay de teclado en la app bajo demanda y `kb_event` (código virtual + modifiers) drenado en el hilo HLE; TEST-0106..0109 |
 | 1.15.0 | 2026-10-31 | Buffy (agente) (CR-052) | Concurrency: escritos al Plugin fuera del lock global del registro (writer por entrada, lock por entrada para atomicidad NDJSON); un socket lento ya no congela el forwarding de inputs ni las ops de detección. TEST-0114 |
+| 1.16.0 | 2026-10-31 | Buffy (agente) (CR-053) | HUD por etapas: `video_stage_stats` Plugin→Servidor→app (ventana 5 s, misma pasada de contadores que `[TwinpadPerf]`), validación estricta y drenaje a la sesión seleccionada; segunda línea del HUD con promedio (máximo) por etapa. TEST-0115/0116/0117 |
 | 1.14.0 | 2026-10-31 | Buffy (agente) (CR-051) | Latencia de re-join del video: el Servidor dispara `video_force_idr` hacia el plugin tras autenticar cada cliente media (SPEC-003 §8.2); el adaptador marca IDR del siguiente frame en vez de esperar la cadencia periódica (~1 s); SNDBUF/TCP_NODELAY del socket media acotados como la sesión NDJSON; el hub de media despierta al relay con Condvar en lugar de sondeo. TEST-0113 |
 | 1.13.0 | 2026-10-30 | Buffy (CR-045) | Cola FIFO acotada (32 slots, drop-old) de muestras de motion en `TwinpadClient` y drenaje completo por frame del VPAD: cada muestra se procesa con su Δt propio; sin pérdida de muestras intermedias en giros rápidos (la captura en vivo midió 44 % → 1.4 % de descarte y 0 saltos de orientación); TEST-0111/0112 |
 | 1.12.1 | 2026-10-30 | Product owner (CR-044) | Corrige §7.3, diagrama de secuencia y mapeo de componentes al mecanismo real implementado y aprobado (SPEC-006 1.23.2): `keyboard_request`/`keyboard_input` de texto completo (base64url UTF-8, techo en la demanda) sustituyen a `kb_requestShow/Hide` + `kb_event`, con cola drop-old 8 de transiciones aplicadas en el hilo de render al formString del HLE `swkbd`, `confirm` queda decidido y `cancel` cierra el form sin decidir; TEST-0106..0110 |

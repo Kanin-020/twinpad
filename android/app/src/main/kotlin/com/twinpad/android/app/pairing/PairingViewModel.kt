@@ -24,6 +24,8 @@ import com.twinpad.android.app.wire.RumbleCodec
 import com.twinpad.android.app.wire.RumbleMessage
 import com.twinpad.android.app.wire.StreamCodec
 import com.twinpad.android.app.wire.StreamMessage
+import com.twinpad.android.app.wire.VideoStageStatsCodec
+import com.twinpad.android.app.wire.VideoStageStatsMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -125,6 +127,12 @@ class PairingViewModel(
     private val _keyboardRequested = MutableStateFlow<KeyboardRequestMessage?>(null)
     val keyboardRequested: StateFlow<KeyboardRequestMessage?> = _keyboardRequested
 
+    /** CR-053: métricas por etapa del pipeline de video del Plugin
+     * (`video_stage_stats`, ventana de 5 s) para el HUD del stream.
+     * `null`: sin ventana recibida o sesión cerrada. */
+    private val _videoStageStats = MutableStateFlow<VideoStageStatsMessage?>(null)
+    val videoStageStats: StateFlow<VideoStageStatsMessage?> = _videoStageStats
+
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
     val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
@@ -186,6 +194,9 @@ class PairingViewModel(
             "camera_request" -> CameraRequestCodec.decode(line)?.let { _cameraRequested.value = it.on }
             "mic_request" -> MicRequestCodec.decode(line)?.let { _micRequested.value = it.on }
             "keyboard_request" -> handleKeyboardRequest(line)
+            // CR-053: HUD de etapas del pipeline de video del Plugin.
+            "video_stage_stats" ->
+                VideoStageStatsCodec.decode(line)?.let { _videoStageStats.value = it }
             else -> Unit
         }
     }
@@ -214,6 +225,7 @@ class PairingViewModel(
         streamStats.reset()
         rumblePlayer.play(RumbleMessage(ByteArray(0)))
         _keyboardRequested.value = null
+        _videoStageStats.value = null
     }
 
     private fun handleAudioLine(line: String) {

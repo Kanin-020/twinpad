@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0115 |
+| TEST | TEST-0118 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -45,6 +45,9 @@
 | REQ-005 | SPEC-005 | `-` | TEST-040 | Draft | Writer de sesión: cada mensaje de video precede audio pendiente en el límite de mensaje (CR-003), `server` binario test `session_writer_sends_video_before_queued_audio` |
 | REQ-003 | SPEC-004 | `-` | TEST-043 | Draft | Campos touch DRC normalizados en `input_report` (CR-005); ver TEST-083 para el snapshot inercial vigente |
 | REQ-004 | SPEC-006 | DES-004 | TEST-0114 | Passed (2026-10-31, host) | CR-052: Test Rust `slow_entry_write_does_not_block_registry_operations` (`server::games::tests`) — con el socket del plugin tapado (SNDBUF 4 KiB, línea de 8 MiB y peer sin drenar) `has_live_game`/ops del registro siguen respondiendo mientras la escritura está bloqueada y la línea completa llega al drenar; garantiza que el writer por entrada (Arc, escritura fuera del lock del mapa) nunca congele inputs/listas/bajas de la sesión |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0115 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_round_trips_and_rejects_bad_fields` (`core::game::tests`) — round-trip listo y E4 estricto del contrato de la línea: ventana 10–10000 ms, etapa/evento fuera de catálogo, etapa repetida, `avg_us > max_us`, campo desconocido y contadores fuera de rango se rechazan como `MalformedMessage` |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0116 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_drains_latest_line_per_live_game` (`server::games::tests`) — `push_video_stage_stats` solo acepta juego vivo, la última línea de ventana reemplaza a la previa, `pop_video_stage_stats` la consume una vez (sin reencolar) y un juego extraño nunca recibe telemetría ajena |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0117 | Passed (2026-10-31, host) | CR-053: Test Kotlin `VideoStageStatsCodecTest` (wire Android) — decodificación estricta paridad con core (ventana fuera de rango, etapa/evento de catálogo, `avg_us > max_us`, `count < 1`, tupla incompleta, etapa repetida, evento desconocido y línea no JSON → null) y formateo compacto del HUD «pix 210 µs (480 µs) · b64 55 µs (90 µs) · 120 ev»; contenido vacío → línea oculta |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-045 | Draft | Adaptador Cemu: ciclo por título, reconexión, parser y mapeo/manejo exclusivo al VPAD (CR-005) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-046 | Draft | Aceptación Cemu: preferencia opt-in persistente/false por defecto, auto-connect inmediato al activarlo, no desconexión al desactivarlo, inicio manual solo con título y menú exacto “Iniciar conexión”, “Configuraciones” (CR-006); build verificado, prueba UI/config en Cemu pendiente |
@@ -166,7 +169,8 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
-| CR-035 | SPEC-006 1.20.0 y SPEC-005 1.4.0: micrófono del teléfono BAJO DEMANDA — `mic_request` Cemu→Android en transiciones MICOpen/MICClose del HLE `mic` (DRC0) y `mic_chunk` Android→Cemu (PCM s16le mono 32 kHz, cola drop-old de 1 s); el teléfono solo graba con juego «cemu» Y demanda vigente; TEST-0101/0102/0103/0104 | 2026-10-29 | Applied (owner-requested) |
+| CR-053 | DES-004 1.16.0: `video_stage_stats` juego→server→app — el Plugin publica en cada flush de 5 s la ventana de métricas por etapa (la misma con la que construye el log `[TwinpadPerf]`), el Servidor valida/drena la última por juego a la sesión seleccionada y el HUD del teléfono la muestra como segunda línea (promedio (máximo) por etapa, catálogo canónico, validación estricta; TEST-0115/0116/0117) | 2026-10-31 | Applied (owner-requested) |
+| CR-052 | SPEC-006 1.20.0 y SPEC-005 1.4.0: micrófono del teléfono BAJO DEMANDA — `mic_request` Cemu→Android en transiciones MICOpen/MICClose del HLE `mic` (DRC0) y `mic_chunk` Android→Cemu (PCM s16le mono 32 kHz, cola drop-old de 1 s); el teléfono solo graba con juego «cemu» Y demanda vigente; TEST-0101/0102/0103/0104 | 2026-10-29 | Applied (owner-requested) |
 | CR-038 | SPEC-006 1.19.0: mensaje `camera_request` Cemu→Servidor→Android; Android solo enciende la cámara frontal con juego «cemu» Y demanda vigente del juego (HLE `camera`); TEST-097/098/099/0100 | 2026-10-29 | Applied (owner-requested) |
 | CR-037 | SPEC-004 v1.10.0 y DES-002/004: marco AndroidDSU de referencia landscape exclusivo de la app (accel `(y,-z,x)`, gyro `(-y,-z,x)`); wire y ruta Cemu sin cambios; TEST-083/085 actualizados | 2026-10-29 | Applied (owner-requested) |
 | CR-034 | SPEC-006 1.18.0 y 1.22.0, DES-004 1.11.0: mensaje `camera_frame` Android→Servidor→Cemu (H.264 320x240, 30 fps) con envío opt-in del drawer (toggle + selector frontal/trasera, frontal por defecto); Cemu decodifica y rellena la superficie CAM en NV12; TEST-093/094/095/096 | 2026-10-28 / 2026-10-30 | Applied (owner-decided 2026-10-30) |

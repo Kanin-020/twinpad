@@ -62,6 +62,8 @@ struct GameEntry {
     audio_connection_active: bool,
     /// Patrones de vibración pendientes (CR-033), acotados como el audio.
     rumble_queue: std::collections::VecDeque<Vec<u8>>,
+    // CR-053: la última línea `video_stage_stats` validada del juego (HUD).
+    video_stage_line: Option<String>,
     /// Estados de demanda de cámara pendientes (CR-038), acotados como el audio.
     camera_request_queue: std::collections::VecDeque<bool>,
     /// Último estado de demanda de camera_request vigente (CR-038) para
@@ -138,6 +140,8 @@ impl GameRegistry {
                 audio_chunks: std::collections::VecDeque::new(),
                 audio_connection_active: false,
                 rumble_queue: std::collections::VecDeque::new(),
+                // CR-053: sin telemetría de etapas hasta el primer flush.
+                video_stage_line: None,
                 camera_request_queue: std::collections::VecDeque::new(),
                 camera_request_last: None,
                 mic_request_queue: std::collections::VecDeque::new(),
@@ -261,6 +265,29 @@ impl GameRegistry {
             .get_mut(game_id)?
             .rumble_queue
             .pop_front()
+    }
+
+    /// CR-053: guarda la última línea `video_stage_stats` del juego vivo
+    /// (ya validada por `GameMsg::decode` en la recepción). La de la sesión
+    /// drena con `pop_video_stage_stats`: una por juego y ventana.
+    pub fn push_video_stage_stats(&self, game_id: &str, line: String) -> bool {
+        match lock_or_reset(&self.games).get_mut(game_id) {
+            Some(entry) => {
+                entry.video_stage_line = Some(line);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// CR-053: toma la línea vigente de etapas del juego (el drenado la
+    /// consume; sin actividad la entrada queda vacía hasta el flush
+    /// siguiente, nada se reencola).
+    pub fn pop_video_stage_stats(&self, game_id: &str) -> Option<String> {
+        lock_or_reset(&self.games)
+            .get_mut(game_id)?
+            .video_stage_line
+            .take()
     }
 
     /// Registra un cambio de demanda de cámara (CR-038): actualiza el
@@ -735,6 +762,11 @@ fn handle_game_connection(
             Ok(GameMsg::CameraRequest { on }) => {
                 registry.push_camera_request(&game.game_id, on);
             }
+            // CR-053: telemetría de etapas del pipeline de video; la última
+            // de cada ventana de 5 s drena a la sesión seleccionada.
+            Ok(GameMsg::VideoStageStats { .. }) => {
+                registry.push_video_stage_stats(&game.game_id, line.clone());
+            }
             // CR-035: demanda vigente del micrófono; el drenaje por sesión
             // la entrega al teléfono.
             Ok(GameMsg::MicRequest { on }) => {
@@ -886,7 +918,42 @@ mod tests {
     }
 
     // TEST-094 — verifies SPEC-006 (CR-034): `camera_frame` reaches only the live Cemu
-    // Plugin, is forwarded as-is, and is dropped (not stored) when Cemu is not live.
+    // Plugin, is forwarded as-is, and is dropped (not stored) when Cemu is not live.    // TEST-0116 — verifies DES-004 §7.4 (CR-053): `video_stage_stats` drain per
+    // install game returns the latest line once and ignores dead games.
+    #[test]
+    fn video_stage_stats_drains_latest_line_per_live_game() {
+        let registry = GameRegistry::new();
+        let stale = r#"{"type":"video_stage_stats","window_ms":5000,"stages":[],"events":[]}"#;
+        let fresh = r#"{"type":"video_stage_stats","window_ms":5000,"stages":[{"stage":"pixel_convert","count":120,"avg_us":210,"max_us":480}],"events":[]}"#;
+        assert!(!registry.push_video_stage_stats("cemu", stale.to_string()));
+
+        let (server_side, _client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+
+        // La última ventana gana: la «stale» queda reemplazada.
+        assert!(registry.push_video_stage_stats("cemu", stale.to_string()));
+        assert!(registry.push_video_stage_stats("cemu", fresh.to_string()));
+        assert_eq!(
+            registry.pop_video_stage_stats("cemu").as_deref(),
+            Some(fresh)
+        );
+        // Consumida una vez: nada queda pendiente hasta el siguiente flush.
+        assert_eq!(registry.pop_video_stage_stats("cemu"), None);
+        // Sólo el juego indicado.
+        assert_eq!(registry.pop_video_stage_stats("other"), None);
+        registry.unregister("cemu");
+        assert!(!registry.push_video_stage_stats("cemu", fresh.to_string()));
+    }
+
     #[test]
     fn camera_frame_routes_only_to_selected_cemu() {
         use std::io::{BufRead, BufReader};

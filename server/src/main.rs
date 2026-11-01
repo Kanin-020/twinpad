@@ -777,6 +777,13 @@ fn spawn_game_audio_forwarding(
                         }
                     }
                 }
+                // CR-053: telemetría de etapas del juego seleccionado; el
+                // teléfono la pinta en el HUD del stream.
+                if let Some(stats_line) = games.pop_video_stage_stats(game_id) {
+                    if !sink.send_line(&stats_line) {
+                        return;
+                    }
+                }
                 // CR-044: demanda del teclado del Plugin vivo seleccionado;
                 // rige el IME del teléfono.
                 if let Some(demand) = games.pop_keyboard_request(game_id) {

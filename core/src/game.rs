@@ -28,6 +28,42 @@ pub const GAME_NAME_MAX: usize = 128;
 
 /// Límites de los Framebuffers del stream (SPEC-003 §4), aplicados también
 /// a `game_frame` (el server los re-empaqueta como `video_frame`).
+// CR-053: nombres canónicos de etapa/evento de `video_stage_stats`
+// (specular al log `[TwinpadPerf]` de Cemu, DES-004 §7.4).
+pub const VIDEO_STAGE_NAMES: [&str; 10] = [
+    "readback_copy",
+    "readback_ready",
+    "pixel_convert",
+    "scale",
+    "i420_convert",
+    "hardware_encoder",
+    "openh264",
+    "encode_pipeline",
+    "base64_json",
+    "ipc_send",
+];
+
+/// CR-053: nombres canónicos de evento del pipeline de video del Plugin.
+pub const VIDEO_EVENT_NAMES: [&str; 8] = [
+    "drc_callback",
+    "capture_accepted",
+    "readback_queued",
+    "readback_completed",
+    "readback_slot_busy",
+    "frame_queued",
+    "frame_encoded",
+    "frame_sent",
+];
+
+/// Ventana de muestreo válida de `video_stage_stats` (CR-053): 10 s de
+/// tope (el plugin muestrea cada 5 s) y 10 ms de piso (ventana degenerada).
+pub const VIDEO_STAGE_WINDOW_MAX_MS: u32 = 10_000;
+pub const VIDEO_STAGE_WINDOW_MIN_MS: u32 = 10;
+
+/// CR-053: techo de muestras por etapa/evento en la ventana (60 fps × 10 s
+/// con margen para etapas por-bytes como `readback_copy`).
+pub const VIDEO_STAGE_COUNT_MAX: u32 = 100_000;
+
 pub const GAME_FRAME_MIN_DIM: u16 = crate::stream::MIN_DIM;
 pub const GAME_FRAME_MAX_WIDTH: u16 = crate::stream::MAX_WIDTH;
 pub const GAME_FRAME_MAX_HEIGHT: u16 = crate::stream::MAX_HEIGHT;
@@ -164,6 +200,42 @@ pub enum GameMsg {
         /// con `update` para dejar el form sin texto).
         text: String,
     },
+    /// juego → server → Android (CR-053): métricas por etapa del pipeline
+    /// de video del Plugin en la ventana de muestreo, para el HUD del
+    /// teléfono. Consulta DES-004 §7.4: los promedios/máximos por etapa
+    /// arrive al teléfono sin tocar el log de Cemu.
+    #[serde(rename = "video_stage_stats")]
+    VideoStageStats {
+        /// Ventana cubierta en milisegundos (10–10000).
+        window_ms: u32,
+        /// Etapas con actividad en la ventana (a lo más las del catálogo).
+        stages: Vec<VideoStageStat>,
+        /// Eventos de flujo con actividad en la ventana.
+        events: Vec<VideoStageEvent>,
+    },
+}
+
+/// CR-053: métrica agregada de una etapa del pipeline de video del Plugin.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct VideoStageStat {
+    /// Nombre canónico de [`VIDEO_STAGE_NAMES`].
+    pub stage: String,
+    /// Muestras de la etapa en la ventana (≥1). Cada muestra es una
+    /// ejecución del tramo medido (por frame o por access unit).
+    pub count: u32,
+    /// Promedio de duración en µs (≥0, ≤ `max_us`).
+    pub avg_us: u32,
+    /// Máximo de la ventana en µs (≥ `avg_us`).
+    pub max_us: u32,
+}
+
+/// CR-053: contador agregado de un evento de flujo del pipeline de video.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct VideoStageEvent {
+    /// Nombre canónico de [`VIDEO_EVENT_NAMES`].
+    pub event: String,
+    /// Ocurrencias en la ventana (≥1).
+    pub count: u32,
 }
 
 /// Transición pedida por un `keyboard_input` (CR-044).
@@ -247,6 +319,40 @@ impl GameMsg {
             }
             // CR-038: el flag es un booleano wire estricto; nada más que validar.
             GameMsg::CameraRequest { .. } | GameMsg::MicRequest { .. } => Ok(()),
+            // CR-053: HUD de etapas del pipeline de video del Plugin.
+            GameMsg::VideoStageStats {
+                window_ms,
+                stages,
+                events,
+            } => {
+                if *window_ms < VIDEO_STAGE_WINDOW_MIN_MS
+                    || *window_ms > VIDEO_STAGE_WINDOW_MAX_MS
+                    || stages.len() > VIDEO_STAGE_NAMES.len()
+                    || events.len() > VIDEO_EVENT_NAMES.len()
+                {
+                    return Err(PairError::MalformedMessage);
+                }
+                for (position, stat) in stages.iter().enumerate() {
+                    if !VIDEO_STAGE_NAMES.contains(&stat.stage.as_str())
+                        || stat.count == 0
+                        || stat.count > VIDEO_STAGE_COUNT_MAX
+                        || stat.avg_us > stat.max_us
+                        || stages[..position].iter().any(|seen| seen.stage == stat.stage)
+                    {
+                        return Err(PairError::MalformedMessage);
+                    }
+                }
+                for (position, event) in events.iter().enumerate() {
+                    if !VIDEO_EVENT_NAMES.contains(&event.event.as_str())
+                        || event.count == 0
+                        || event.count > VIDEO_STAGE_COUNT_MAX
+                        || events[..position].iter().any(|seen| seen.event == event.event)
+                    {
+                        return Err(PairError::MalformedMessage);
+                    }
+                }
+                Ok(())
+            }
             // CR-044: teclado del juego bajo demanda.
             GameMsg::KeyboardRequest {
                 on,
@@ -860,6 +966,77 @@ mod tests {
     #[test]
     fn game_frame_zero_is_valid() {
         assert_eq!(frame(0, 16, 16).validate(), Ok(()));
+    }
+
+    // TEST-0115 — verifies SPEC-006 (CR-053): `video_stage_stats` round-trip and strict validation.
+    #[test]
+    fn video_stage_stats_round_trips_and_rejects_bad_fields() {
+        let msg = GameMsg::VideoStageStats {
+            window_ms: 5_000,
+            stages: vec![
+                VideoStageStat {
+                    stage: "pixel_convert".into(),
+                    count: 120,
+                    avg_us: 210,
+                    max_us: 480,
+                },
+                VideoStageStat {
+                    stage: "base64_json".into(),
+                    count: 120,
+                    avg_us: 55,
+                    max_us: 90,
+                },
+            ],
+            events: vec![
+                VideoStageEvent {
+                    event: "frame_encoded".into(),
+                    count: 120,
+                },
+                VideoStageEvent {
+                    event: "frame_sent".into(),
+                    count: 120,
+                },
+            ],
+        };
+        let line = msg.encode().unwrap();
+        assert!(line.starts_with("{\"type\":\"video_stage_stats\""));
+        assert_eq!(GameMsg::decode(&line).unwrap(), msg);
+
+        // Ventana fuera de rango (piso y techo).
+        assert!(line.contains("\"window_ms\":5000"));
+        assert_eq!(
+            GameMsg::decode(&line.replace("\"window_ms\":5000", "\"window_ms\":4")),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(&line.replace("\"window_ms\":5000", "\"window_ms\":20000")),
+            Err(PairError::MalformedMessage)
+        );
+        // Etapa fuera del catálogo (E4).
+        assert_eq!(
+            GameMsg::decode(&line.replace("pixel_convert", "pixel_convert_fake")),
+            Err(PairError::MalformedMessage)
+        );
+        // Etapa repetida en la lista.
+        assert_eq!(
+            GameMsg::decode(&line.replace("base64_json", "pixel_convert")),
+            Err(PairError::MalformedMessage)
+        );
+        // avg_us mayor que max_us.
+        assert_eq!(
+            GameMsg::decode(&"{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"stages\":[{\"stage\":\"scale\",\"count\":10,\"avg_us\":481,\"max_us\":480}],\"events\":[]}"),
+            Err(PairError::MalformedMessage)
+        );
+        // Evento fuera del catálogo.
+        assert_eq!(
+            GameMsg::decode(&line.replace("frame_encoded", "frame_x")),
+            Err(PairError::MalformedMessage)
+        );
+        // Campo desconocido (contrato NDJSON estricto).
+        assert_eq!(
+            GameMsg::decode(&line.replace("\"window_ms\":5000,", "\"window_ms\":5000,\"x\":1,")),
+            Err(PairError::MalformedMessage)
+        );
     }
 
     // TEST-073 — CR-015: H.264 IPC requires encoder timestamp and IDR flag.

@@ -41,6 +41,7 @@ import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
 import com.twinpad.android.app.wire.ProtocolConstants
+import com.twinpad.android.app.wire.VideoStageStatsCodec
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -449,8 +450,10 @@ class PairingActivity : AppCompatActivity() {
 
     private fun renderHudChip() {
         val chip = findViewById<TextView>(R.id.hud_chip)
+        val stageLine = findViewById<TextView>(R.id.hud_stage)
         if (!hudVisible) {
             chip.isVisible = false
+            stageLine.isVisible = false
             return
         }
         val stats = viewModel.streamStats
@@ -463,6 +466,15 @@ class PairingActivity : AppCompatActivity() {
                 "%.1f".format(stats.kbps / KBPS_PER_MBPS),
             )
         chip.isVisible = true
+        // CR-053: etapas del Plugin en la última ventana de muestreo.
+        val metrics = viewModel.videoStageStats.value
+        val formatted = metrics?.let(VideoStageStatsCodec::format)
+        if (formatted == null) {
+            stageLine.isVisible = false
+        } else {
+            stageLine.text = formatted
+            stageLine.isVisible = true
+        }
     }
 
     /** Superficie táctil: instanciar el editor/uso una sola vez. */
