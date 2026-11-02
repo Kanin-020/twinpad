@@ -4,7 +4,8 @@
 |---|---|
 | ID | REQ-001 |
 | Title | Servidor en PC persistente y empaquetado |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
+| Status | `Implemented` (vía SPEC-010; autoarranque y AC-2 cubiertos por CR-061) |
 | Status | `Draft` |
 | Priority | `Must` |
 | Owner | Eng lead |
@@ -61,7 +62,8 @@ Twinpad debe proveer un Servidor PC que se instale y ejecute de forma persistent
 
 ## 10. Related specifications
 
-- `-` until assigned
+- SPEC-010 — Interfaz local de gestión del Servidor PC (CR-061): tray,
+  página loopback con QR copiable/configs/parada, autoarranque XDG.
 
 ## 11. Notes and open questions
 
@@ -82,3 +84,4 @@ Twinpad debe proveer un Servidor PC que se instale y ejecute de forma persistent
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
+| 0.2.0 | 2026-11-01 | Buffy (agente) | SPEC-010 asignado como implementación (CR-061); mecanismo de autoarranque resuelto (desktop entry XDG) |

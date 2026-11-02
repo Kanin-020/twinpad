@@ -4,12 +4,13 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-061 |
+| CR | CR-062 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-061 | Interfaz local del Servidor PC: tray StatusNotifier + página HTTP loopback (QR copiable, estado, configs, autoarranque XDG, parada con gracia); SPEC-010 y DES-005 nuevos; ADR-010; TEST-0135–0137 | REQ-001, SPEC-010, DES-005, ADR-010 | Applied (2026-11-01) | Buffy (agente) | [CR-061-server-local-ui.md](CR-061-server-local-ui.md) |
 | CR-060 | Método de vinculación alternativo al QR: código escrito (dispositivos sin cámara); SPEC-002 §8.4/R20, TEST-0124 | SPEC-002, DES-002 | Applied (2026-11-01) | Buffy (agente) | [CR-060-typed-pairing-code.md](CR-060-typed-pairing-code.md) |
 | CR-059 | Canal de inputs redundante por Bluetooth HID (fallback de red, handover por heartbeat/NFR-002; ADR-009 creeado). Paso 1 (módulo hid + handover) code-merged; paso 2 (banco físico) PENDIENTE: stack MIUI no emite el intento L2CAP del rol HID Device (evidencia en CR §8) | SPEC-004, ADR-007, ADR-003, ADR-009 | Open (paso 2 pendiente) | Buffy (agente) | [CR-059-bt-hid-fallback.md](CR-059-bt-hid-fallback.md) |
 | CR-058 | Degradación automática de bitrate por congestión: ventana D/P en el relay media, escalera 1/2→1/4→1/8→500 kbps con histéresis; cierra la OQ de §17 | SPEC-003, DES-004 | Applied (2026-11-01) | Buffy (agente) | [CR-058-bitrate-degradation.md](CR-058-bitrate-degradation.md) |

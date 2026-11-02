@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| SPEC | SPEC-010 |
+| SPEC | SPEC-011 |
 
 > 💡 Reserve here when creating a Draft. Numbers are never reused.
 
@@ -45,6 +45,7 @@
 | SPEC-007 | Config externa para juegos no integrados | REQ-007 | `Draft` | `-` | TEST-022 | [SPEC-007-external-config.md](SPEC-007-external-config.md) |
 | SPEC-008 | Superficie de controles táctiles configurables | REQ-008 | `Draft` | `-` | TEST-023 | [SPEC-008-touch-controls.md](SPEC-008-touch-controls.md) |
 | SPEC-009 | Descubrimiento mDNS/DNS-SD del Servidor PC (CR-057) | REQ-002 AC-4 | `Approved` | DES-001, DES-002 | TEST-0130, TEST-0133, TEST-0134 | [SPEC-009-mdns-discovery.md](SPEC-009-mdns-discovery.md) |
+| SPEC-010 | Interfaz local de gestión del Servidor PC (tray + página loopback, CR-061) | REQ-001 | `Approved` | DES-005 | TEST-0135, TEST-0136, TEST-0137 | [SPEC-010-server-local-ui.md](SPEC-010-server-local-ui.md) |
 
 ## Deprecated
 
@@ -56,8 +57,8 @@
 
 | Metric | Value |
 |---|---|
-| Active SPECs | 8 |
+| Active SPECs | 9 |
 | Approved SPECs without TEST | 0 |
-| Approved SPECs | 5 |
+| Approved SPECs | 6 |
 | SPECs whose REQ is Deprecated | 0 |
-| Last reviewed | 2026-10-07 |
+| Last reviewed | 2026-11-01 |

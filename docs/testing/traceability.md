@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0135 |
+| TEST | TEST-0138 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -89,7 +89,10 @@
 | REQ-004 | SPEC-003 | DES-003 | TEST-030 | Draft | FPS de render separado de FPS recibido (CR-029: el server ya no impone fps — se sigue el ritmo del juego); keyframes periódicos estáticos se contabilizan como presentación, no 0 FPS; al iniciar un stream nuevo se reinicia la época de `fn` sin perder métricas de audio |
 | REQ-004 | SPEC-003 | DES-003 | TEST-034 | Draft | Diagnósticos del stream: gaps de `fn`, rechazos y promedios de duración por etapa |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | Detección automática y liveness (SPEC-006 §7, REQ-006 AC-1) — transporte: TCP localhost NDJSON (ADR-008); codec en `core::game` + registro en `server::games` + SDK Rust |
+| REQ-001 | SPEC-010 | DES-005 | TEST-0135 | Passed (2026-11-01, host) | CR-061: Test de integración `webui_page_renders_fresh_qr_uri_state_and_loops_back_only` (`server/src/webui.rs`) — `GET /` en loopback responde 200 con el MISMO token vigente en QR SVG, casilla del URI copiable, conteo de sesiones, catálogo de juegos y resolución/bitrate del encoder; el listener bind-es a `127.0.0.1` (W6) y `ensure_fresh_qr` fuerza ciclo R7 (W8) |
 | REQ-002 | SPEC-001/002 | DES-002 | TEST-056 | Passed (2026-10-19, Android físico; intermittent retry failure) | Corrida final `artifacts/test-results/device-e2e/20261019T054326Z-577198`: Pairing autenticado, U4 y selección Cemu en 268 ms. El intento `20261019T053912Z-570870` falló con `SessionEnded` antes de confirmar Linked+selección; causa no determinada |
+| REQ-001 | SPEC-010 | DES-005 | TEST-0136 | Passed (2026-11-01, host) | CR-061: Test de integración `stop_request_sets_shutdown_flag_and_answers_gracefully` (`server/src/webui.rs`) — `GET /stop` responde 200 y activa el flag compartido de parada (W4); el accept-loop de control con poll de 500 ms hace elegible la parada con gracia sin señales POSIX |
+| REQ-001 | SPEC-010 | DES-005 | TEST-0137 | Passed (2026-11-01, host) | CR-061: Tests de `autostart` (`server/src/autostart.rs`) — `install()` escribe el desktop entry, es idempotente (W5), `remove()` lo elimina y quitar sin entrada previa es no-op; hereda `XDG_CONFIG_HOME` con fallback `~/.config/autostart` |
 | REQ-004/006 | SPEC-003/006 | DES-004 | TEST-057 | Functional passed; performance pending | Corrida final: Cemu Framebuffer decodificado y drawable visible, 1920×1080; 7 frames progresivos/2 s (~3.77 fps recibido, ~3.73 presentado), 3748 kbps, 0 gaps/rechazos. Otra corrida observó ~0.98 fps a 854×480. Ambas quedan por debajo de 30/60 fps; latencia y reproducción PCM sincronizada no medidas. Encoder bench local bajo `docs/engineering/2026-10-19-cemu-twinpad-60fps.md` (no representa rendimiento objetivo; histórico de fps config en CR-010/CR-029) |
 | REQ-003/006 | SPEC-004/006 | DES-004 | TEST-058 | Transport passed (2026-10-19; intermittent retry failure) | Corrida final: proxy observó 567 `input_report` en orden, 2 estados pressed y 1 transición pressed→released; guardó solo metadatos touch. Verifica transporte, no efecto dentro del juego. El reintento fallido no confirmó Pairing; evidencia en run `artifacts/test-results/device-e2e/20261019T054326Z-577198` |
 | REQ-006 | SPEC-006 | `-` | TEST-021 | Approved | AC-2: el juego publica frames de Segunda pantalla vía SDK (`TwinpadGame::push_frame` → `game_frame`) y el server los retiene como fuente del Stream de SPEC-003 (se emiten como `video_frame`); liveness del contenido (invariante §14: el frame muere con el juego) — `core::game::GameMsg::GameFrame` + `server::games::GameRegistry::store_frame/preferred_source` + `server::video::run_game_stream` + 4 tests de integración loopback en `server/tests/sdk_frames_integration.rs` |
@@ -187,6 +190,7 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-061 | REQ-001 0.2.0 (asignación de SPEC-010); SPEC-010 1.0.0 y DES-005 0.1.0 nuevos; ADR-010: interfaz local del Servidor PC — tray StatusNotifier (menú: abrir interfaz, URI, autoarranque, stop) con fail-soft, página HTTP SOLO en 127.0.0.1:8430 (QR SVG del token vigente, URI copiable, sesiones/juegos, resolución/bitrate, botón stop) y parada con gracia (flag + accept-loop con poll); TEST-0135/0136/0137 | 2026-11-01 | Applied (owner-requested) |
 | CR-058 | SPEC-003 1.13.0 y DES-004: degradación automática de bitrate por congestión (R10 §11) — ventana D/P 2 000 ms (≥ 0,25 y P ≥ 10 = congestión), escalera [full → 1/2 → 1/4 → 1/8 → 500 kbps] con histéresis de salida 10 000 ms, rung mínimo entre sesiones, reenvío video_config + IDR (CR-051); nunca supera el bitrate del usuario; TEST-0131/0132 | 2026-11-01 | Applied (owner-requested) |
 | CR-057 | REQ-002 0.2.0 (AC-4), SPEC-009 1.0.0, SPEC-001 1.3.0 y SPEC-002 1.12.0: descubrimiento mDNS/DNS-SD — anunciador server (`_twinpad._tcp.local.`, instancia `Twinpad`, TXT `ver=twinpad.v1`) con falla blanda, re-resolución NSD en cada intento/reanudación/reconexión media; sin respuesta → E1; TEST-0133/0134 | 2026-11-01 | Applied (owner-requested) |
 | CR-056 | SPEC-001 1.2.0, SPEC-002 1.12.0 y SPEC-003 1.12.0: reanudación del canal de control — estado S4 con retención de ligadura 60 000 ms, mensaje `pair_resume` (proof HMAC "twinpad.v1 resume"), session_id preservado (canal media anclado sigue usable), app U6 «Reconectando» con reintentos cada 2 s; TEST-0128/0129/0130 | 2026-11-01 | Applied (owner-requested) |

@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| DES | DES-005 |
+| DES | DES-006 |
 
 ## Active designs
 
@@ -16,6 +16,7 @@
 | DES-002 | Realización de la app Android de Pairing | SPEC-002 (full, CR-016/CR-018/CR-021) | `Approved` | [DES-002-android-pairing-app.md](DES-002-android-pairing-app.md) |
 | DES-003 | Realización de video H.264 cifrado | SPEC-003 v1.4.0 (CR-014) | `Draft` | [DES-003-video-tiles.md](DES-003-video-tiles.md) |
 | DES-004 | Relay de Plugins y adaptador Cemu | SPEC-003/004/005/006 (CR-005..CR-021) | `Draft` | [DES-004-cemu-adapter.md](DES-004-cemu-adapter.md) |
+| DES-005 | Interfaz local del Servidor PC: tray + página HTTP loopback | SPEC-010 (full, CR-061) | `Approved` | [DES-005-server-local-ui.md](DES-005-server-local-ui.md) |
 
 ## Superseded / Deprecated
 
@@ -27,6 +28,6 @@
 
 | Metric | Value |
 |---|---|
-| Active DES | 4 |
+| Active DES | 5 |
 | Approved SPECs without DES | 0 |
-| Last reviewed | 2026-10-18 |
+| Last reviewed | 2026-11-01 |
