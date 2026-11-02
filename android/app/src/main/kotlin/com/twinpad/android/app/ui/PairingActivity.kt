@@ -603,22 +603,27 @@ class PairingActivity : AppCompatActivity() {
     private fun isGamepadSource(source: Int): Boolean =
         source and InputDevice.SOURCE_GAMEPAD != 0 || source and InputDevice.SOURCE_JOYSTICK != 0
 
+    /** Visibilidad global de error/reintento y del botón de código tipeado
+     * (U1 idle → U5 failure, SPEC-002 §6). Función-propiedad para mantener
+     * el recuento de funciones bajo el umbral de detekt. */
+    private val applyFailureAndTypedCodeVisibility: (PairingUiState) -> Unit = { state ->
+        val txtError = findViewById<TextView>(R.id.txt_error)
+        txtError.text =
+            if (state is PairingUiState.Failure) getString(state.error.resId()) else ""
+        txtError.isVisible = state is PairingUiState.Failure
+        findViewById<View>(R.id.btn_retry).isVisible = state is PairingUiState.Failure
+        findViewById<View>(R.id.btn_typed_code).isVisible = state == PairingUiState.Idle
+    }
+
     /** U1 idle → U5 failure: visibilidad de cada sección (SPEC-002 §6). */
     private fun renderState(state: PairingUiState) {
         val session = findViewById<View>(R.id.session_view)
         val title = findViewById<View>(R.id.pairing_title)
         val btnScan = findViewById<View>(R.id.btn_scan)
-        val btnTypedCode = findViewById<View>(R.id.btn_typed_code)
         val preview = findViewById<PreviewView>(R.id.camera_preview)
         val txtStatus = findViewById<TextView>(R.id.txt_status)
         val btnCancel = findViewById<View>(R.id.btn_cancel)
-        val btnRetry = findViewById<View>(R.id.btn_retry)
-        val txtError = findViewById<TextView>(R.id.txt_error)
-        txtError.text =
-            if (state is PairingUiState.Failure) getString(state.error.resId()) else ""
-        btnRetry.isVisible = state is PairingUiState.Failure
-        txtError.isVisible = state is PairingUiState.Failure
-        btnTypedCode.isVisible = state == PairingUiState.Idle
+        applyFailureAndTypedCodeVisibility(state)
         when (state) {
             PairingUiState.Idle -> {
                 session.isVisible = false
