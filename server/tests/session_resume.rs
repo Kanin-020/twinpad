@@ -195,7 +195,11 @@ fn retention_expiry_destroys_binding_and_rejects_resume() {
     // El resume sobre la ligadura destruida es E3 (§9, sin causa).
     struct Empty;
     impl ControlRetention for Empty {
-        fn take_retained(&self, _sid: &SessionId, _now: u64) -> Option<twinpad_core::resume::RetainedSession> {
+        fn take_retained(
+            &self,
+            _sid: &SessionId,
+            _now: u64,
+        ) -> Option<twinpad_core::resume::RetainedSession> {
             None
         }
     }

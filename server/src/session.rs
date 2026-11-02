@@ -305,7 +305,9 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let client = TcpStream::connect(addr).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
         let (server, _) = listener.accept().unwrap();
         (server, client)
     }
@@ -328,7 +330,8 @@ mod tests {
             message::b64_16(&retained_sid().0),
             message::b64_32(&[nc; 32]),
             message::b64_32(&proof)
-        )    }    // TEST-0129 (server-side wiring) — verifies SPEC-001 §8.2: un
+        )
+    } // TEST-0129 (server-side wiring) — verifies SPEC-001 §8.2: un
     // `pair_resume` válido re-admite la sesión con el MISMO session_id.
     #[test]
     fn valid_pair_resume_is_accepted_with_same_session_id() {
@@ -367,11 +370,8 @@ mod tests {
     #[test]
     fn pair_resume_without_or_expired_retention_is_e3() {
         let nc = [0x22_u8; 32];
-        let proof = twinpad_core::resume::resume_proof(
-            &SessionKey([9; 32]),
-            &retained_sid(),
-            &Nonce(nc),
-        );
+        let proof =
+            twinpad_core::resume::resume_proof(&SessionKey([9; 32]), &retained_sid(), &Nonce(nc));
         let line = format!("{}\n", resume_line(0x22, proof));
 
         // Caso A: sin ligadura retenida (servidor reiniciado).
@@ -380,7 +380,10 @@ mod tests {
         let outcome = run_control_session(
             &mut server_a,
             record(),
-            &MapRetention { item: None, at_ms: 0 },
+            &MapRetention {
+                item: None,
+                at_ms: 0,
+            },
             &mut deps(),
         );
         assert!(matches!(
@@ -434,7 +437,10 @@ mod tests {
             },
             &mut deps(),
         );
-        assert!(matches!(outcome, SessionOutcome::Rejected(PairError::AuthRejected)));
+        assert!(matches!(
+            outcome,
+            SessionOutcome::Rejected(PairError::AuthRejected)
+        ));
         let mut buf = [0_u8; 128];
         let n = client.read(&mut buf).unwrap();
         assert!(String::from_utf8_lossy(&buf[..n]).contains("\"E3\""));
@@ -452,15 +458,16 @@ mod tests {
         client.write_all(b"\n").unwrap();
 
         let outcome = std::thread::scope(|scope| {
-            let server_job =
-                scope.spawn(|| run_control_session(&mut server, record(), &NoRetention, &mut deps()));
+            let server_job = scope
+                .spawn(|| run_control_session(&mut server, record(), &NoRetention, &mut deps()));
             // Cliente: challenge → proof real (mismo core) → espera pair_ack.
             use std::io::BufRead;
             let mut reader = std::io::BufReader::new(&client);
             let mut split = String::new();
             reader.read_line(&mut split).unwrap();
-            let mut client_machine =
-                twinpad_core::handshake::ClientHandshake::start(&token).unwrap().0;
+            let mut client_machine = twinpad_core::handshake::ClientHandshake::start(&token)
+                .unwrap()
+                .0;
             // rebuild: start() genera el pair_request; aquí YA se envió la
             // misma línea, así que reproducimos el paso del challenge sobre
             // la máquina del cliente con el nonce del server.
@@ -479,10 +486,14 @@ mod tests {
                 StepOut::Out(msg) => msg,
                 other => panic!("esperaba proof, obtuve {other:?}"),
             };
-            client.write_all(message::encode(&proof).unwrap().as_bytes()).unwrap();
+            client
+                .write_all(message::encode(&proof).unwrap().as_bytes())
+                .unwrap();
             client.write_all(b"\n").unwrap();
             let mut ack = String::new();
-            std::io::BufReader::new(&client).read_line(&mut ack).unwrap();
+            std::io::BufReader::new(&client)
+                .read_line(&mut ack)
+                .unwrap();
             let outcome = server_job.join().unwrap();
             (outcome, ack)
         });

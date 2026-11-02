@@ -201,7 +201,10 @@ mod tests {
     use super::*;
 
     fn stats(published: u64, discarded: u64) -> WindowStats {
-        WindowStats { published, discarded }
+        WindowStats {
+            published,
+            discarded,
+        }
     }
 
     // TEST-0131 — CR-058 (SPEC-003 §4.3): política pura de congestión

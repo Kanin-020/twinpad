@@ -6,7 +6,7 @@
 //! registro) viven en `server/`; aquí solo reglas y fechas (ENG §5 P11).
 
 use crate::crypto::mac;
-use crate::error::{PairResult, PairError};
+use crate::error::{PairError, PairResult};
 use crate::message;
 use crate::{Nonce, SessionId, SessionKey};
 use hmac::Mac as _;
@@ -56,11 +56,7 @@ impl ClientResumeState {
 
 /// Proof de reanudación: HMAC-SHA256 sobre `RESUME_PROOF_DOMAIN ‖
 /// session_id ‖ nonce_c` con la session_key (§4.2, CR-056).
-pub fn resume_proof(
-    session_key: &SessionKey,
-    session_id: &SessionId,
-    nonce_c: &Nonce,
-) -> [u8; 32] {
+pub fn resume_proof(session_key: &SessionKey, session_id: &SessionId, nonce_c: &Nonce) -> [u8; 32] {
     let mut mac = mac(&session_key.0);
     mac.update(RESUME_PROOF_DOMAIN);
     mac.update(&session_id.0);
@@ -195,7 +191,10 @@ mod tests {
             Err(PairError::AuthRejected)
         );
         // session_id desconocido (retención de otro id).
-        let other = RetainedSession { session_id: sid(8), ..retained(1_000) };
+        let other = RetainedSession {
+            session_id: sid(8),
+            ..retained(1_000)
+        };
         assert_eq!(
             evaluate_resume(Some(&other), &resume_msg(7, 21, Some(proof)), 1_050),
             Err(PairError::AuthRejected)
@@ -244,7 +243,11 @@ mod tests {
 
     #[test]
     fn client_window_mirrors_retention() {
-        let client = ClientResumeState { session_id: sid(3), session_key: key(4), dropped_at_ms: 5_000 };
+        let client = ClientResumeState {
+            session_id: sid(3),
+            session_key: key(4),
+            dropped_at_ms: 5_000,
+        };
         assert!(client.window_alive(5_000 + RETENTION_MS));
         assert!(!client.window_alive(5_000 + RETENTION_MS + 1));
     }

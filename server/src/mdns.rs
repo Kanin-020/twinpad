@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use mdns_sd::{DaemonEvent, ServiceDaemon, ServiceInfo};
 
@@ -52,7 +52,9 @@ pub fn spawn_announcer(port: u16, ip: IpAddr) -> Arc<AtomicBool> {
 
 fn announce_loop(port: u16, ip: IpAddr, registered: Arc<AtomicBool>) {
     let Ok(daemon) = ServiceDaemon::new() else {
-        eprintln!("Twinpad: mDNS no disponible; el pairing por IP literal del QR sigue operando (SPEC-009 §6).");
+        eprintln!(
+            "Twinpad: mDNS no disponible; el pairing por IP literal del QR sigue operando (SPEC-009 §6)."
+        );
         return;
     };
     let info = match service_info(port, ip) {
@@ -63,7 +65,9 @@ fn announce_loop(port: u16, ip: IpAddr, registered: Arc<AtomicBool>) {
         }
     };
     if let Err(error) = daemon.register(info) {
-        eprintln!("Twinpad: no se pudo registrar el servicio mDNS ({error}); sin anuncio zeroconf.");
+        eprintln!(
+            "Twinpad: no se pudo registrar el servicio mDNS ({error}); sin anuncio zeroconf."
+        );
         return;
     }
 
@@ -81,7 +85,9 @@ fn announce_loop(port: u16, ip: IpAddr, registered: Arc<AtomicBool>) {
                         eprintln!("Twinpad: error del daemon mDNS: {error}");
                     }
                     DaemonEvent::IpAdd(_) | DaemonEvent::IpDel(_) => {
-                        eprintln!("Twinpad: interfaz del host cambió; el anuncio mDNS se re-emitirá automáticamente.");
+                        eprintln!(
+                            "Twinpad: interfaz del host cambió; el anuncio mDNS se re-emitirá automáticamente."
+                        );
                     }
                     _ => {}
                 }
@@ -107,13 +113,13 @@ fn announce_loop(port: u16, ip: IpAddr, registered: Arc<AtomicBool>) {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
     use mdns_sd::ServiceEvent;
+    use std::net::Ipv4Addr;
 
     #[test]
     fn service_info_matches_spec009() {
-        let info =
-            service_info(8420, Ipv4Addr::new(192, 168, 100, 101).into()).expect("ServiceInfo canónico");
+        let info = service_info(8420, Ipv4Addr::new(192, 168, 100, 101).into())
+            .expect("ServiceInfo canónico");
         assert_eq!(info.get_fullname(), "Twinpad._twinpad._tcp.local.");
         assert_eq!(info.get_port(), 8420);
         assert_eq!(info.get_hostname(), "twinpad.local.");
@@ -124,7 +130,8 @@ mod tests {
     #[test]
     fn resolves_our_own_instance_in_loopback() {
         let daemon = ServiceDaemon::new().expect("daemon loopback");
-        let info = service_info(8420, Ipv4Addr::new(192, 168, 100, 101).into()).expect("ServiceInfo");
+        let info =
+            service_info(8420, Ipv4Addr::new(192, 168, 100, 101).into()).expect("ServiceInfo");
         daemon.register(info).expect("register loopback");
         let receiver = daemon.browse(SERVICE_TYPE).expect("browse");
         let mut resolved = false;
@@ -142,6 +149,9 @@ mod tests {
             }
         }
         let _ = daemon.stop_browse(SERVICE_TYPE);
-        assert!(resolved, "la instancia anunciada debe resolverse en loopback");
+        assert!(
+            resolved,
+            "la instancia anunciada debe resolverse en loopback"
+        );
     }
 }

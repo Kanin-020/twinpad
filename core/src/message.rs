@@ -240,8 +240,10 @@ mod tests {
         assert_eq!(decode(&line).unwrap(), msg);
 
         // session_id de 15 bytes → E4 (SPEC-001 §4.2; CR-056).
-        let short = format!("{{\"type\":\"pair_resume\",\"session_id\":\"{short16}\",\"nonce_c\":\"{N32}\",\"proof\":\"{N32}\"}}",
-            short16 = "A".repeat(20));
+        let short = format!(
+            "{{\"type\":\"pair_resume\",\"session_id\":\"{short16}\",\"nonce_c\":\"{N32}\",\"proof\":\"{N32}\"}}",
+            short16 = "A".repeat(20)
+        );
         assert_eq!(decode(&short), Err(PairError::MalformedMessage));
         // nonce_c corto → E4.
         let bad_nonce = format!(

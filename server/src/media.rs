@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(test)]
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -425,8 +425,7 @@ mod tests {
     #[test]
     fn congestion_windows_drive_ladder_down_and_recovery_up() {
         let clock = TestClock(Arc::new(AtomicU64::new(0)));
-        let applied: Arc<std::sync::Mutex<Vec<u32>>> =
-            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let applied: Arc<std::sync::Mutex<Vec<u32>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let applied_for_hook = Arc::clone(&applied);
         let scope = CongestionScope::new(
             Box::new({
@@ -439,7 +438,10 @@ mod tests {
                 true
             }),
         );
-        let congested = WindowStats { published: 40, discarded: 20 };
+        let congested = WindowStats {
+            published: 40,
+            discarded: 20,
+        };
         clock.advance(100);
         scope.ingest_window(congested);
         assert_eq!(scope.rung(), 0); // 1 ventana: aún no degrada
@@ -449,7 +451,10 @@ mod tests {
         assert_eq!(scope.effective_kbps(), 4_000); // 1/2 del bitrate base
         assert_eq!(applied.lock().unwrap().as_slice(), &[4_000]);
         // Recuperación: hold claro de 10 s sube un rung con su reenvío.
-        let clear = WindowStats { published: 100, discarded: 4 };
+        let clear = WindowStats {
+            published: 100,
+            discarded: 4,
+        };
         clock.advance(20_000);
         scope.ingest_window(clear);
         assert_eq!(scope.rung(), 1); // el hold aún no venció
@@ -611,7 +616,15 @@ mod tests {
         let on_media_joined: Arc<MediaJoinedHook> = Arc::new(|| false);
         let (congestion_neutral, _test_clock) = congestion_scope_neutral();
         let server_thread = std::thread::spawn(move || {
-            handle_media_client(server, keys, hub, selected, media_game, on_media_joined, congestion_neutral);
+            handle_media_client(
+                server,
+                keys,
+                hub,
+                selected,
+                media_game,
+                on_media_joined,
+                congestion_neutral,
+            );
         });
         let mut request = Vec::with_capacity(MEDIA_HANDSHAKE_BYTES);
         request.extend_from_slice(&session_id.0);
