@@ -84,6 +84,7 @@ impl Default for UdpChannelRegistry {
 }
 
 impl UdpChannelRegistry {
+    /// Registro inicial: ninguna generación ni canal vivo.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -103,6 +104,7 @@ impl UdpChannelRegistry {
         value
     }
 
+    /// Generación vigente del `sid` (0 = nunca hubo canal).
     #[must_use]
     pub fn current_generation(&self, sid: &SessionId) -> u64 {
         lock(&self.generation).get(sid).copied().unwrap_or(0)
@@ -113,6 +115,7 @@ impl UdpChannelRegistry {
         let _ = self.bump(sid);
     }
 
+    /// Canal vivo de la sesión, con sus workers, si existe (§4.4).
     #[must_use]
     pub fn channel(&self, sid: &SessionId) -> Option<Arc<UdpChannelState>> {
         lock(&self.channels).get(sid).cloned()

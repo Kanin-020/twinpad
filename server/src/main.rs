@@ -244,8 +244,6 @@ fn main() {
                     }),
                     Arc::clone(&on_bitrate_apply),
                 ));
-            // CR-062 (SPEC-003 §4.4): handshake TCP §4.2 válido devuelve la
-            // propiedad del relay a TCP (recencia del dueño).
             // CR-062 (SPEC-003 §4.4): registro de canales UDP; el handshake
             // TCP §4.2 válido devuelve la propiedad del relay a TCP.
             let udp_registry = Arc::new(twinpad_server::media_udp::UdpChannelRegistry::new());
@@ -545,7 +543,7 @@ fn main() {
                         // de sesión — el portal ScreenCast (Wayland) pide permiso
                         // con DIÁLOGO y espera al owner (U4 paciencia, §9), y el
                         // lector de sesión quedaría con el socket sin drenar:
-                        // la app quedaria "conectando" y los input_report
+                        // la app quedaría "conectando" y los input_report
                         // enquuing. Elegido: el grabber se construye DENTRO del
                         // hilo de video (abajo), que corre en paralelo, y el
                         // lector arranca de inmediato.
@@ -623,7 +621,7 @@ fn main() {
                         let session_input_snapshot_for_reader = Arc::clone(&session_input_snapshot);
                         use std::io::BufReader;
                         // CR-055 (SPEC-001 §4.3): el timeout de lectura (que el
-                        // handshake armó a 10 s para el proof, §9) queda
+                        // handshake configuró en 10 s para el proof, §9) queda
                         // gobernado por el deadline del heartbeat: solo un
                         // `pong` aceptado por HB3 refresca la vida de la
                         // ligadura y el vencimiento (HB4) mata la sesión zombi
@@ -736,41 +734,23 @@ fn main() {
                                     }
                                     // CR-034: cámara del teléfono hacia Cemu.
                                     if trimmed.starts_with("{\"type\":\"camera_frame\"") {
-                                        if let Ok(msg) =
-                                            twinpad_core::game::GameMsg::decode(trimmed)
-                                        {
-                                            if let Ok(line) = msg.encode() {
-                                                games_ref.send_cemu_camera_frame(&line);
-                                            }
-                                        } else {
-                                            println!("camera_frame inválido descartado.");
-                                        }
+                                        relay_to_cemu(trimmed, "camera_frame", |wire| {
+                                            games_ref.send_cemu_camera_frame(wire);
+                                        });
                                         continue;
                                     }
                                     // CR-035: micrófono del teléfono hacia Cemu.
                                     if trimmed.starts_with("{\"type\":\"mic_chunk\"") {
-                                        if let Ok(msg) =
-                                            twinpad_core::game::GameMsg::decode(trimmed)
-                                        {
-                                            if let Ok(line) = msg.encode() {
-                                                games_ref.send_cemu_mic_chunk(&line);
-                                            }
-                                        } else {
-                                            println!("mic_chunk inválido descartado.");
-                                        }
+                                        relay_to_cemu(trimmed, "mic_chunk", |wire| {
+                                            games_ref.send_cemu_mic_chunk(wire);
+                                        });
                                         continue;
                                     }
                                     // CR-044: texto del teclado del teléfono hacia Cemu.
                                     if trimmed.starts_with("{\"type\":\"keyboard_input\"") {
-                                        if let Ok(msg) =
-                                            twinpad_core::game::GameMsg::decode(trimmed)
-                                        {
-                                            if let Ok(line) = msg.encode() {
-                                                games_ref.send_cemu_keyboard_input(&line);
-                                            }
-                                        } else {
-                                            println!("keyboard_input inválido descartado.");
-                                        }
+                                        relay_to_cemu(trimmed, "keyboard_input", |wire| {
+                                            games_ref.send_cemu_keyboard_input(wire);
+                                        });
                                         continue;
                                     }
                                     if let Ok(twinpad_core::game::GameMsg::GameSelect { game_id }) =
@@ -930,6 +910,20 @@ fn parse_video_config(
             .map(|v| v.clamp(1_000, 30_000))
             .unwrap_or(current.bitrate_kbps),
     })
+}
+
+/// Reenvía un mensaje NDJSON del teléfono hacia Cemu (CR-034 cámara,
+/// CR-035 micrófono, CR-044 teclado): valida, re-codifica y entrega por el
+/// canal seleccionado; un mensaje inválido se descarta con diagnóstico (E4
+/// de forma) sin cortar la sesión.
+fn relay_to_cemu(line: &str, message_name: &str, send: impl FnOnce(&str)) {
+    if let Ok(msg) = twinpad_core::game::GameMsg::decode(line) {
+        if let Ok(wire) = msg.encode() {
+            send(&wire);
+        }
+    } else {
+        println!("{message_name} inválido descartado.");
+    }
 }
 
 /// Selecciona el primer dispositivo que envía input hasta que su sesión se desconecta.
@@ -1175,7 +1169,7 @@ fn spawn_game_audio_forwarding(
 
 /// Tamaño máximo del buffer de envío del socket (anti-lag). POR QUÉ: con
 /// streams @60 fps el kernel acumula el exceso de frames en el SNDBUF
-/// (~256 KB..4 MB por defecto); un enlance Wi-Fi que drena menos que el
+/// (~256 KB..4 MB por defecto); un enlace Wi-Fi que drena menos que el
 /// bitrate llena ese buffer con SEGUNDOS de video viejo — el síntoma del
 /// lag de 0.5–2 s con "saltos" (el cursor se teletransporta). Acotado a
 /// 1 frame grande (4 MiB), un SNDBUF lleno hace que `write` BLOQUEE en el
@@ -1342,7 +1336,8 @@ fn bind_qr_ipc_listener(port: u16) -> std::io::Result<TcpListener> {
     TcpListener::bind(("127.0.0.1", port))
 }
 
-/// Serves the current pairing URI and QR matrix over a dedicated loopback-only TCP port.
+/// Entrega el URI de pairing vigente y la matriz del QR por un puerto TCP
+/// exclusivo en loopback (lo consume el adaptador de Cemu, CR-007).
 fn run_qr_ipc_listener(
     listener: TcpListener,
     store: Arc<TokenStore<OsRandomBytes, SystemClock>>,

@@ -69,15 +69,6 @@ impl TileImageSender {
         self.emit_with_patch(sink, current, &jpeg, ts, patch_plan)
     }
 
-    /// Invalida la base de imagen y fuerza un keyframe sin reiniciar `fn`.
-    pub fn reset_image(&mut self) {
-        self.previous = None;
-        self.last_image_fn = None;
-        self.last_keyframe_at = None;
-        self.width = 0;
-        self.height = 0;
-    }
-
     /// Emite un keyframe al inicio/cambio, cada segundo, o cuando el patch no ahorra bytes.
     pub fn emit(
         &mut self,

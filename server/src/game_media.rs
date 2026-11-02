@@ -89,6 +89,8 @@ fn ingest(game_id: &str, registry: &GameRegistry, hub: Option<&Arc<MediaHub>>, f
     }
 }
 
+/// Bucle del canal media binario del SDK (CR-054): por cada conexión del
+/// juego autentica el primer record y encola las AU en el hub.
 pub fn run_media_ipc_listener(
     listener: TcpListener,
     registry: Arc<GameRegistry>,

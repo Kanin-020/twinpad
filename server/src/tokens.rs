@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
 use crate::qr;
+use twinpad_core::Token;
 use twinpad_core::crypto;
 use twinpad_core::handshake::TokenRecord;
-use twinpad_core::{SessionId, Token};
 
 /// Toma el lock del almacén; si el mutex está envenenado (pánico en otra
 /// hebra), degrada a un almacén vacío: ninguna sesión previa sigue activa
@@ -55,6 +55,7 @@ pub struct TokenStore<R: RandomBytes, C: Clock> {
 }
 
 impl<R: RandomBytes, C: Clock> TokenStore<R, C> {
+    /// Almacén vacío; `listen_addr`/`listen_port` viajan dentro del QR (§4.1).
     pub fn new(rng: R, clock: C, listen_addr: String, listen_port: u16) -> Self {
         Self {
             rng,
@@ -129,13 +130,6 @@ impl<R: RandomBytes, C: Clock> TokenStore<R, C> {
     /// §8.3: destruye la credencial; el reintento con esas credenciales es E3.
     pub fn revoke(&self, token: &Token) -> bool {
         lock_or_reset(&self.inner).remove(token).is_some()
-    }
-
-    /// Crea un session_id criptográficamente aleatorio (paso 10).
-    pub fn new_session_id(&self) -> SessionId {
-        let mut bytes = [0u8; 16];
-        self.rng.fill(&mut bytes);
-        SessionId(bytes)
     }
 }
 

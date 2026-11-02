@@ -22,12 +22,13 @@ use twinpad_core::heartbeat::{HEARTBEAT_INTERVAL_MS, PongLiveness};
 pub struct SentPings(Arc<AtomicU64>);
 
 impl SentPings {
+    /// Pings emitidos hasta ahora (el lector los valida en HB3).
     pub fn load(&self) -> u64 {
         self.0.load(Ordering::Acquire)
     }
 }
 
-/// Envia `ping` cada [HEARTBEAT_INTERVAL_MS] mientras `running` esté en alto y
+/// Envía `ping` cada [HEARTBEAT_INTERVAL_MS] mientras `running` esté en alto y
 /// la escritura al socket siga siendo posible; se detiene al caer la bandera
 /// o al fallar la escritura. Devuelve el contador de pings emitidos
 /// (`SentPings`) para la validación HB3 del lector.
@@ -130,6 +131,8 @@ pub enum EndCause {
     IoError,
 }
 
+/// Estado del latido de una sesión (SPEC-001 §4.3): origen del deadline
+/// HB4, frescura del último `pong` (HB3) y contador de pings enviados.
 pub struct SessionHeartbeat {
     origin: Instant,
     liveness: PongLiveness,
@@ -137,6 +140,7 @@ pub struct SessionHeartbeat {
 }
 
 impl SessionHeartbeat {
+    /// Latido nuevo: sin pings emitidos y con el deadline estándar.
     pub fn new(pings: SentPings) -> Self {
         Self {
             origin: Instant::now(),
@@ -145,6 +149,7 @@ impl SessionHeartbeat {
         }
     }
 
+    /// Latido con deadline acortado (tests: valores cortos).
     /// Variante con deadline inyectado (tests: values cortos).
     pub fn with_deadline(deadline_ms: u64, pings: SentPings) -> Self {
         Self {

@@ -34,6 +34,8 @@ pub fn encode_matrix(uri: &str) -> Result<Vec<String>, QrEncodeError> {
         .collect())
 }
 
+/// Renderiza el QR en ANSI con los caracteres ▀/▄/espacio (dos filas de
+/// módulos por línea de terminal).
 pub fn render_terminal(uri: &str) -> Result<String, QrEncodeError> {
     let code = QrCode::encode_text(uri, QrCodeEcc::Medium).map_err(|_| UriTooLong)?;
     let size = code.size();

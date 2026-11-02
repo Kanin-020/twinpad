@@ -106,6 +106,7 @@ pub struct GameRegistry {
 }
 
 impl GameRegistry {
+    /// Registro vacío.
     pub fn new() -> Self {
         Self::default()
     }
@@ -177,6 +178,7 @@ impl GameRegistry {
         lock_or_reset(&self.games).len()
     }
 
+    /// `true` si no hay juegos vivos.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -194,6 +196,9 @@ impl GameRegistry {
         }
     }
 
+    /// Guarda la AU del canal binario (CR-054): solo AU canónicas del
+    /// Plugin (H.264, `idr` y `ts_capture_us` definidos, payload no vacío)
+    /// alimentan el relay media; el resto se descarta (§14).
     pub fn store_access_unit(&self, game_id: &str, frame: GameFrame) -> bool {
         if frame.fmt != twinpad_core::stream::FrameFormat::H264
             || frame.data.is_empty()
@@ -580,6 +585,8 @@ pub fn run_ipc_listener(
     run_ipc_listener_with_media(listener, registry, publish, None);
 }
 
+/// Variante de [`run_ipc_listener`] que, con hub media presente (CR-051),
+/// también alimenta el canal binario con los `game_frame` del SDK.
 pub fn run_ipc_listener_with_media(
     listener: TcpListener,
     registry: std::sync::Arc<GameRegistry>,

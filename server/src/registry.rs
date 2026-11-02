@@ -58,11 +58,12 @@ pub struct SessionRegistry {
     selected_games: Mutex<HashMap<SessionId, String>>,
     media_games: Mutex<HashMap<SessionId, String>>,
     /// CR-056 (SPEC-001 §8.2): ligaduras retenidas tras la caída del socket
-    /// de control, con su ventana de 60 000 ms (Sile session state S4).
+    /// de control, con su ventana de 60 000 ms (estado de sesión S4).
     retained: Mutex<HashMap<SessionId, RetainedSession>>,
 }
 
 impl SessionRegistry {
+    /// Registro vacío.
     pub fn new() -> Self {
         Self::default()
     }
@@ -77,14 +78,9 @@ impl SessionRegistry {
         was_new
     }
 
-    /// Registra la credencial en memoria para el listener media asociado al Pairing.
-    pub fn insert_key(&self, session_id: SessionId, key: SessionKey) {
-        self.keys
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(session_id, (Arc::new(key), Arc::new(AtomicBool::new(true))));
-    }
-
+    /// CR-056: registra la credencial media activa de la sesión; al
+    /// reemplazar una viva, apaga la bandera anterior (el cableado viejo
+    /// del relay deja de validar).
     pub fn insert_active_key(&self, session_id: SessionId, key: SessionKey) {
         let mut keys = self
             .keys

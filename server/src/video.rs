@@ -73,17 +73,6 @@ pub enum OutputFormat {
     Jpeg(u8),
 }
 
-impl OutputFormat {
-    /// `fmt` de SPEC-003 §4 que viaja en los mensajes.
-    #[must_use]
-    pub fn frame_format(self) -> FrameFormat {
-        match self {
-            OutputFormat::Rgb8 => FrameFormat::Rgb8,
-            OutputFormat::Jpeg(_) => FrameFormat::Jpeg,
-        }
-    }
-}
-
 /// Emite un stream de `frames` cuadros a `fps`, pidiendo cada framebuffer a
 /// `source` (SPEC-003 §7 pasos 1–5). `None` de la fuente → `stream_stop`.
 /// Bloquea el hilo caller; pensado para correr en su propio hilo por sesión.
@@ -114,10 +103,6 @@ fn send(sink: &mut dyn FrameSink, msg: &StreamMsg) -> Result<(), VideoSourceErro
         Err(VideoSourceError::Disconnected)
     }
 }
-
-/// Resolución de salida de la captura de escritorio (v1 demo; 16:9).
-pub const CAPTURE_WIDTH: u16 = 640;
-pub const CAPTURE_HEIGHT: u16 = 360;
 
 /// Calidad JPEG por defecto (CR-001): 0–100; 80 ofrece ~20-40× de reducción
 /// con pérdida visual imperceptible para contenido de juego.
@@ -218,33 +203,6 @@ pub fn run_desktop_stream(
         // Fuente demo JPEG (CR-001): conserva su calidad fija local.
         OutputFormat::Jpeg(DEFAULT_JPEG_QUALITY),
         &mut source,
-    )
-}
-
-/// Igual que [`run_desktop_stream`] pero la config se lee de `cfg` en cada
-/// frame: la app puede cambiar resolución/fps/calidad en caliente (menú de
-/// ajustes, CR-001) y el emisor lo aplica con un `stream_start` nuevo (§8.1).
-///
-/// La captura corre en un HILO DEDICADO (por qué: `xcap::capture_image`
-/// tarda 200–600 ms en Wayland; si captura+escalado+JPEG se hacen sobre el
-/// hilo de emisión, el pacing de 30 fps colapsa a ~1 fps). El hilo de
-/// captura escala y publica el frame más reciente; el emisor solo codifica
-/// y envía a `cfg.fps`, leyendo la config en cada frame.
-///
-/// # Errors
-/// `Disconnected` si el receptor deja de estar disponible.
-pub fn run_desktop_stream_dynamic(
-    sink: &mut dyn FrameSink,
-    _frames: u64,
-    _cfg: std::sync::Arc<std::sync::Mutex<VideoConfig>>,
-    _grabber: twinpad_capture::DesktopGrabber,
-) -> Result<(), VideoSourceError> {
-    // CR-014: desktop capture is not a conforming H.264 source or fallback.
-    send(
-        sink,
-        &StreamMsg::StreamStop {
-            reason: twinpad_core::stream::StreamStopReason::PluginStopped,
-        },
     )
 }
 

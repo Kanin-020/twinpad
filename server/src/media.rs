@@ -16,6 +16,7 @@ use twinpad_core::media_crypto::{
 };
 use twinpad_core::{SessionId, SessionKey};
 
+/// Puerto del canal media autenticado; reexport del core (§4.2, CR-051).
 pub const MEDIA_PORT: u16 = twinpad_core::media_crypto::MEDIA_PORT;
 const MEDIA_HANDSHAKE_BYTES: usize = 16 + 32 + 32;
 /// CR-051: SNDBUF del socket media acotado (misma técnica anti-lag de la
@@ -44,6 +45,8 @@ pub struct CongestionScope {
 }
 
 impl CongestionScope {
+    /// Ámbito nuevo: reloj y bitrate configurado inyectados; escalera en
+    /// rung 0 (sin degradación).
     pub fn new(
         now_ms: Box<dyn Fn() -> u64 + Send + Sync>,
         configured_kbps: Box<dyn Fn() -> u32 + Send + Sync>,
@@ -57,12 +60,13 @@ impl CongestionScope {
         }
     }
 
-    /// Reloj vigente en ms (el mismo dominio que losObservers). Método
+    /// Reloj vigente en ms (el mismo dominio que los observadores). Método
     /// público para que el caller observe con ticks consistentes.
     pub fn now_ms(&self) -> u64 {
         (self.now_ms)()
     }
 
+    /// kbps vigentes tras la degradación de la escalera (CR-058 §4.3).
     pub fn effective_kbps(&self) -> u32 {
         let configured = (self.configured_kbps)();
         self.ladder
@@ -99,9 +103,11 @@ impl CongestionScope {
     }
 }
 /// CR-051: tope de espera en el hub; acota la reevaluación de estado
-/// externo al hub (selección/超前 media pair) sin sondeo activo.
+/// externo al hub (selección/par media vencidos) sin sondeo activo.
 const HUB_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
 
+/// Unidad de acceso (AU) del canal binario: `fn`, marca de captura,
+/// bandera IDR y payload Annex-B (CR-051/CR-062).
 #[derive(Clone, Debug)]
 pub struct AccessUnit {
     pub fn_: u64,
@@ -110,6 +116,8 @@ pub struct AccessUnit {
     pub annex_b: Arc<[u8]>,
 }
 
+/// Fuente viva de media: juego publicado por el SDK, dimensiones del
+/// `stream_start` vigente y la AU más reciente de esa fuente.
 #[derive(Clone, Debug)]
 pub struct MediaSource {
     pub game_id: String,
@@ -128,6 +136,8 @@ pub struct MediaHub {
 }
 
 impl MediaHub {
+    /// Publica o actualiza la fuente del juego y despierta a los relays
+    /// que esperan una AU reenviable (CR-051).
     pub fn publish(&self, source: MediaSource) {
         if let Ok(mut sources) = self.sources.lock() {
             sources.insert(source.game_id.clone(), source);
@@ -135,6 +145,8 @@ impl MediaHub {
         }
     }
 
+    /// Retira la fuente del juego desaparecido (§14: sin plugin vivo no
+    /// hay contenido).
     pub fn clear_game(&self, game_id: &str) {
         if let Ok(mut sources) = self.sources.lock() {
             sources.remove(game_id);
@@ -202,10 +214,18 @@ fn prepare_stream_socket(stream: &TcpStream) {
     let _ = sock.set_send_buffer_size(MEDIA_STREAM_SND_BUF_BYTES);
 }
 
+/// Credencial media: clave de sesión compartida y bandera de vigencia.
 pub type MediaCredential = (Arc<SessionKey>, Arc<AtomicBool>);
+
+/// Resuelve la credencial de una sesión al autenticar el handshake (§4.2).
 pub type MediaCredentialLookup = dyn Fn(&SessionId) -> Option<MediaCredential> + Send + Sync;
+
+/// Resuelve el juego seleccionado por sesión (§8.2).
 pub type SelectedGameLookup = dyn Fn(&SessionId) -> Option<String> + Send + Sync;
+
+/// Resuelve el juego con canal media activo (CR-051/CR-052) por sesión.
 pub type MediaGameLookup = dyn Fn(&SessionId) -> Option<String> + Send + Sync;
+
 /// CR-062 (SPEC-003 §4.4): enganche al cerrar el handshake TCP §4.2
 /// válido: devuelve la propiedad del relay a TCP (recencia del dueño).
 pub type TcpMediaJoined = dyn Fn(&SessionId) + Send + Sync;

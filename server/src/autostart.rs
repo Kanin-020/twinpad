@@ -61,6 +61,7 @@ fn config_base() -> Result<PathBuf, AutostartError> {
         .map(|home| PathBuf::from(home).join(".config"))
 }
 
+/// Ruta del desktop entry de autoarranque (W5, XDG).
 pub fn entry_path() -> Result<PathBuf, AutostartError> {
     Ok(entry_path_under(&config_base()?))
 }
