@@ -182,14 +182,13 @@ class PairingActivity : AppCompatActivity() {
         }
 
     /** CR-059: permiso del rol HID Bluetooth (gamepad por BT como alternativa
-     * completa/failover). Se pide juntos al de la cámara al iniciar el
-     * emparejamiento; si se deniega, el canal BT queda deshabilitado y la
-     * app informa como estado (SPEC-004 §8.3, ADR-009). */
+     * completa/failover). Se pide junto al de la cámara al iniciar el
+     * emparejamiento y también en caliente cuando el failover lo demanda;
+     * si se deniega, el canal BT queda deshabilitado y la app informa como
+     * estado (SPEC-004 §8.3, ADR-009). */
     private val btPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (!granted) {
-                Log.i("TwinpadBt", "bt-hid: BLUETOOTH_CONNECT denegado; sin canal BT")
-            }
+            viewModel.onBluetoothPermissionResult(granted)
         }
 
     /** CR-035: permiso del micrófono bajo demanda; al concederlo se reevalúa
@@ -293,6 +292,7 @@ class PairingActivity : AppCompatActivity() {
         }
         drawer.applyPersistedSettings()
         observeCameraEffects()
+        observeBtPermissionRequests.invoke()
         observeMicDemand()
         observeKeyboardDemand()
         observeStates()
@@ -683,6 +683,17 @@ class PairingActivity : AppCompatActivity() {
                     is Effect.StopCamera -> cameraController.stop()
                     else -> Unit
                 }
+            }
+        }
+    }
+
+    /** CR-059: el failover necesita el permiso BT en caliente (sesión caída);
+     * muestra el diálogo del SO aunque el emparejamiento ya haya terminado.
+     * (Lambda: detekt TooManyFunctions.) */
+    private val observeBtPermissionRequests: () -> Unit = {
+        lifecycleScope.launch {
+            viewModel.btPermissionRequests.collect {
+                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
             }
         }
     }

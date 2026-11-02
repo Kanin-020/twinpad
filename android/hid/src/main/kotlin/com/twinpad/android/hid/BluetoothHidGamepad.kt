@@ -10,6 +10,9 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.util.Log
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -55,6 +58,10 @@ class BluetoothHidGamepad(context: Context) {
     private var host: BluetoothDevice? = null
     private val listenerRef = AtomicReference<Listener?>(null)
     private var channel = Channel.IDLE
+    private var registerAttempts = 0
+    private var registerRetryJob: ScheduledFuture<*>? = null
+    private var connectAttempts = 0
+    private var connectRetryJob: ScheduledFuture<*>? = null
 
     /** Estado observable del canal. */
     fun currentChannel(): Channel = channel
@@ -82,6 +89,7 @@ class BluetoothHidGamepad(context: Context) {
 
     /** Libera el proxy del perfil; la histéresis de salida la maneja la app. */
     fun stop() {
+        cancelRegisterRetry()
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
         val profile = hidProfile
         if (adapter != null && profile != null) {
@@ -124,6 +132,8 @@ class BluetoothHidGamepad(context: Context) {
                     return
                 }
                 hidProfile = hidProxy
+                cancelRegisterRetry()
+                registerAttempts = 0
                 try {
                     hidProxy.registerApp(sdpSettings(), inQos(), inQos(), DIRECT_EXECUTOR, hidDeviceCallback)
                 } catch (e: SecurityException) {
@@ -132,6 +142,7 @@ class BluetoothHidGamepad(context: Context) {
                 }
             }
 
+            @Suppress("SwallowedException")
             override fun onServiceDisconnected(profile: Int) {
                 val wasConnected = channel == Channel.CONNECTED
                 hidProfile = null
@@ -150,10 +161,12 @@ class BluetoothHidGamepad(context: Context) {
                 registered: Boolean,
             ) {
                 if (!registered) {
-                    Log.i(TAG, "bt-hid: registro HID no activo en el SO")
-                    channel = Channel.FAILED
+                    Log.i(TAG, "bt-hid: registro HID no activo en el SO; reintentando")
+                    scheduleRegisterRetry()
                     return
                 }
+                registerAttempts = 0
+                cancelRegisterRetry()
                 channel = Channel.REGISTERED
                 connectToBondedHost()
             }
@@ -166,9 +179,15 @@ class BluetoothHidGamepad(context: Context) {
                     BluetoothProfile.STATE_CONNECTED -> {
                         host = device
                         channel = Channel.CONNECTED
+                        connectAttempts = 0
+                        cancelConnectRetry()
                         Log.i(TAG, "bt-hid: canal BT listo (host emparejado conectado)")
                         listenerRef.get()?.onChannelReady()
                     }
+
+                    BluetoothProfile.STATE_CONNECTING,
+                    BluetoothProfile.STATE_DISCONNECTING,
+                    -> Log.i(TAG, "bt-hid: estado de enlace HID con el host: $state")
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         if (channel == Channel.CONNECTED) {
@@ -176,11 +195,56 @@ class BluetoothHidGamepad(context: Context) {
                             channel = Channel.REGISTERED
                             Log.i(TAG, "bt-hid: canal BT perdido")
                             listenerRef.get()?.onChannelLost()
+                        } else if (channel == Channel.REGISTERED) {
+                            // El intento inicial (o un reintento) no llegó a
+                            // CONECTED: el host rechazó o abortó el enlace.
+                            scheduleConnectRetry()
                         }
                     }
                 }
             }
         }
+
+    private fun registerNow() {
+        val profile = hidProfile ?: return
+        try {
+            profile.registerApp(sdpSettings(), inQos(), inQos(), DIRECT_EXECUTOR, hidDeviceCallback)
+        } catch (e: SecurityException) {
+            Log.i(TAG, "bt-hid: reintento sin permiso: ${e.message}")
+        }
+    }
+
+    /**
+     * Reintenta el registro con backoff y tope de 20 s, indefinido (CR-059):
+     * [BluetoothHidDevice.registerApp] puede no producir callback (otra app
+     * detenta el rol HID Device — solo una app a la vez), desregistrar en
+     * caliente (el SO lo hace al re-emparejar) o fallar en silencio. Sin
+     * registro persistente el gamepad desaparece para el host: el rol se
+     * reclama en cuanto se libera, sin techo de intentos.
+     */
+    private fun scheduleRegisterRetry() {
+        registerAttempts += 1
+        val exponential = REGISTER_RETRY_BASE_MS shl (registerAttempts - 1)
+        val delayMs = minOf(exponential, REGISTER_RETRY_MAX_MS)
+        Log.i(TAG, "bt-hid: reintento de registro en ${delayMs / MS_PER_SECOND} s (intento $registerAttempts)")
+        cancelRegisterRetry()
+        registerRetryJob =
+            registerRetryExecutor.schedule(
+                {
+                    if (channel == Channel.IDLE || channel == Channel.FAILED) {
+                        channel = Channel.IDLE
+                        registerNow()
+                    }
+                },
+                delayMs,
+                TimeUnit.MILLISECONDS,
+            )
+    }
+
+    private fun cancelRegisterRetry() {
+        registerRetryJob?.cancel(false)
+        registerRetryJob = null
+    }
 
     private fun connectToBondedHost() {
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
@@ -196,6 +260,32 @@ class BluetoothHidGamepad(context: Context) {
         } catch (e: SecurityException) {
             Log.i(TAG, "bt-hid: conexión sin permiso: ${e.message}")
         }
+    }
+
+    /** Reintenta la conexión al host con tope de 20 s, indefinido: el
+     * rechazo o aborto del enlace HID (L2CAP) puede resolverse al
+     * reintentar (el host aún no catálogo el gamepad — CR-059). */
+    private fun scheduleConnectRetry() {
+        connectAttempts += 1
+        val exponential = CONNECT_RETRY_BASE_MS shl (connectAttempts - 1)
+        val delayMs = minOf(exponential, CONNECT_RETRY_MAX_MS)
+        Log.i(TAG, "bt-hid: enlace al host caído; reintento en ${delayMs / MS_PER_SECOND} s (intento $connectAttempts)")
+        cancelConnectRetry()
+        connectRetryJob =
+            registerRetryExecutor.schedule(
+                {
+                    if (channel == Channel.REGISTERED) {
+                        connectToBondedHost()
+                    }
+                },
+                delayMs,
+                TimeUnit.MILLISECONDS,
+            )
+    }
+
+    private fun cancelConnectRetry() {
+        connectRetryJob?.cancel(false)
+        connectRetryJob = null
     }
 
     /**
@@ -244,6 +334,27 @@ class BluetoothHidGamepad(context: Context) {
         private const val PEAK_BANDWIDTH = 10 * 1024
         private const val LATENCY_VARIATION = 640
         private const val DELAY_VARIATION = 640
+
+        /** Backoff del reintento de registro: 5 s base con doble exponencial. */
+        private const val REGISTER_RETRY_BASE_MS = 5_000L
+
+        /** Tope del backoff de registro: 20 s por intento, indefinido. */
+        private const val REGISTER_RETRY_MAX_MS = 20_000L
+
+        /** Backoff de la conexión al host: 4 s base con doble exponencial. */
+        private const val CONNECT_RETRY_BASE_MS = 4_000L
+
+        /** Tope del backoff de conexión: 20 s por intento, indefinido. */
+        private const val CONNECT_RETRY_MAX_MS = 20_000L
+
+        /** División ms → s para el log de reintentos. */
+        private const val MS_PER_SECOND = 1000
+
+        /** Ejecutor del reintento (un solo hilo; el callback decide el turno). */
+        private val registerRetryExecutor =
+            Executors.newSingleThreadScheduledExecutor { r ->
+                Thread(r, "twinpad-bt-hid-retry").apply { isDaemon = true }
+            }
     }
 }
 

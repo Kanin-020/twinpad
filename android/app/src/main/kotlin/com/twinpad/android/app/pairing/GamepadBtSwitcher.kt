@@ -33,6 +33,7 @@ internal class GamepadBtSwitcher(
     private val gamepad: GamepadStateMachine,
     private val scope: CoroutineScope,
     private val isLinked: () -> Boolean,
+    private val requestPermission: () -> Unit,
 ) {
     private var btHid: BluetoothHidGamepad? = null
 
@@ -98,6 +99,13 @@ internal class GamepadBtSwitcher(
         btHid?.sendReport(encoded)
     }
 
+    /** CR-059: el permiso llegó en caliente; reinicia el armado si la LAN
+     * sigue caída (el diálogo lo lanza la Activity al observar la demanda). */
+    fun onPermissionGranted() {
+        Log.i(TAG, "bt-hid: permiso concedido en caliente; reintentando armado")
+        if (!isLinked() && !btReady) maybeStart()
+    }
+
     /** Libera el perfil si quedó armado (solo al destruir el ViewModel). */
     fun shutdown() {
         btReleaseJob?.cancel()
@@ -119,7 +127,7 @@ internal class GamepadBtSwitcher(
         return previous is PairingUiState.Handshaking && current is PairingUiState.Failure
     }
 
-    /** Arranca el canal BT una sola vez (el permiso lo pide la Activity). */
+    /** Arranca el canal BT una sola vez; sin permiso lo demanda en caliente. */
     private fun maybeStart() {
         if (btReady) return
         val context = app.applicationContext
@@ -128,7 +136,11 @@ internal class GamepadBtSwitcher(
                 context,
                 Manifest.permission.BLUETOOTH_CONNECT,
             ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) return
+        if (!granted) {
+            Log.i(TAG, "bt-hid: sin BLUETOOTH_CONNECT; solicitando permiso al usuario")
+            requestPermission()
+            return
+        }
         val hid = btHid ?: BluetoothHidGamepad(context).also { btHid = it }
         if (hid.currentChannel() == BluetoothHidGamepad.Channel.CONNECTED) {
             btReady = true // canal vivo de una conmutación anterior

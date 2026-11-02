@@ -78,11 +78,23 @@ class PairingViewModel(
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
 
+    /** CR-059: demanda del permiso BT que el falllover necesita en caliente;
+     * la Activity lo lanza al dialógo del SO y devuelve el resultado por
+     * [onBluetoothPermissionResult] (el TAG/TwinpadBt lo narra). */
+    private val _btPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val btPermissionRequests: SharedFlow<Unit> = _btPermissionRequests
+
     /** CR-059: canal del gamepad por Bluetooth HID nativo (failover/alterna-
      * tiva completa); el ciclo, la ruta y la histéresis los gobierna el
      * switcher (ADR-009). */
     private val gamepadSwitcher =
-        GamepadBtSwitcher(app, gamepad, viewModelScope) { _uiState.value is PairingUiState.Linked }
+        GamepadBtSwitcher(
+            app,
+            gamepad,
+            viewModelScope,
+            { _uiState.value is PairingUiState.Linked },
+            { _btPermissionRequests.tryEmit(Unit) },
+        )
 
     /** Efectos que la Activity ejecuta (permiso, apertura/cierre de cámara). */
     private val _cameraEffects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
@@ -399,6 +411,16 @@ class PairingViewModel(
 
                 com.twinpad.android.app.hid.InputTransport.NONE -> Unit // H0: no envía
             }
+        }
+    }
+
+    /** CR-059: resultado del permiso BT pedido en caliente por el failover.
+     * (Lambda, patrón de [armGamepadChannel]: detekt TooManyFunctions.) */
+    val onBluetoothPermissionResult: (Boolean) -> Unit = { granted ->
+        if (granted) {
+            gamepadSwitcher.onPermissionGranted()
+        } else {
+            Log.i("TwinpadBt", "bt-hid: BLUETOOTH_CONNECT denegado; sin canal BT")
         }
     }
 
