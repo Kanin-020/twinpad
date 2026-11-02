@@ -23,6 +23,7 @@ pub mod handshake;
 pub mod heartbeat;
 pub mod input;
 pub mod media_crypto;
+pub mod media_udp;
 pub mod message;
 pub mod qr;
 pub mod resume;

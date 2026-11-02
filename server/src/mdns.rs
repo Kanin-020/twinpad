@@ -129,9 +129,15 @@ mod tests {
 
     #[test]
     fn resolves_our_own_instance_in_loopback() {
+        // Announce en 127.0.0.1 (loopback): IP SIEMPRE local del host, así el
+        // test es determinista en cualquier entorno (el responder de mdns_sd
+        // no emite SRV/TXT para IPs que no pertenecen al host; anunciar la IP
+        // LAN del desarrollo —192.168.100.101— solo resolvía en la máquina del
+        // autor y fallaba en CI. Diagnosticado 2026-11-02: unidades con IP no
+        // local solo emitieron SearchStarted en 10 s; 127.0.0.1 resuelve en
+        // <1 s vía interfaz `lo`).
         let daemon = ServiceDaemon::new().expect("daemon loopback");
-        let info =
-            service_info(8420, Ipv4Addr::new(192, 168, 100, 101).into()).expect("ServiceInfo");
+        let info = service_info(8420, IpAddr::from([127, 0, 0, 1])).expect("ServiceInfo");
         daemon.register(info).expect("register loopback");
         let receiver = daemon.browse(SERVICE_TYPE).expect("browse");
         let mut resolved = false;

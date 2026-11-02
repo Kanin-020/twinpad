@@ -141,3 +141,4 @@ La suite/protocolo está decidido. Interoperabilidad concreta de dispositivos, F
 | 0.1.0 | 2026-10-17 | Usuario + agente | Diseño inicial de la realización de tiles bajo CR-002 |
 | 0.2.0 | 2026-10-20 | Product owner + Twinpad team (CR-014) | Sustituye tiles/JPEG por canal H.264 autenticado, cifrado y MediaCodec |
 | 0.3.0 | 2026-10-30 | Product owner + Twinpad team (CR-041/CR-043) | Contrato de perfil Baseline/Main nivel ≤4.2 para el encoder hardware; conversión RGB8→YUV SSSE3 con identidad bit a bit al escalar (TEST-0105) y consumo NV12 directo del encoder hardware |
+| 0.4.0 | 2026-11-02 | Product owner + Twinpad team (CR-062) | Información de cableado del canal UDP (crudo in `core::media_udp`), sinta por calcular |

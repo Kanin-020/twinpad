@@ -206,39 +206,30 @@ pub type MediaCredential = (Arc<SessionKey>, Arc<AtomicBool>);
 pub type MediaCredentialLookup = dyn Fn(&SessionId) -> Option<MediaCredential> + Send + Sync;
 pub type SelectedGameLookup = dyn Fn(&SessionId) -> Option<String> + Send + Sync;
 pub type MediaGameLookup = dyn Fn(&SessionId) -> Option<String> + Send + Sync;
+/// CR-062 (SPEC-003 §4.4): enganche al cerrar el handshake TCP §4.2
+/// válido: devuelve la propiedad del relay a TCP (recencia del dueño).
+pub type TcpMediaJoined = dyn Fn(&SessionId) + Send + Sync;
 
-pub fn run_media_listener(
-    listener: TcpListener,
-    keys: Arc<MediaCredentialLookup>,
-    hub: Arc<MediaHub>,
-    selected_game: Arc<SelectedGameLookup>,
-    media_game: Arc<MediaGameLookup>,
-    on_media_joined: Arc<MediaJoinedHook>,
-    congestion: Arc<CongestionScope>,
-) {
+/// Dependencias compartidas de los canales media (TCP §4.2 y UDP §4.4).
+pub struct MediaDeps {
+    pub keys: Arc<MediaCredentialLookup>,
+    pub selected: Arc<SelectedGameLookup>,
+    pub media_game: Arc<MediaGameLookup>,
+    pub on_media_joined: Arc<MediaJoinedHook>,
+    pub congestion: Arc<CongestionScope>,
+    pub tcp_media_joined: Arc<TcpMediaJoined>,
+}
+
+pub fn run_media_listener(listener: TcpListener, hub: Arc<MediaHub>, deps: Arc<MediaDeps>) {
     for incoming in listener.incoming() {
         let Ok(stream) = incoming else { continue };
-        let keys = Arc::clone(&keys);
         let hub = Arc::clone(&hub);
-        let selected = Arc::clone(&selected_game);
-        let media = Arc::clone(&media_game);
-        let joined = Arc::clone(&on_media_joined);
-        let congestion = Arc::clone(&congestion);
-        std::thread::spawn(move || {
-            handle_media_client(stream, keys, hub, selected, media, joined, congestion)
-        });
+        let deps = Arc::clone(&deps);
+        std::thread::spawn(move || handle_media_client(stream, hub, deps));
     }
 }
 
-fn handle_media_client(
-    mut stream: TcpStream,
-    keys: Arc<MediaCredentialLookup>,
-    hub: Arc<MediaHub>,
-    selected_game: Arc<SelectedGameLookup>,
-    media_game: Arc<MediaGameLookup>,
-    on_media_joined: Arc<MediaJoinedHook>,
-    congestion: Arc<CongestionScope>,
-) {
+fn handle_media_client(mut stream: TcpStream, hub: Arc<MediaHub>, deps: Arc<MediaDeps>) {
     prepare_stream_socket(&stream);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
@@ -257,7 +248,7 @@ fn handle_media_client(
         Ok(value) => value,
         Err(_) => return,
     };
-    let Some((key, pair_active)) = keys(&session_id) else {
+    let Some((key, pair_active)) = (deps.keys)(&session_id) else {
         return;
     };
     let expected = client_proof(&key.0, &session_id.0, &nonce_c);
@@ -278,20 +269,23 @@ fn handle_media_client(
         return;
     }
     let media_key = derive_media_key(&key.0, &nonce_c, &nonce_s);
+    // CR-062 (SPEC-003 §4.4): el handshake TCP válido devuelve la
+    // propiedad del relay a TCP (el dueño UDP vigente deja de enviar).
+    (deps.tcp_media_joined)(&session_id);
     // CR-051: SPEC-003 §8.2 — el servidor solicita IDR para el nuevo
     // suscriptor al (re)entrar el canal media; el plugin la emite en el
     // siguiente frame en lugar de esperar la cadencia periódica.
-    let _ = on_media_joined();
+    let _ = (deps.on_media_joined)();
     let mut counter = 0_u64;
     let mut current_game = None::<String>;
     let mut last_fn = None;
     let mut last_timestamp_us = None;
     // CR-058 (SPEC-003 §4.3): ventana P/D de esta sesión; al cerrar la
     // ventana móvil se ingiere en la escalera global (encoder compartido).
-    let mut congestion_window = CongestionObserver::new(congestion.now_ms());
+    let mut congestion_window = CongestionObserver::new(deps.congestion.now_ms());
 
     while pair_active.load(Ordering::Acquire) {
-        let Some(game_id) = selected_game(&session_id) else {
+        let Some(game_id) = (deps.selected)(&session_id) else {
             current_game = None;
             last_fn = None;
             last_timestamp_us = None;
@@ -305,7 +299,7 @@ fn handle_media_client(
             last_fn = None;
             last_timestamp_us = None;
         }
-        if media_game(&session_id).as_deref() != Some(game_id.as_str()) {
+        if (deps.media_game)(&session_id).as_deref() != Some(game_id.as_str()) {
             hub.wait_for_change(Duration::from_millis(2));
             continue;
         }
@@ -351,8 +345,8 @@ fn handle_media_client(
         last_fn = Some(source.latest.fn_);
         last_timestamp_us = Some(source.latest.timestamp_us);
         congestion_window.observe(prev_fn, source.latest.fn_);
-        if let Some(stats) = congestion_window.rollover(congestion.now_ms()) {
-            congestion.ingest_window(stats);
+        if let Some(stats) = congestion_window.rollover(deps.congestion.now_ms()) {
+            deps.congestion.ingest_window(stats);
         }
         // CR-029: sin pacing por fps; el bucle vuelve a esperar en el hub
         // (Condvar) hasta la AU siguiente y retransmite en cuanto llega.
@@ -531,16 +525,16 @@ mod tests {
         });
         let server_hub = Arc::clone(&hub);
         let (test_congestion, _test_clock) = congestion_scope_neutral();
+        let deps = Arc::new(MediaDeps {
+            keys,
+            selected,
+            media_game,
+            on_media_joined,
+            congestion: test_congestion,
+            tcp_media_joined: Arc::new(|_| {}),
+        });
         let server_thread = std::thread::spawn(move || {
-            handle_media_client(
-                server,
-                keys,
-                server_hub,
-                selected,
-                media_game,
-                on_media_joined,
-                test_congestion,
-            );
+            handle_media_client(server, server_hub, deps);
         });
 
         let nonce_c = [0x5a; 32];
@@ -615,16 +609,16 @@ mod tests {
         let hub = Arc::new(MediaHub::default());
         let on_media_joined: Arc<MediaJoinedHook> = Arc::new(|| false);
         let (congestion_neutral, _test_clock) = congestion_scope_neutral();
+        let deps = Arc::new(MediaDeps {
+            keys,
+            selected,
+            media_game,
+            on_media_joined,
+            congestion: congestion_neutral,
+            tcp_media_joined: Arc::new(|_| {}),
+        });
         let server_thread = std::thread::spawn(move || {
-            handle_media_client(
-                server,
-                keys,
-                hub,
-                selected,
-                media_game,
-                on_media_joined,
-                congestion_neutral,
-            );
+            handle_media_client(server, hub, deps);
         });
         let mut request = Vec::with_capacity(MEDIA_HANDSHAKE_BYTES);
         request.extend_from_slice(&session_id.0);

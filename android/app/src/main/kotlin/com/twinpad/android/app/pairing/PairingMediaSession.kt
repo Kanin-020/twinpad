@@ -6,9 +6,11 @@ import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.stream.H264MediaClient
 import com.twinpad.android.app.stream.H264SurfaceDecoder
+import com.twinpad.android.app.stream.MediaClient
 import com.twinpad.android.app.stream.StreamState
 import com.twinpad.android.app.stream.StreamStats
 import com.twinpad.android.app.stream.StreamUiState
+import com.twinpad.android.app.stream.UdpPreferredMediaClient
 import com.twinpad.android.app.wire.HandshakeCrypto
 import com.twinpad.android.app.wire.MediaCrypto
 import com.twinpad.android.app.wire.StreamMessage
@@ -45,7 +47,7 @@ internal class PairingMediaSession(
     private val generation = AtomicLong(0)
 
     @Volatile
-    private var client: H264MediaClient? = null
+    private var client: MediaClient? = null
 
     @Volatile
     private var decoder: H264SurfaceDecoder? = null
@@ -217,12 +219,14 @@ internal class PairingMediaSession(
 
     private fun isNewFrame(frameNumber: Long): Boolean = lastPresentedFrameNumber?.let { frameNumber > it } ?: true
 
+    /** CR-062 (SPEC-003 §4.4): cliente preferente UDP con fallback TCP;
+     * la AU 1ª autenticada define el canal vigente de la conexión. */
     private fun createClient(
         connection: ConnectionParameters,
         connectionGeneration: Long,
         outputDecoder: H264SurfaceDecoder,
-    ): H264MediaClient =
-        H264MediaClient(
+    ): MediaClient =
+        UdpPreferredMediaClient(
             host = connection.host,
             sessionId = connection.credentials.sessionId,
             sessionKey = connection.credentials.sessionKey,

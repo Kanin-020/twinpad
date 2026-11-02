@@ -4,12 +4,13 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-062 |
+| CR | CR-063 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-062 | Transporte UDP para video/audio con FEC y degradación por pérdida (evita head-of-line de TCP bajo pérdida real de paquetes; fallback al TCP media existente) | SPEC-003, SPEC-005, DES-001/002, ARCH | Open (2026-11-02) | Buffy (agente) | [CR-062-udp-media-transport-fec.md](CR-062-udp-media-transport-fec.md) |
 | CR-061 | Interfaz local del Servidor PC: tray StatusNotifier + página HTTP loopback (QR copiable, estado, configs, autoarranque XDG, parada con gracia); SPEC-010 y DES-005 nuevos; ADR-010; TEST-0135–0137 | REQ-001, SPEC-010, DES-005, ADR-010 | Applied (2026-11-01) | Buffy (agente) | [CR-061-server-local-ui.md](CR-061-server-local-ui.md) |
 | CR-060 | Método de vinculación alternativo al QR: código escrito (dispositivos sin cámara); SPEC-002 §8.4/R20, TEST-0124 | SPEC-002, DES-002 | Applied (2026-11-01) | Buffy (agente) | [CR-060-typed-pairing-code.md](CR-060-typed-pairing-code.md) |
 | CR-059 | Canal de inputs redundante por Bluetooth HID (fallback de red, handover por heartbeat/NFR-002; ADR-009 creeado). Paso 1 (módulo hid + handover) code-merged; paso 2 (banco físico) PENDIENTE: stack MIUI no emite el intento L2CAP del rol HID Device (evidencia en CR §8) | SPEC-004, ADR-007, ADR-003, ADR-009 | Open (paso 2 pendiente) | Buffy (agente) | [CR-059-bt-hid-fallback.md](CR-059-bt-hid-fallback.md) |
@@ -87,6 +88,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 2 |
+| Open | 3 |
 | Median time open → applied | ≤1 día (CR-036: 2026-10-28 → 2026-10-29) |
-| Last reviewed | 2026-11-01 |
+| Last reviewed | 2026-11-02 |

@@ -15,6 +15,7 @@ pub mod games;
 pub mod heartbeat;
 pub mod mdns;
 pub mod media;
+pub mod media_udp;
 pub mod qr;
 pub mod qr_render;
 pub mod registry;

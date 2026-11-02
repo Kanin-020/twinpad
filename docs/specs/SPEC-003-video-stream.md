@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.13.0 |
+| Version | 1.14.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
-| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132 |
-| Last updated | 2026-11-01 |
+| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132, TEST-0138, TEST-0139, TEST-0140 |
+| Last updated | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -57,6 +57,27 @@ Plaintext: `fn:u64 BE || ts_capture_us:u64 BE || flags:u8 || AnnexB access_unit`
 Los nonces frescos derivan subclave nueva en cada conexión; no hay reanudación de clave/counter. Cerrar el socket Pairing revoca y cierra inmediatamente su canal media asociado. El canal solo recibe la fuente seleccionada; el servidor conserva como máximo una AU pendiente por cliente (latest-frame-wins), no decodifica ni recodifica y nunca sirve a clientes no autenticados.
 
 CR-058 (R10) — degradación automática por congestión en el relay: por ventana móvil de 2 000 ms y por sesión cliente el Servidor cuenta P = AUs publicadas por la fuente destinadas a esa sesión y D = AUs que sustituyeron a una AU pendiente por latest-frame-wins sin haber podido escribirse al socket (descartes). Sesión congestionada si D/P ≥ 0,25 y P ≥ 10 en la ventana; sale de congestión si D/P < 0,05 durante 10 000 ms continuados (histéresis). Ante ≥ 2 ventanas congestionadas el Servidor baja un rung de la escalera del encoder [configurado → 1/2 → 1/4 → 1/8 → suelo 500 kbps] reenviando `video_config` con el nuevo `bitrate_kbps` (mismo mecanismo de CR-027/CR-030; resolución intacta) y solicita IDR (`video_force_idr`, CR-051). Con múltiples sesiones, el rung ejecutado es el mínimo entre sesiones congestionadas. Tras 10 000 ms sin congestión en todas las sesiones se sube un rung, sin superar jamás el bitrate configurado por el usuario. La escalera y los umbrales son parámetros de configuración del Servidor, no contrato wire.
+
+### 4.4 Canal media UDP preferente con fallback TCP (CR-062)
+
+Canal **unidireccional Servidor→Android** por datagramas UDP al mismo `media_port=8425`, OPCIONAL y PREFERENTE: el TCP de §4.2–§4.3 queda como fallback intacto. El teléfono decide: envía JOIN y, si en 900 ms no llega ninguna AU válida por UDP, revierte al TCP media existente (§8.5).
+
+**JOIN (Android→Servidor, 92 B):** `magic[8 b"TWPUDP01"] || session_id[16] || last_seq:u32 BE || join_nonce[32] || HMAC-SHA256[32]`; el MAC cubre ASCII `"twinpad.v1 media udp client"` || `session_id` || `last_seq:u32 BE` || `join_nonce` con `session_key`. Validación idéntica a §4.2 (sesión activa o retención viva, CR-056). El teléfono reenvía el MISMO join como keepalive cada 1 000 ms mientras quiera UDP (reporte R11: `last_seq` = último `seq` de datos recibido, 0 si aún ninguno). El Servidor lo usa solo para refrescar binding/estadística, sin IDR; un JOIN con `join_nonce` distinto del vigente es re-join: deriva clave nueva y toma la propiedad del canal (IDR).
+
+**Clave:** `udp_media_key = HKDF-SHA256(ikm = session_key, salt = join_nonce, info = "twinpad.v1 media udp server-to-client aes-256-gcm")`, misma técnica RFC 5869 que §4.2. El contador de datagramas renueva con cada re-join; sin reanudación.
+
+**Envelope data (Servidor→Android):** `magic[4 b"TWDU"] || seq:u32 BE || au_id:u16 BE || flags:u8 || frag_index:u16 BE || frag_total:u16 BE || ciphertext || tag[16]` — header de 15 B + tag AES-256-GCM de 16 B; AAD = los 15 B del header; nonce = `00000000:u32 || seq:u64 BE`. Total ≤ 1 400 B; payload ≤ 1 360 B. `seq` arranca en 0 por join y es estrictamente creciente por datagrama (con recovery incluido). `au_id` identifica la AU (creciente por AU, u16; `0xFFFF` resérvalo para FEC). `flags`: bit0 = primer fragmento, bit1 = último fragmento, bits 2–7 deben ser 0. Una AU se fragmenta en `frag_total ≥ 1` trozos consecutivos (`frag_index` 0-based); `frag_total = 1` lleva ambos bits. El plaintext concatenado de la AU es EXACTAMENTE el plaintext de §4.3 (`fn`, `ts_capture_us`, `flags` de AU, AU Annex B): las mismas invariantes (fn/ts crecientes, bit0 IDR) se verifican al ensamblar.
+
+**FEC (XOR, grupo ≤ 4):** cada grupo de hasta 4 datagramas de datos consecutivos por `seq` tiene UN datagrama de recuperación con envelope FEC (`au_id = 0xFFFF`, `frag_index = count`, `frag_total = 0`, flags bit2 = 1, bits 0–1 en 0) cuyo plaintext contiene: `group_base:u32 BE || count:u8 || len_i:u16 BE × count || metas_i (au_id:u16, flags:u8, frag_index:u16, frag_total:u16) × count || XOR`, donde `len_i` es el largo del ciphertext+tag del datagrama i y `XOR` es la XOR de los ciphertexts+tags del grupo rellenados con ceros al máximo `len_i`. Si falta EXACTAMENTE un datagrama del grupo y llega su recovery, el receptor reconstruye su ciphertext por XOR (cabecera recomputada desde las metas) y lo valida con GCM; si faltan 0 o ≥ 2, la AU queda perdida (discontinuidad §5). El grupo se cierra con su recovery al completar 4 datagramas de datos, o al terminar la AU en curso si quedó parcial (1–3).
+
+**Recepción (Android):** ventana anti-replay de 256 datagramas por join: se acepta todo `seq` no visto previamente con `seq > watermark` o `watermark − seq < 256`; fuera de ventana o repetido → descartado silencioso (el canal NO cierra). Ensamblado por `au_id` con tope de 4 AUs pendientes y `frag_total ≤ 3 073` (plano máximo de §4.3); una AU pendiente se abandona cuando el `seq` corriente supera en ≥ 256 el `seq` de su primer fragmento. Datagrama inválido (GCM/flags/framing) → descartado silencioso; NUNCA se entrega una AU no autenticada al decoder. La entrega respeta latest-frame-wins de §4.3: una AU ensamblada con `fn`/`ts_capture_us` no estrictamente creciente se descarta sin entregar.
+
+**Dueño del relay:** por sesión hay UN solo dueño del relay, decidido por recencia de eventos: un JOIN válido toma la propiedad UDP (y solicita IDR, CR-051); un handshake TCP §4.2 válido la devuelve a TCP (también con IDR). Entre eventos de propiedad, solo el dueño vigente escribe datagramas. Reenviar el mismo JOIN (keepalive) NO cambia la propiedad ni solicita IDR. El cierre/revocación del Pairing (R8) elimina el canal UDP y el de TCP simultáneamente.
+
+**Señal de pérdida (R11):** el `last_seq` de los JOIN vigentes alimenta la MISMA escalera de R10: por ventana de 2 000 ms el Servidor cuenta `P` = datagramas de datos enviados y `D` = huecos estimados (`seq_corriente − last_seq_recibido`, acotado ≥ 0, solo con keepalive fresco ≤ 5 s; sin señal no se ingiere). Umbrales e histéresis idénticos a R10 (§4.3).
+
+Los datagramas UDP no relajan las invariantes de §14: una AU con fallo de validación se descarta y se conserva la última imagen válida (§5), sin basura en el decoder.
+
 ## 5. Outputs
 
 | Result | Value / shape | Condition |
@@ -124,6 +145,12 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 - **Recuperación:** 10 000 ms sin congestión (D/P < 0,05 en todas las sesiones) → sube un rung con IDR, sin superar el bitrate configurado por el usuario.
 - **Result:** se reduce el descarte de AU conservando el video vivo; la calidad efectiva la decide el Servidor (R5/R10), sin mensajes nuevos en wire.
 
+### 8.5 Fallback UDP → TCP (CR-062, REQ-005 AC-2)
+
+- **Trigger:** el teléfono emitió JOIN (§4.4) y no recibe ninguna AU válida por UDP en 900 ms (paired en retención o Pairing activo).
+- **Flow:** el teléfono cierra el socket UDP, deja de enviar keepalives y sigue la ruta TCP existente de §4.2 (conexión, HMAC, subclave nueva, IDR). El Servidor, al autenticar ese TCP, toma la propiedad del relay (recencia, §4.4) y suspende el envío UDP. La recuperación de UDP tras un fallback exige un ciclo nuevo de reconexión media (§8.2): el teléfono vuelve a intentar JOIN al reiniciar el transporte.
+- **Result:** un solo dueño envía; ninguna AU duplicada llega al decoder; la pérdida del canal UDP se comporta igual que la pérdida del TCP media (V2 → reconexión).
+
 ## 9. Errors
 
 | Condition | Observable behavior | Error code / message |
@@ -158,6 +185,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 - **R4:** ante corte < 10 s, la reanudación reutiliza la sesión autenticada y jamás exige re-pairing (REQ-005 AC-2).
 - **R5:** la degradación la decide siempre el Server (resolución; el framerate ya no degrada por pacing desde CR-029); el Android nunca la solicita en v1.
 - **R10 (CR-058):** el Servidor decide la degradación automática de bitrate del encoder compartido ante congestión observada en el relay del canal media (§4.3). El Android sigue sin solicitar degradación (R5 vigente).
+- **R11 (CR-062):** el canal UDP (§4.4) es opcional y preferente; su pérdida observada (`last_seq` de los JOIN) alimenta la MISMA escalera de R10 con los mismos umbrales (§4.4). Un canal UDP defectuoso siempre termina en el TCP de §4.2 (§8.5); jamás hay dos dueños escribiendo simultáneamente ni AU no autenticada en el decoder.
 - **R6:** si no hay stream, la vista lo indica explícitamente; jamás muestra un Frame congelado como si estuviera vivo (REQ-004 AC-3).
 - **R9 (CR-025):** el modo de escalado `contain`/`expand` es presentación local de Android; no cambia resolución, codec ni wire. Cambiarlo relayout el SurfaceView sin renegociar el stream ni reiniciar el decoder.
 
@@ -167,6 +195,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 |---|---|---|
 | Control `stream_start`/`stream_stop` | este documento §4.1; NDJSON por SPEC-001 §4.2 | v1.5.0; control solo en conexión Pairing |
 | Canal media H.264 cifrado | este documento §4.2–4.3 | TCP 8425; HMAC/HKDF/AES-256-GCM; Annex B; CR-014 |
+| Canal media UDP con FEC (opcional preferente) | este documento §4.4/§8.5 | UDP 8425; JOIN+keepalive HMAC; envelope AES-256-GCM con AAD; frag ≤ 1 360 B; FEC XOR ≤ 4; fallback TCP 900 ms; R11; CR-062 |
 | Autenticación de la sesión | SPEC-001 §7/§8 | sin duplicación: se referencia |
 | Perfil de bitstream | este documento §4.3 | AVC Baseline (66) o Main (77), nivel ≤4.2, YUV 4:2:0, sin B-frames (CR-041) |
 
@@ -226,6 +255,9 @@ Una implementación cumple este SPEC si y solo si honra §3–§14 y pasa las ve
 | Latencia NFR-001 y CPU NFR-005 | pruebas de performance en banco físico (fuera de CI) |
 | R10: política pura de congestión y escalera (ventanas, histéresis, límites) | TEST-0131 |
 | R10: integración — congestión simulada baja rung reenviando video_config + IDR; recuperación sube rung | TEST-0132 |
+| R11: primitivas UDP puras — JOIN/HMAC, derivación de clave, envelope GCM, anti-replay 256, ensamblado por AU y reconstrucción por FEC XOR (falta 1 → recupera; falta 0/≥2 → discontinuidad) | TEST-0138 |
+| R11: integración server — JOIN toma dueño (IDR), keepalive no, TCP handshake devuelve dueño, datagramas solo del dueño; pérdida por `last_seq` alimenta la escalera R10 | TEST-0139 |
+| R11: cliente Android — watchdog 900 ms con fallback al cliente TCP vigente; ventana anti-replay y ensamblado idénticos a core | TEST-0140 |
 
 ## 17. Open questions
 
@@ -252,6 +284,7 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.11.0 | 2026-10-30 | Product owner (CR-041) | Contrato de perfil relajado a Baseline (66) o Main (77), nivel ≤4.2, para admitir el encoder VAAPI freeworld; 4:2:0 y sin B-frames sin cambios |
 | 1.12.0 | 2026-11-01 | Buffy (agente) (CR-056) | §3/§4.2: el handshake media también se admite con ligadura en retención (SPEC-001 §8.2/S4) |
 | 1.13.0 | 2026-11-01 | Buffy (agente) (CR-058) | R10: degradación automática de bitrate por congestión (ventana D/P 2 000 ms, escalera 1/2→1/4→1/8→500 kbps, histéresis 10 000 ms); §8.4 reescrita; OQ §17 cerrada; TEST-0131/0132 |
+| 1.14.0 | 2026-11-02 | Product owner (CR-062) | §4.4 nuevo: canal media UDP preferente (JOIN/keepalive HMAC, envelope AES-256-GCM con AAD, fragmentación ≤ 1 360 B, FEC XOR ≤ 4, anti-replay 256, dueño por recencia, señal de pérdida R11); §8.5 fallback TCP 900 ms; R11; TEST-0138/0139/0140 |
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |

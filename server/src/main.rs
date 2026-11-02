@@ -9,7 +9,7 @@
 //! DES-001 §11: la entropía criptográfica y el reloj del host se inyectan
 //! aquí; el resto del programa sigue siendo determinista y testeable.
 
-use std::net::TcpListener;
+use std::net::{TcpListener, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -244,21 +244,64 @@ fn main() {
                     }),
                     Arc::clone(&on_bitrate_apply),
                 ));
+            // CR-062 (SPEC-003 §4.4): handshake TCP §4.2 válido devuelve la
+            // propiedad del relay a TCP (recencia del dueño).
+            // CR-062 (SPEC-003 §4.4): registro de canales UDP; el handshake
+            // TCP §4.2 válido devuelve la propiedad del relay a TCP.
+            let udp_registry = Arc::new(twinpad_server::media_udp::UdpChannelRegistry::new());
+            let udp_registry_for_tcp = Arc::clone(&udp_registry);
+            let tcp_media_joined: Arc<twinpad_server::media::TcpMediaJoined> =
+                Arc::new(move |session_id| udp_registry_for_tcp.bump_tcp_owner(session_id));
+            // Dependencias compartidas por los canales TCP §4.2 y UDP §4.4.
+            let selected_udp = Arc::clone(&selected);
+            let media_game_udp = Arc::clone(&media_game);
+            let on_media_joined_udp = Arc::clone(&on_media_joined);
+            let congestion_udp = Arc::clone(&congestion);
+            let deps = Arc::new(twinpad_server::media::MediaDeps {
+                keys,
+                selected,
+                media_game,
+                on_media_joined,
+                congestion,
+                tcp_media_joined,
+            });
             std::thread::spawn(move || {
                 println!(
                     "Canal media autenticado activo en 0.0.0.0:{} (SPEC-003).",
                     twinpad_server::media::MEDIA_PORT
                 );
-                twinpad_server::media::run_media_listener(
-                    media_listener,
-                    keys,
-                    hub,
-                    selected,
-                    media_game,
-                    on_media_joined,
-                    congestion,
-                );
+                twinpad_server::media::run_media_listener(media_listener, hub, deps);
             });
+            // CR-062 (SPEC-003 §4.4): mismo puerto, mismo datagrama: el
+            // listener UDP atiende JOINs autenticados de la app (§4.4).
+            match UdpSocket::bind(("0.0.0.0", twinpad_server::media::MEDIA_PORT)) {
+                Ok(media_udp_socket) => {
+                    let media_registry_udp = Arc::clone(&registry);
+                    let keys_udp: Arc<twinpad_server::media::MediaCredentialLookup> =
+                        Arc::new(move |session_id| media_registry_udp.media_credential(session_id));
+                    let udp_deps = Arc::new(twinpad_server::media_udp::UdpMediaDeps {
+                        keys: keys_udp,
+                        hub: Arc::clone(&media_hub),
+                        selected: selected_udp,
+                        media_game: media_game_udp,
+                        on_media_joined: on_media_joined_udp,
+                        congestion: congestion_udp,
+                    });
+                    std::thread::spawn(move || {
+                        twinpad_server::media_udp::run_media_udp_listener(
+                            Arc::new(media_udp_socket),
+                            udp_registry,
+                            udp_deps,
+                        );
+                    });
+                }
+                Err(error) => {
+                    eprintln!(
+                        "Twinpad: puerto media UDP {} en uso ({error}); el canal §4.4 queda desactivado.",
+                        twinpad_server::media::MEDIA_PORT
+                    );
+                }
+            }
         }
         Err(error) => {
             eprintln!(

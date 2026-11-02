@@ -22,14 +22,14 @@ private const val BYTE_SHIFT = 8
 private const val BYTE_MASK = 0xff
 
 /** One authenticated media connection; caller owns its lifecycle and Surface decoder. */
-class H264MediaClient(
+internal class H264MediaClient(
     private val host: String,
     private val sessionId: ByteArray,
     private val sessionKey: ByteArray,
     private val port: Int = MediaCrypto.PORT,
     private val onAccessUnit: (EncodedAccessUnit) -> Unit,
     private val onClosed: () -> Unit,
-) {
+) : MediaClient {
     private val running = AtomicBoolean(false)
 
     @Volatile private var socket: Socket? = null
@@ -42,12 +42,12 @@ class H264MediaClient(
         val bytes: ByteArray,
     )
 
-    fun start() {
+    override fun start() {
         if (!running.compareAndSet(false, true)) return
         worker = Thread(::runClient, "twinpad-media-reader").apply { start() }
     }
 
-    fun close() {
+    override fun close() {
         running.set(false)
         runCatching { socket?.close() }
         worker?.interrupt()
