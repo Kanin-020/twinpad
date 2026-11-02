@@ -92,7 +92,7 @@ class TcpPairingClient(
     ) {
         var finished = false
         while (!finished) {
-            val line = readLineOrNull(s, reader)
+            val line = readLineOrNull(reader)
             if (line == null) {
                 finished = true
             } else {
@@ -114,10 +114,7 @@ class TcpPairingClient(
         lineChannel.trySend(line)
     }
 
-    private fun readLineOrNull(
-        s: Socket,
-        reader: java.io.BufferedReader,
-    ): String? =
+    private fun readLineOrNull(reader: java.io.BufferedReader): String? =
         try {
             reader.readLine()
         } catch (e: SocketTimeoutException) {

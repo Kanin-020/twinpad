@@ -51,11 +51,10 @@ class VideoStageStatsCodecTest {
             ),
         )
         // Evento fuera del catálogo.
-        assertNull(
-            VideoStageStatsCodec.decode(
-                """{"type":"video_stage_stats","window_ms":5000,"stages":[],"events":[{"event":"frame_x","count":1}]}""",
-            ),
-        )
+        val badEventLine =
+            """{"type":"video_stage_stats","window_ms":5000,"stages":[],""" +
+                """"events":[{"event":"frame_x","count":1}]}"""
+        assertNull(VideoStageStatsCodec.decode(badEventLine))
         // Línea no JSON.
         assertNull(VideoStageStatsCodec.decode("not json"))
     }
@@ -74,7 +73,9 @@ class VideoStageStatsCodecTest {
     // 55 µs → «55 µs» según la unidad mínima del formateador.
     @Test
     fun formats_null_without_content() {
-        val empty = VideoStageStatsCodec.decode("""{"type":"video_stage_stats","window_ms":5000,"stages":[],"events":[]}""")!!
+        val emptyLine =
+            """{"type":"video_stage_stats","window_ms":5000,"stages":[],"events":[]}"""
+        val empty = VideoStageStatsCodec.decode(emptyLine)!!
         assertNull(VideoStageStatsCodec.format(empty))
     }
 }

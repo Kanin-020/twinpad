@@ -7,7 +7,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /** Etapas canónicas de `video_stage_stats` (CR-053; paridad con `core::game`). */
@@ -66,6 +65,16 @@ data class VideoStageStatsMessage(
     val events: List<VideoStageEventMessage>,
 )
 
+/** Ventana declarada del mensaje, entre 10 y 10000 ms (CR-053). */
+private const val VIDEO_WINDOW_MIN_MS = 10
+private const val VIDEO_WINDOW_MAX_MS = 10_000
+
+/** `count` válido de etapa o evento: entero en 1…100000 (CR-053). */
+private const val VIDEO_COUNT_MAX = 100_000
+
+/** División µs → ms del rótulo compacto del HUD. */
+private const val US_PER_MS = 1_000
+
 /**
  * Decodificador de `video_stage_stats` (CR-053). Estricto, paridad con
  * `core::game`: `type` distinto, ventana fuera de 10–10000 ms, etapa/evento
@@ -73,67 +82,11 @@ data class VideoStageStatsMessage(
  * `max_us`, arrays más largos que el catálogo o etapa/evento repetido → null.
  */
 object VideoStageStatsCodec {
-    private const val WINDOW_MIN_MS = 10
-    private const val WINDOW_MAX_MS = 10_000
-    private const val COUNT_MAX = 100_000
-
-    fun decode(line: String): VideoStageStatsMessage? {
-        val obj = runCatching { Json.parseToJsonElement(line) as? JsonObject }.getOrNull()
-        if (obj?.get("type")?.jsonPrimitive?.contentOrNull != "video_stage_stats") return null
-        val windowMs = obj["window_ms"]?.jsonPrimitive?.intOrNull ?: return null
-        if (windowMs < WINDOW_MIN_MS || windowMs > WINDOW_MAX_MS) return null
-        val stages =
-            obj["stages"]?.jsonArray?.let(::decodeStages) ?: return null
-        val events =
-            obj["events"]?.jsonArray?.let(::decodeEvents) ?: return null
-        if (stages.size > VIDEO_STAGE_WIRE_NAMES.size || events.size > VIDEO_EVENT_WIRE_NAMES.size) {
-            return null
-        }
-        if (stages.distinctBy { it.stage }.size != stages.size ||
-            events.distinctBy { it.event }.size != events.size
-        ) {
-            return null
-        }
-        return VideoStageStatsMessage(windowMs, stages, events)
-    }
-
-    /** Decodifica el array completo o falla (uno malo anula el mensaje). */
-    private fun decodeStages(array: JsonArray): List<VideoStageStatMessage>? {
-        val out = ArrayList<VideoStageStatMessage>(array.size)
-        for (element in array) {
-            out.add(decodeStage(element) ?: return null)
-        }
-        return out
-    }
-
-    /** Decodifica el array de eventos completo o falla. */
-    private fun decodeEvents(array: JsonArray): List<VideoStageEventMessage>? {
-        val out = ArrayList<VideoStageEventMessage>(array.size)
-        for (element in array) {
-            out.add(decodeEvent(element) ?: return null)
-        }
-        return out
-    }
-
-    private fun decodeStage(element: JsonElement): VideoStageStatMessage? {
-        val item = element as? JsonObject ?: return null
-        val stage = item["stage"]?.jsonPrimitive?.contentOrNull ?: return null
-        if (stage !in VIDEO_STAGE_WIRE_NAMES) return null
-        val count = item["count"]?.jsonPrimitive?.intOrNull ?: return null
-        val avgUs = item["avg_us"]?.jsonPrimitive?.intOrNull ?: return null
-        val maxUs = item["max_us"]?.jsonPrimitive?.intOrNull ?: return null
-        if (count < 1 || count > COUNT_MAX || avgUs < 0 || avgUs > maxUs) return null
-        return VideoStageStatMessage(stage, count, avgUs, maxUs)
-    }
-
-    private fun decodeEvent(element: JsonElement): VideoStageEventMessage? {
-        val item = element as? JsonObject ?: return null
-        val event = item["event"]?.jsonPrimitive?.contentOrNull ?: return null
-        if (event !in VIDEO_EVENT_WIRE_NAMES) return null
-        val count = item["count"]?.jsonPrimitive?.intOrNull ?: return null
-        if (count < 1 || count > COUNT_MAX) return null
-        return VideoStageEventMessage(event, count)
-    }
+    fun decode(line: String): VideoStageStatsMessage? =
+        runCatching { Json.parseToJsonElement(line) as? JsonObject }
+            .getOrNull()
+            ?.takeIf { it["type"]?.jsonPrimitive?.contentOrNull == "video_stage_stats" }
+            ?.let(::decodeBody)
 
     /** Rótulo compacto de una etapa para el HUD. */
     fun shortLabel(stage: String): String = STAGE_SHORT_LABELS[stage] ?: stage
@@ -154,6 +107,79 @@ object VideoStageStatsCodec {
         return parts.joinToString(" · ")
     }
 
-    private fun usText(us: Int): String =
-        if (us >= 1000) "%.1f ms".format(us / 1000.0) else "$us µs"
+    private fun usText(us: Int): String {
+        return if (us >= US_PER_MS) "%.1f ms".format(us / US_PER_MS.toDouble()) else "$us µs"
+    }
 }
+
+/** Cuerpo del mensaje: ventana, etapas y eventos; null si algo falla (CR-053). */
+private fun decodeBody(obj: JsonObject): VideoStageStatsMessage? =
+    obj["window_ms"]?.jsonPrimitive?.intOrNull
+        ?.takeIf { it in VIDEO_WINDOW_MIN_MS..VIDEO_WINDOW_MAX_MS }
+        ?.let { windowMs ->
+            obj["stages"]?.jsonArray?.mapAll(::decodeStage)?.let { stages ->
+                obj["events"]?.jsonArray?.mapAll(::decodeEvent)?.let { events ->
+                    assembledStats(windowMs, stages, events)
+                }
+            }
+        }
+
+/** Une ventana, etapas y eventos solo si están dentro del catálogo y sin repetidos. */
+private fun assembledStats(
+    windowMs: Int,
+    stages: List<VideoStageStatMessage>,
+    events: List<VideoStageEventMessage>,
+): VideoStageStatsMessage? {
+    val inCatalog =
+        stages.size <= VIDEO_STAGE_WIRE_NAMES.size && events.size <= VIDEO_EVENT_WIRE_NAMES.size
+    val unique =
+        stages.distinctBy { it.stage }.size == stages.size &&
+            events.distinctBy { it.event }.size == events.size
+    return if (inCatalog && unique) VideoStageStatsMessage(windowMs, stages, events) else null
+}
+
+/** Decodifica el array entero con [decode] o falla (un elemento malo → null). */
+private inline fun <T> JsonArray.mapAll(decode: (JsonElement) -> T?): List<T>? {
+    val out = ArrayList<T>(size)
+    for (element in this) {
+        out.add(decode(element) ?: return null)
+    }
+    return out
+}
+
+/** Etapa del catálogo con `count` en 1…100000 y `avg_us` ≤ `max_us`, o null. */
+private fun decodeStage(element: JsonElement): VideoStageStatMessage? =
+    (element as? JsonObject)?.let { item ->
+        item["stage"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it in VIDEO_STAGE_WIRE_NAMES }
+            ?.let { stage ->
+                stageCounts(item)?.let { (count, avgMax) ->
+                    VideoStageStatMessage(stage, count, avgMax.first, avgMax.second)
+                }
+            }
+    }
+
+/** `(count, (avgUs, maxUs))` válidos de una etapa; null si falta algo o excede. */
+private fun stageCounts(item: JsonObject): Pair<Int, Pair<Int, Int>>? =
+    item["count"]?.jsonPrimitive?.intOrNull
+        ?.takeIf { it in 1..VIDEO_COUNT_MAX }
+        ?.let { count -> avgMaxOf(item)?.let { count to it } }
+
+/** `avg_us` ≥ 0 y `avg_us` ≤ `max_us`; ambos presentes (CR-053). */
+private fun avgMaxOf(item: JsonObject): Pair<Int, Int>? {
+    val avgUs = item["avg_us"]?.jsonPrimitive?.intOrNull ?: return null
+    val maxUs = item["max_us"]?.jsonPrimitive?.intOrNull ?: return null
+    return if (avgUs < 0 || avgUs > maxUs) null else avgUs to maxUs
+}
+
+/** Evento del catálogo con `count` en 1…100000, o null (CR-053). */
+private fun decodeEvent(element: JsonElement): VideoStageEventMessage? =
+    (element as? JsonObject)?.let { item ->
+        item["event"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it in VIDEO_EVENT_WIRE_NAMES }
+            ?.let { event ->
+                item["count"]?.jsonPrimitive?.intOrNull
+                    ?.takeIf { it in 1..VIDEO_COUNT_MAX }
+                    ?.let { VideoStageEventMessage(event, it) }
+            }
+    }

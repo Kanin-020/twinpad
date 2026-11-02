@@ -113,6 +113,15 @@ internal class SettingsDrawerController(
 
     /** Cablea cada control del drawer a su efecto. */
     fun bind() {
+        bindResolutionButtons()
+        bindScaleButtons()
+        bindBitrateSeek()
+        bindAudioVolumeSeek()
+        bindVisibilitySwitches()
+        bindCameraStreamControls()
+    }
+
+    private fun bindResolutionButtons() {
         resolutionButtons().forEach { (button, dims) ->
             button.setOnCheckedChangeListener { _, checked ->
                 if (checked) {
@@ -122,12 +131,19 @@ internal class SettingsDrawerController(
                 }
             }
         }
+    }
+
+    private fun bindScaleButtons() {
         activity.findViewById<RadioButton>(R.id.scale_contain).setOnCheckedChangeListener { _, checked ->
             if (checked) updateStreamSettings { it.copy(scaleMode = VideoScaleMode.CONTAIN) }
         }
         activity.findViewById<RadioButton>(R.id.scale_expand).setOnCheckedChangeListener { _, checked ->
             if (checked) updateStreamSettings { it.copy(scaleMode = VideoScaleMode.EXPAND) }
         }
+    }
+
+    /** Slider de bitrate: 0…29000 + offset = 1000…30000 kbps (CR-001). */
+    private fun bindBitrateSeek() {
         activity.findViewById<SeekBar>(R.id.bitrate_seek).setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(
@@ -145,6 +161,10 @@ internal class SettingsDrawerController(
                 override fun onStopTrackingTouch(bar: SeekBar) = Unit
             },
         )
+    }
+
+    /** CR-001: el volumen del drawer persiste sin notificar al ViewModel. */
+    private fun bindAudioVolumeSeek() {
         val audioVolume = activity.findViewById<SeekBar>(R.id.audio_volume_seek)
         audioVolume.max = AUDIO_VOLUME_PERCENT_MAX
         audioVolume.progress = store.load().audioVolumePercent
@@ -167,6 +187,11 @@ internal class SettingsDrawerController(
                 override fun onStopTrackingTouch(bar: SeekBar) = Unit
             },
         )
+    }
+
+    /** Interruptores de visualización: HUD, giroscopio, controles,
+     * distribución Nintendo (CR-032) y métricas avanzadas (CR-054). */
+    private fun bindVisibilitySwitches() {
         activity.findViewById<SwitchMaterial>(R.id.switch_show_fps).setOnCheckedChangeListener { _, checked ->
             host.onHudToggled(checked)
             persist { it.copy(showHud = checked) }
@@ -191,7 +216,10 @@ internal class SettingsDrawerController(
                 host.onAdvancedMetricsToggled(checked)
                 persist { it.copy(showAdvancedMetrics = checked) }
             }
-        // CR-034: toggle + lente; el host decide arrancar/parar/reiniciar.
+    }
+
+    /** CR-034: toggle + lente; el host decide arrancar/parar/reiniciar. */
+    private fun bindCameraStreamControls() {
         activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream)
             .setOnCheckedChangeListener { _, checked ->
                 val lens = store.load().cameraLens
