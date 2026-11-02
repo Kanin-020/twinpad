@@ -9,6 +9,7 @@
 //! con listener real, entropía del SO y QR en stdout (REQ-001 AC-1/2).
 
 pub mod audio;
+pub mod autostart;
 pub mod game_media;
 pub mod games;
 pub mod heartbeat;
@@ -20,4 +21,6 @@ pub mod registry;
 pub mod session;
 pub mod tile_video;
 pub mod tokens;
+pub mod tray;
 pub mod video;
+pub mod webui;

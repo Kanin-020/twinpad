@@ -27,6 +27,10 @@ socket2 = "0.6"
 # CR-057 (SPEC-009): anunciador mDNS/DNS-SD `_twinpad._tcp.local.`. ENG §11:
 # puro Rust, MIT/Apache, mantenido, sin unsafe y sin runtime async.
 mdns-sd = "0.21"
+# CR-061 (SPEC-010): bandeja StatusNotifierItem de la interfaz local.
+# ENG §11: puro Rust (MIT/Apache), mantenido (tenantsports/ksni); la feature
+# `blocking` trae el API síncrono que encaja con el server std-only.
+ksni = { version = "0.3", features = ["blocking"] }
 
 [dev-dependencies]
 # Los tests de integración simulan al juego con SDK (AC-2) contra el

@@ -11,7 +11,8 @@
 
 use std::net::TcpListener;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use twinpad_server::session::{SessionDeps, SessionOutcome, run_control_session};
 use twinpad_server::tokens::{Clock, RandomBytes, TokenStore};
@@ -56,6 +57,12 @@ fn main() {
         .nth(1)
         .and_then(|a| a.parse().ok())
         .unwrap_or(DEFAULT_PORT);
+    // CR-061 (SPEC-010): puerto local de la página de gestión (solo
+    // loopback, E-SPEC 8430; distinto de sesión/IPC 8420–8426).
+    let webui_port: u16 = std::env::args()
+        .nth(3)
+        .and_then(|a| a.parse().ok())
+        .unwrap_or(twinpad_server::webui::PORT);
 
     let Ok(listener) = TcpListener::bind(("0.0.0.0", port)) else {
         eprintln!("Twinpad: no se pudo abrir el puerto {port}; ¿está en uso?");
@@ -90,13 +97,15 @@ fn main() {
     // el camino caliente de la sesión.
     {
         let sweeper = Arc::clone(&registry);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            let expired = sweeper.sweep_retained(SystemClock.now_ms());
-            if expired > 0 {
-                println!(
-                    "Retención expirada: {expired} fijadura(s) destruida(s); exige QR nuevo."
-                );
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                let expired = sweeper.sweep_retained(SystemClock.now_ms());
+                if expired > 0 {
+                    println!(
+                        "Retención expirada: {expired} fijadura(s) destruida(s); exige QR nuevo."
+                    );
+                }
             }
         });
     }
@@ -224,8 +233,8 @@ fn main() {
                     }
                     sent && idr_requested
                 });
-            let congestion: Arc<twinpad_server::media::CongestionScope> = Arc::new(
-                twinpad_server::media::CongestionScope::new(
+            let congestion: Arc<twinpad_server::media::CongestionScope> =
+                Arc::new(twinpad_server::media::CongestionScope::new(
                     Box::new(|| SystemClock.now_ms()),
                     Box::new(move || {
                         plugin_cfg_for_scope
@@ -234,8 +243,7 @@ fn main() {
                             .unwrap_or(0)
                     }),
                     Arc::clone(&on_bitrate_apply),
-                ),
-            );
+                ));
             std::thread::spawn(move || {
                 println!(
                     "Canal media autenticado activo en 0.0.0.0:{} (SPEC-003).",
@@ -261,6 +269,73 @@ fn main() {
         }
     }
 
+    // CR-061 (SPEC-010): superficie local del Servidor PC.
+    // Autoarranque por defecto (REQ-001 AC-1 vía CR-061): fail-soft E5.
+    match twinpad_server::autostart::install() {
+        Ok(()) => println!(
+            "Autoarranque de sesión activo (desktop entry XDG instalado; conmutable desde la bandeja)."
+        ),
+        Err(error) => eprintln!(
+            "Twinpad: autoarranque no instalado ({error}); activable desde la bandeja (E5)."
+        ),
+    }
+    // Flag compartido de parada con gracia (W4): lo activan la página y el
+    // menú del tray; el accept-loop de control lo sondea.
+    let shutdown = Arc::new(AtomicBool::new(false));
+    {
+        // Página de gestión SOLO en loopback (W6): QR copiable + estado.
+        let ui_store = Arc::clone(&store);
+        let ui_registry = Arc::clone(&registry);
+        let ui_games = Arc::clone(&game_registry);
+        let ui_plugin_cfg = Arc::clone(&plugin_video_config);
+        let webui_deps = twinpad_server::webui::UiDeps {
+            // W8: consultar UNA vez por petición fuerza el ciclo R7.
+            current_uri: Box::new(move || ui_store.ensure_fresh_qr().qr_uri),
+            session_count: Box::new(move || ui_registry.len()),
+            games: Box::new(move || ui_games.list().into_iter().map(|g| g.game_id).collect()),
+            video_config: Box::new(move || {
+                ui_plugin_cfg
+                    .lock()
+                    .map(|cfg| {
+                        (
+                            u32::from(cfg.width),
+                            u32::from(cfg.height),
+                            cfg.bitrate_kbps,
+                        )
+                    })
+                    .unwrap_or((0, 0, 0))
+            }),
+            shutdown: Arc::clone(&shutdown),
+        };
+        match TcpListener::bind(("127.0.0.1", webui_port)) {
+            Ok(webui_listener) => {
+                println!(
+                    "Interfaz local activa en http://127.0.0.1:{webui_port}/ (CR-061, SPEC-010)."
+                );
+                std::thread::spawn(move || {
+                    twinpad_server::webui::run_webui_listener(webui_listener, Arc::new(webui_deps));
+                });
+            }
+            Err(error) => eprintln!(
+                "Twinpad: puerto local de la interfaz {webui_port} en uso ({error}); el server continúa por stdout/bandeja (E1)."
+            ),
+        }
+    }
+    {
+        // Tray fail-soft (W7): sin host de bandeja, el server sigue vivo.
+        let tray_actions = twinpad_server::tray::TrayActions {
+            webui_port,
+            shutdown: Arc::clone(&shutdown),
+        };
+        std::thread::spawn(move || {
+            if let Err(error) = twinpad_server::tray::spawn_tray(tray_actions) {
+                eprintln!(
+                    "Twinpad: bandeja no disponible ({error}); el server sigue por stdout (W7)."
+                );
+            }
+        });
+    }
+
     println!("Twinpad Servidor PC — escuchando en {addr}:{port}");
     println!("Escanea este QR con la app Twinpad:");
     println!();
@@ -273,8 +348,26 @@ fn main() {
     println!("URI (por si necesitas copiarlo): {}", current.qr_uri);
     println!("El QR se regenera automáticamente cada 300 s si nadie lo escanea (R7).");
 
-    for stream in listener.incoming() {
-        let Ok(stream) = stream else { continue };
+    // CR-061 (SPEC-010 W4): aceptación por sondeo — capta el bucle de sondeo la petición y cada
+    // 500 ms el flag de parada compartido (tray/webui); sin señales POSIX.
+    if let Err(error) = listener.set_nonblocking(true) {
+        eprintln!("Twinpad: no se pudo preparar la parada con gracia ({error}); abortando.");
+        std::process::exit(1);
+    }
+    while !shutdown.load(Ordering::Acquire) {
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).ok();
+                    break Some(stream);
+                }
+                Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(500)),
+            }
+        };
+        let Some(stream) = stream else { break };
         // CR-058: el drawer de esta sesión actualiza la referencia global
         // del bitrate del encoder del plugin (la escalera la lee).
         let plugin_cfg_for_reader = Arc::clone(&plugin_video_config);
@@ -304,12 +397,17 @@ fn main() {
             // CR-056 (SPEC-001 §8.2): la PRIMERA línea puede ser `pair_resume`
             // de una ligadura retenida; si no, Handshake normal §7.
             let retention = Arc::clone(&registry_ref);
-            let outcome =
-                run_control_session(&mut stream, record, retention.as_ref(), &mut deps);
+            let outcome = run_control_session(&mut stream, record, retention.as_ref(), &mut deps);
             let resumed = matches!(outcome, SessionOutcome::Resumed { .. });
             match outcome {
-                SessionOutcome::Established { session_id, session_key }
-                | SessionOutcome::Resumed { session_id, session_key } => {
+                SessionOutcome::Established {
+                    session_id,
+                    session_key,
+                }
+                | SessionOutcome::Resumed {
+                    session_id,
+                    session_key,
+                } => {
                     if !resumed {
                         store_ref.mark_consumed(&token_for_thread); // R2, §14
                     }
@@ -369,7 +467,8 @@ fn main() {
                         } else {
                             None
                         };
-                        let selected_game = Arc::new(std::sync::Mutex::new(previous_selected.clone()));
+                        let selected_game =
+                            Arc::new(std::sync::Mutex::new(previous_selected.clone()));
                         let media_game = Arc::new(std::sync::Mutex::new(None::<String>));
                         if !resumed {
                             registry_ref.set_selected_game(session_id, None);
@@ -566,7 +665,9 @@ fn main() {
                                             // referencia de la escalera (§8.4:
                                             // nunca degradar por encima del
                                             // bitrate configurado).
-                                            if let Ok(mut plugin_slot) = plugin_cfg_for_reader.lock() {
+                                            if let Ok(mut plugin_slot) =
+                                                plugin_cfg_for_reader.lock()
+                                            {
                                                 *plugin_slot = cfg;
                                             }
                                             // CR-029: sin fps reenviado; resolución + bitrate (CR-030).
@@ -747,6 +848,7 @@ fn main() {
             }
         });
     }
+    println!("Twinpad: parada con gracia — fin del Servidor PC (CR-061, SPEC-010 W4).");
 }
 
 /// Extrae `w`/`h` (sin `fps`, CR-029) del mensaje `video_config` del menú de
