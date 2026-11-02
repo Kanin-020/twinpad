@@ -76,8 +76,9 @@ class H264SurfaceDecoder(
         emaIntervalNs = EMA_INTERVAL_DEFAULT_NS
     }
 
+    /** internal: expone EncodedAccessUnit de H264MediaClient (visibilidad de paquete stream). */
     @Synchronized
-    fun queue(unit: H264MediaClient.EncodedAccessUnit) {
+    internal fun queue(unit: H264MediaClient.EncodedAccessUnit) {
         if (!isReadyForInput()) return
         val lastFrame = lastQueuedFrameNumber
         if (lastFrame != null && unit.frameNumber != lastFrame + 1L) {
