@@ -19,6 +19,7 @@ use std::net::TcpStream;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+use base64::Engine as _;
 use twinpad_core::game::{GAME_ID_MAX, GAME_NAME_MAX, GameInfo, GameMsg};
 use twinpad_core::input::InputMsg;
 
@@ -114,12 +115,17 @@ pub struct TwinpadGame {
     input_reader: TcpStream,
 }
 
+/// Cola productor-consumidor acotada del callback de audio: el productor
+/// encola chunks del juego y el consumidor los transmite; llenarla descarta
+/// el chunk más viejo y [`AudioQueue::finish`] marca el fin del flujo.
 #[derive(Default)]
 struct AudioQueue {
     state: Mutex<AudioQueueState>,
     ready: Condvar,
 }
 
+/// Estado protegido por el mutex de [`AudioQueue`]: chunks pendientes
+/// y marca de fin del flujo.
 #[derive(Default)]
 struct AudioQueueState {
     chunks: VecDeque<Vec<u8>>,
@@ -162,6 +168,8 @@ impl AudioQueue {
     }
 }
 
+/// Fuente PCM activa: hilos productor/consumidor y su bandera de parada.
+/// Liberar este handle (Drop) cancela ambos hilos en orden determinista.
 struct AudioSourceHandle {
     queue: Arc<AudioQueue>,
     cancelled: Arc<std::sync::atomic::AtomicBool>,
@@ -212,9 +220,7 @@ impl TwinpadGame {
         }
         .encode()
         .map_err(|_| SdkError::InvalidConfig)?;
-        stream
-            .write_all(line.as_bytes())
-            .and_then(|_| stream.write_all(b"\n"))
+        write_ipc_line(&mut stream, &line)
             .and_then(|_| stream.flush())
             .map_err(SdkError::ServerUnreachable)?;
         let mut probe = [0u8; 1];
@@ -298,10 +304,7 @@ impl TwinpadGame {
         }
         .encode()
         .map_err(|_| SdkError::InvalidConfig)?;
-        socket
-            .write_all(start_line.as_bytes())
-            .and_then(|_| socket.write_all(b"\n"))
-            .map_err(SdkError::ServerUnreachable)?;
+        write_ipc_line(&mut socket, &start_line).map_err(SdkError::ServerUnreachable)?;
 
         let queue = Arc::new(AudioQueue::default());
         let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -326,7 +329,6 @@ impl TwinpadGame {
             let mut seq = 0u64;
             let origin = std::time::Instant::now();
             while let Some(pcm) = consumer_queue.pop() {
-                use base64::Engine as _;
                 let message = twinpad_core::game_audio::GameAudioMsg::Chunk {
                     game_id: game_id.clone(),
                     seq,
@@ -335,18 +337,12 @@ impl TwinpadGame {
                 };
                 seq = seq.wrapping_add(1);
                 let Ok(line) = message.encode() else { break };
-                if socket
-                    .write_all(line.as_bytes())
-                    .and_then(|_| socket.write_all(b"\n"))
-                    .is_err()
-                {
+                if write_ipc_line(&mut socket, &line).is_err() {
                     break;
                 }
             }
             if let Ok(line) = (twinpad_core::game_audio::GameAudioMsg::Stop { game_id }).encode() {
-                let _ = socket
-                    .write_all(line.as_bytes())
-                    .and_then(|_| socket.write_all(b"\n"));
+                let _ = write_ipc_line(&mut socket, &line);
             }
         });
         self.audio = Some(AudioSourceHandle {
@@ -419,7 +415,6 @@ impl TwinpadGame {
         if !size_ok {
             return Err(SdkError::InvalidConfig);
         }
-        use base64::Engine as _;
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data);
         self.gfn = self.gfn.wrapping_add(1);
         let line = GameMsg::GameFrame {
@@ -433,14 +428,22 @@ impl TwinpadGame {
         }
         .encode()
         .map_err(|_| SdkError::InvalidConfig)?;
-        self.stream
-            .write_all(line.as_bytes())
-            .and_then(|_| self.stream.write_all(b"\n"))
+        write_ipc_line(&mut self.stream, &line)
             .and_then(|_| self.stream.flush())
             .map_err(|_| SdkError::AnnouncementRejected)
     }
 }
 
+/// Escribe una línea NDJSON en la conexión IPC: mensaje + separador `\n`
+/// (SPEC-006 §7: una línea NDJSON por mensaje).
+fn write_ipc_line(stream: &mut TcpStream, line: &str) -> std::io::Result<()> {
+    stream
+        .write_all(line.as_bytes())
+        .and_then(|_| stream.write_all(b"\n"))
+}
+
+/// Lector de `input_report` en hilo dedicado: traslada cada mensaje válido
+/// al snapshot compartido; el último estado sustituye al anterior (§8).
 fn read_input_snapshots(stream: TcpStream, snapshot: Arc<Mutex<Option<InputMsg>>>) {
     let mut reader = std::io::BufReader::new(stream);
     let mut line = String::new();
