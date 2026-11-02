@@ -22,6 +22,7 @@ private const val EMA_INTERVAL_DEFAULT_NS = 16_666_667L
 private const val EMA_INTERVAL_MIN_NS = 4_000_000L
 private const val EMA_INTERVAL_MAX_NS = 100_000_000L
 private const val PRESENT_EARLY_NS = 2_000_000L
+
 /** α del EMA del intervalo (1/4: reacciona lento a ráfagas aisladas). */
 private const val EMA_ALPHA_DIVISOR = 4
 
@@ -36,6 +37,7 @@ class H264SurfaceDecoder(
     private var waitingForIdr = true
     private var lastQueuedFrameNumber: Long? = null
     private val frameNumbersByTimestamp = HashMap<Long, Long>()
+
     // CR-048: llegadas de AU y estado del pacing de presentación.
     private val arrivalNsByTimestamp = HashMap<Long, Long>()
     private var lastArrivalNs = 0L

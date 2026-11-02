@@ -6,6 +6,9 @@
 //!
 //! Ejecutar: cargo run -p twinpad-server --example ping_probe -- <ip> <port>
 
+// Sonda de diagnóstico ad hoc: igual que los tests, puede usar unwrap/expect.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::time::Duration;
@@ -93,7 +96,7 @@ fn main() {
                     if let HandshakeMsg::Ping { t } = m {
                         got_pings += 1;
                         println!("probe: recibo ping t={t}. Replico pong.");
-                        let _ = send(&mut held_stream, &HandshakeMsg::Pong { t });
+                        send(&mut held_stream, &HandshakeMsg::Pong { t });
                     } else {
                         println!("probe: msg no latido llegado.");
                     }

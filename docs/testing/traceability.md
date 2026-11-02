@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0128 |
+| TEST | TEST-0135 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -21,7 +21,7 @@
 | REQ-002 | SPEC-001 | DES-001 | TEST-004 | Approved | E3 sin token / consumido / proof inválido (NFR-004, REQ-002 AC-2) — implementado en `core::handshake` + E3 por el wire en loopback |
 | REQ-002 | SPEC-001 | DES-001 | TEST-005 | Approved | E3 segundo dispositivo con el mismo QR — implementado en `core::handshake` + R2 en `server::tokens` y por el wire |
 | REQ-002 | SPEC-001 | DES-001 | TEST-006 | Approved | E4 mensaje malformado / schema desconocido — implementado en `core::message` + `core::qr` (E5) + E4 por el wire en loopback |
-| REQ-002 | SPEC-001 | DES-001 | TEST-007 | Approved | Reanudación de sesión (SPEC-001 §8.2) — pendiente del registro de sesiones en `server/` |
+| REQ-002 | SPEC-001 | DES-001 | TEST-007 | Approved | Reanudación de sesión (SPEC-001 §8.2) — realizada en su totalidad por CR-056; cobertura actual en TEST-0128/0129/0130 |
 | REQ-002 | SPEC-001 | DES-001 | TEST-008 | Approved | Revocación del emparejamiento (SPEC-001 §8.3) — `TokenStore::revoke` implementado y testeado; revocación por UI pendiente |
 | REQ-002 | SPEC-001 | DES-001 | TEST-009 | Approved | R7: regeneración automática del QR — implementado en `TokenStore::ensure_fresh_qr` + listener del binario (unit + integración) |
 | REQ-002 | SPEC-002 | DES-002 | TEST-010 | Approved | Flujo completo en la app: escaneo → Vinculado (§7) — implementado, proof verificado con HMAC independiente |
@@ -56,6 +56,13 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-0124 | Passed (2026-11-01, host) | CR-060: Tests Kotlin `PairingStateMachineTest` — entrada manual del código sin cámara (§8.4): desde U1 un `QrScanned` válido pasa directo a Handshaking con `Connect`+`pair_request` y SIN efectos de cámara; payload inválido desde U1 → E5 sin abrir conexión; blancos al inicio/fin se recortan y blancos en el medio son E5 |
 | REQ-003 | SPEC-004 | DES-005 | TEST-0126 | Passed (2026-11-01, host) | CR-059/ADR-009: Tests Kotlin `SignatureHidCodecTest` — codec de la Signature al reporte HID BT (report ID, clamps §9 de sticks/triggers, neutro vía Null State, nibbles botones b0…b3/b4…b11, posiciones de byte fijas y End Collection del report map |
 | REQ-003 | SPEC-004 | DES-005 | TEST-0127 | Passed (2026-11-01, host) | CR-059/ADR-009: Tests Kotlin `HandoverPolicyTest` — política de handover del gamepad: LAN con Linked, BT si el canal HID está operativo con la LAN caída (HB5/expiry), H0 sin BT; histéresis de liberación 5 s |
+| REQ-002 | SPEC-001 | DES-001 | TEST-0128 | Passed (2026-11-01, host) | CR-056: Tests de la política pura de reanudación (`core::resume::tests`) — `pair_resume` válido re-admite con el MISMO session_id/session_key; proof forjado, session_id ajeno o ligadura desaparecida → E3; frontera exacta de la retención (vivo en `== RETENTION_MS`, E-ventana en +1 ms); campos malformados → E4; `ClientResumeState` espejo de la ventana |
+| REQ-002 | SPEC-001 | DES-001 | TEST-0129 | Passed (2026-11-01, host) | CR-056: Tests de integración y wiring server — `server/tests/session_resume.rs` (TCP real: reanudación con igual identidad; retención vencida E3 con destrucción de la ligadura; doble resume simultáneo falla) + `server/src/session.rs::tests` (resume aceptado con mismo session_id; ligadura desconocida/expirada E3; proof forjado E3) |
+| REQ-002 | SPEC-002 | DES-002 | TEST-0130 | Passed (2026-11-01, host) | CR-056: Tests Kotlin `PairingStateMachineTest` — corte de control en U4/Linked → U6 «Reconectando» con la ligadura preservada (sin re-scan); salida de U6 por pair_ack o ventana vencida; el silencio HB5 YA NO termina la sesión: entra a U6; TEST-0130 también cubre la posición del estado U6 en el proveedor de cadena de la app |
+| REQ-004 | SPEC-003 | DES-004 | TEST-0131 | Passed (2026-11-01, host) | CR-058: Tests de la política pura de congestión (`core::bitrate::tests`) — frontera D/P ≥ 0,25 con P ≥ 10, histéresis de salida D/P < 0,05 por 10 000 ms, escalera [full → 1/2 → 1/4 → 1/8 → 500 kbps] con suelo y tope (nunca supera el bitrate del usuario) y decisión de rung con múltiples sesiones (mínimo) |
+| REQ-004 | SPEC-003 | DES-004 | TEST-0132 | Passed (2026-11-01, host) | CR-058: Test de integración server (`server/src/media.rs::congestion_windows_drive_ladder_down_and_recovery_up`) — ventanas del relay alimentan la escalera el rung baja con ≥ 2 ventanas congestionadas (reenvío video_config + IDR vía `apply`) y sube con el hold de 10 s sin congestión |
+| REQ-002 | SPEC-009 | DES-001 | TEST-0133 | Passed (2026-11-01, host) | CR-057: Tests Rust mDNS (`server/src/mdns.rs::tests`) — ServiceInfo canónico (fullname `Twinpad._twinpad._tcp.local.`, puerto igual al server_port, hostname `twinpad.local.`, TXT `ver=twinpad.v1`) y resolución loopback de la instancia propia con el daemon real |
+| REQ-002 | SPEC-009 | DES-002 | TEST-0134 | Passed (2026-11-01, host) | CR-057: Tests Kotlin `HostResolutionTest` — clasificación del `s` del QR: IP literal → conexión directa (sin NsdManager); nombre `twinpad.local.` → ruta NSD. La resolución NSD real no se mockea (test-strategy §10) |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0116 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_drains_latest_line_per_live_game` (`server::games::tests`) — `push_video_stage_stats` solo acepta juego vivo, la última línea de ventana reemplaza a la previa, `pop_video_stage_stats` la consume una vez (sin reencolar) y un juego extraño nunca recibe telemetría ajena |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0117 | Passed (2026-10-31, host) | CR-053: Test Kotlin `VideoStageStatsCodecTest` (wire Android) — decodificación estricta paridad con core (ventana fuera de rango, etapa/evento de catálogo, `avg_us > max_us`, `count < 1`, tupla incompleta, etapa repetida, evento desconocido y línea no JSON → null) y formateo compacto del HUD «pix 210 µs (480 µs) · b64 55 µs (90 µs) · 120 ev»; contenido vacío → línea oculta |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
@@ -161,6 +168,7 @@
 | REQ-002 | AC-1 | TEST-001 |
 | REQ-002 | AC-2 | TEST-004, TEST-005 |
 | REQ-002 | AC-3 | TEST-003 |
+| REQ-002 | AC-4 | TEST-0133, TEST-0134 |
 
 ## ADR links
 
@@ -179,6 +187,9 @@
 
 | CR | Changes | Date | Status |
 |---|---|---|---|
+| CR-058 | SPEC-003 1.13.0 y DES-004: degradación automática de bitrate por congestión (R10 §11) — ventana D/P 2 000 ms (≥ 0,25 y P ≥ 10 = congestión), escalera [full → 1/2 → 1/4 → 1/8 → 500 kbps] con histéresis de salida 10 000 ms, rung mínimo entre sesiones, reenvío video_config + IDR (CR-051); nunca supera el bitrate del usuario; TEST-0131/0132 | 2026-11-01 | Applied (owner-requested) |
+| CR-057 | REQ-002 0.2.0 (AC-4), SPEC-009 1.0.0, SPEC-001 1.3.0 y SPEC-002 1.12.0: descubrimiento mDNS/DNS-SD — anunciador server (`_twinpad._tcp.local.`, instancia `Twinpad`, TXT `ver=twinpad.v1`) con falla blanda, re-resolución NSD en cada intento/reanudación/reconexión media; sin respuesta → E1; TEST-0133/0134 | 2026-11-01 | Applied (owner-requested) |
+| CR-056 | SPEC-001 1.2.0, SPEC-002 1.12.0 y SPEC-003 1.12.0: reanudación del canal de control — estado S4 con retención de ligadura 60 000 ms, mensaje `pair_resume` (proof HMAC "twinpad.v1 resume"), session_id preservado (canal media anclado sigue usable), app U6 «Reconectando» con reintentos cada 2 s; TEST-0128/0129/0130 | 2026-11-01 | Applied (owner-requested) |
 | CR-060 | SPEC-002 1.11.0 y DES-002 0.4.0: entrada manual del código de vinculación sin cámara (§8.4, R20) — `QrScanned` desde U1 con el mismo parser estricto y handshake del §7; trim de blancos de borde (§10); la PC ya imprime el payload copiable junto al QR, sin cambio de server; TEST-0124 | 2026-11-01 | Applied (owner-requested) |
 | CR-055 | SPEC-001 1.1.0 y DES-001 0.2.0: heartbeat de sesión §4.3 — el Servidor emite `ping{t}` cada 5 s en S3 (HB1), la app responde `pong{t}` con eco de `t` (HB2); liveness server-side solo por pong válido con anti-replay (HB3, `core::heartbeat::PongLiveness` pura con paso de reloj) y expiración de sesión zombi a los 15 s sin pong (HB4, el lector tiene el deadline); watchdog de silencio de 15 s en la app (HB5); la expiración es equivalente a un corte sin códigos E (HB6); TEST-0120/0121/0122 | 2026-11-01 | Applied (owner-requested) |
 |---|---|---|---|

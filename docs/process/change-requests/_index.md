@@ -12,9 +12,9 @@
 |---|---|---|---|---|---|
 | CR-060 | Método de vinculación alternativo al QR: código escrito (dispositivos sin cámara); SPEC-002 §8.4/R20, TEST-0124 | SPEC-002, DES-002 | Applied (2026-11-01) | Buffy (agente) | [CR-060-typed-pairing-code.md](CR-060-typed-pairing-code.md) |
 | CR-059 | Canal de inputs redundante por Bluetooth HID (fallback de red, handover por heartbeat/NFR-002; ADR-009 creeado). Paso 1 (módulo hid + handover) code-merged; paso 2 (banco físico) PENDIENTE: stack MIUI no emite el intento L2CAP del rol HID Device (evidencia en CR §8) | SPEC-004, ADR-007, ADR-003, ADR-009 | Open (paso 2 pendiente) | Buffy (agente) | [CR-059-bt-hid-fallback.md](CR-059-bt-hid-fallback.md) |
-| CR-058 | Degradación automática de bitrate por congestión: ventana D/P en el relay media, escalera 1/2→1/4→1/8→500 kbps con histéresis; cierra la OQ de §17 | SPEC-003, DES-004 | Open | Buffy (agente) | [CR-058-bitrate-degradation.md](CR-058-bitrate-degradation.md) |
-| CR-057 | Descubrimiento mDNS/zeroconf del Servidor PC (`_twinpad._tcp.local.`, NsdManager en Android): tolerancia a cambio de IP DHCP sin re-escanear | REQ-002, SPEC-001, SPEC-002, nuevo SPEC-009 | Open | Buffy (agente) | [CR-057-mdns-discovery.md](CR-057-mdns-discovery.md) |
-| CR-056 | Reanudación del canal de control cableada: retención de ligadura 60 s (S4) + mensaje `pair_resume` (proof/script) con session_id preservado | SPEC-001, SPEC-002, SPEC-003 | Open | Buffy (agente) | [CR-056-control-channel-resume.md](CR-056-control-channel-resume.md) |
+| CR-058 | Degradación automática de bitrate por congestión: ventana D/P en el relay media, escalera 1/2→1/4→1/8→500 kbps con histéresis; cierra la OQ de §17 | SPEC-003, DES-004 | Applied (2026-11-01) | Buffy (agente) | [CR-058-bitrate-degradation.md](CR-058-bitrate-degradation.md) |
+| CR-057 | Descubrimiento mDNS/zeroconf del Servidor PC (`_twinpad._tcp.local.`, NsdManager en Android): tolerancia a cambio de IP DHCP sin re-escanear | REQ-002, SPEC-001, SPEC-002, nuevo SPEC-009 | Applied (2026-11-01) | Buffy (agente) | [CR-057-mdns-discovery.md](CR-057-mdns-discovery.md) |
+| CR-056 | Reanudación del canal de control cableada: retención de ligadura 60 s (S4) + mensaje `pair_resume` (proof/script) con session_id preservado | SPEC-001, SPEC-002, SPEC-003 | Applied (2026-11-01) | Buffy (agente) | [CR-056-control-channel-resume.md](CR-056-control-channel-resume.md) |
 | CR-045 | Cola de muestras de motion pendientes: drenaje completo por frame del VPAD (los tirones del gyro); captura en vivo: descarte 44 % → 1.4 %, 0 saltos de orientación; TEST-0111/0112 | DES-004 | Applied (2026-10-30) | Buffy (agente) | [CR-045-motion-sample-queue-drain.md](CR-045-motion-sample-queue-drain.md) |
 | CR-044 | Teclado del juego (swkbd): Android IME en Twinpad en lugar del overlay de Cemu (mensajería `keyboard_request`/`keyboard_input`; supresión del overlay con Twinpad conectado; TEST-0106–0110 verdes en host) | SPEC-006, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-044-cemu-keyboard-to-android-ime.md](CR-044-cemu-keyboard-to-android-ime.md) |
 | CR-039 | Encoder H.264 por hardware: driver VA-API freeworld (fallback `LIBVA_DRIVERS_PATH` en Cemu + copia local; verificado físicamente 2026-10-30: VAAPI activo, 30/30 fps) | SPEC-003, DES-004 | Applied (2026-10-30) | Twinpad team (agente) | [CR-039-cemu-hardware-encoder-vaapi.md](CR-039-cemu-hardware-encoder-vaapi.md) |
@@ -86,6 +86,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 6 |
+| Open | 2 |
 | Median time open → applied | ≤1 día (CR-036: 2026-10-28 → 2026-10-29) |
 | Last reviewed | 2026-11-01 |
