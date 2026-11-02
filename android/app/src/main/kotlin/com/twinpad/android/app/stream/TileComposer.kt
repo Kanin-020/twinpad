@@ -12,6 +12,7 @@ internal class TileComposer {
     private var streamWidth = 0
     private var streamHeight = 0
 
+    /** Vuelve al estado inicial; no recycle (la vista puede seguir dibujando). */
     fun reset() {
         // El bitmap previo puede seguir referenciado por StateFlow/ImageView;
         // soltar nuestra referencia y dejar que el GC lo recoja tras el draw.
@@ -22,6 +23,8 @@ internal class TileComposer {
         streamHeight = 0
     }
 
+    /** Reencuadre del stream (§8.1): conserva el `fn` último y exige
+     * keyframe con las nuevas dimensiones antes de aplicar patches. */
     fun beginStream(
         width: Int,
         height: Int,
@@ -36,6 +39,8 @@ internal class TileComposer {
         awaitingKeyframe = true
     }
 
+    /** Reconstruye la base con un Frame completo; null si el frame no
+     * calza (dimensiones/fmt) o es tardío (§10). */
     fun applyKeyframe(frame: StreamMessage.Frame): Bitmap? {
         if (!matchesStream(frame) || !isNewFrame(frame.frameNumber)) return null
         val decoded =
@@ -58,9 +63,13 @@ internal class TileComposer {
         streamWidth > 0 && streamHeight > 0 && frame.fmt == "jpeg" &&
             frame.width == streamWidth && frame.height == streamHeight
 
-    private fun isNewFrame(frameNumber: Long): Boolean {
-        return lastFrameNumber?.let { frameNumber > it } ?: (frameNumber == 0L)
-    }
+    /** `true` si el frame es nuevo: `0` abre el stream y luego `fn`
+     * debe ser estrictamente creciente (SPEC-003 §10, idempotencia). */
+    private fun isNewFrame(frameNumber: Long): Boolean =
+        when (val last = lastFrameNumber) {
+            null -> frameNumber == 0L
+            else -> frameNumber > last
+        }
 
     private fun replaceBase(bitmap: Bitmap) {
         // La UI puede seguir dibujando la base anterior después de publicar
@@ -69,6 +78,8 @@ internal class TileComposer {
         base = bitmap
     }
 
+    /** Aplica un patch sobre la base vigente; si no calza, exige keyframe
+     * de nuevo (transaccional: o la base nueva completa o nada, CR-002). */
     fun applyPatch(patch: StreamMessage.Patch): Bitmap? {
         val current = base
         val result = current?.let { composePatch(it, patch) }
@@ -118,6 +129,7 @@ internal class TileComposer {
         val bitmap: Bitmap,
     )
 
+    /** Decodifica cada tile o aborta reciclando los ya creados (GC-safe). */
     private fun decodeTiles(patch: StreamMessage.Patch): List<DecodedTile>? {
         val tiles = ArrayList<DecodedTile>(patch.tiles.size)
         val occupied = HashSet<Pair<Int, Int>>()
@@ -139,6 +151,8 @@ internal class TileComposer {
         return tiles
     }
 
+    /** Valida geometría del tile §4.5: jpeg, alineado, en-bounds, tamaño
+     * ajustado al borde y sin solaparse con un tile ya visto. */
     private fun validTile(
         tile: StreamMessage.Tile,
         patch: StreamMessage.Patch,

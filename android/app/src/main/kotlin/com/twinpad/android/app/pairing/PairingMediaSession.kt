@@ -25,7 +25,9 @@ private const val MEDIA_RECOVERY_WINDOW_MS = 10_000L
 private const val MEDIA_RECONNECT_INITIAL_DELAY_MS = 250L
 private const val MEDIA_RECONNECT_MAX_DELAY_MS = 2_000L
 
-/** Owns the authenticated H.264 media socket and its Surface decoder. */
+/** Ciclo de vida del media de la sesión: reemplaza cliente y decodificador
+ * por generación de conexión y reintentos con backoff mientras la ventana
+ * de recuperación esté activa (SPEC-003 §6; CR-029, CR-062). */
 internal class PairingMediaSession(
     private val dependencies: PairingMediaDependencies,
     private val currentStreamState: () -> StreamUiState,
@@ -79,12 +81,13 @@ internal class PairingMediaSession(
         }
     }
 
+    /** Registra el `stream_start` del server (SPEC-003 §4): corta el canal
+     * vigente, fija dimensiones/puerto y agenda la reconexión. */
     fun onStreamStart(
         message: StreamMessage.Start,
         line: String,
     ) {
-        reconnectJob?.cancel()
-        reconnectJob = null
+        cancelReconnectJob()
         closeChannel()
         streamStartLine = line
         dimensions = message.width to message.height
@@ -101,9 +104,10 @@ internal class PairingMediaSession(
         scheduleReconnect()
     }
 
+    /** Registra el `stream_stop` del server (SPEC-003 §4): termina el
+     * canal vigente y refleja el estado del stream machine. */
     fun onStreamStop(line: String) {
-        reconnectJob?.cancel()
-        reconnectJob = null
+        cancelReconnectJob()
         closeChannel()
         streamStartLine = null
         dimensions = null
@@ -112,6 +116,8 @@ internal class PairingMediaSession(
         setStreamState(current.copy(state = streamMachine.state, width = 0, height = 0))
     }
 
+    /** Conecta o desconecta la Surface de salida (ciclo de la Activity):
+     * sin surface vigente la canalización se drena y no hay reconexión. */
     fun attachSurface(output: Surface?) {
         if (surface === output) return
         closeChannel()
@@ -122,18 +128,27 @@ internal class PairingMediaSession(
         }
     }
 
+    /** Normaliza el estado al cierre de la sesión de Pairing: corta el
+     * canal y la agenda de reconexión sin tocar la surface. */
     fun clearForSessionEnd() {
-        reconnectJob?.cancel()
-        reconnectJob = null
+        cancelReconnectJob()
         closeChannel()
         dimensions = null
         streamStartLine = null
     }
 
+    /** Cierre definitivo: corta reconexión, canal y surface vigente. */
     fun close() {
         accessUnits.close()
         clearForSessionEnd()
         surface = null
+    }
+
+    /** Cancela la agenda de reconexión vigente (patrón repetido del ciclo
+     * de vida, unificado aquí). */
+    private fun cancelReconnectJob() {
+        reconnectJob?.cancel()
+        reconnectJob = null
     }
 
     private fun decoderFor(pending: PendingAccessUnit): H264SurfaceDecoder? =
@@ -207,7 +222,11 @@ internal class PairingMediaSession(
         frameNumber: Long,
         frameSize: Pair<Int, Int>,
     ) {
-        if (connectionGeneration != generation.get() || !isNewFrame(frameNumber)) return
+        if (connectionGeneration != generation.get() ||
+            !isNewFrame(lastPresentedFrameNumber, frameNumber)
+        ) {
+            return
+        }
         if (!streamMachine.acceptFrame(frameNumber, frameSize.first, frameSize.second)) return
         lastPresentedFrameNumber = frameNumber
         val current = currentStreamState()
@@ -216,8 +235,6 @@ internal class PairingMediaSession(
         )
         streamStats.onFramePresented(frameNumber)
     }
-
-    private fun isNewFrame(frameNumber: Long): Boolean = lastPresentedFrameNumber?.let { frameNumber > it } ?: true
 
     /** CR-062 (SPEC-003 §4.4): cliente preferente UDP con fallback TCP;
      * la AU 1ª autenticada define el canal vigente de la conexión. */
@@ -245,7 +262,7 @@ internal class PairingMediaSession(
     ) {
         if (connectionGeneration != generation.get() || surface !== output) return
         streamStats.onMediaAccessUnitReceived(unit.frameNumber, unit.bytes.size)
-        val discontinuity = isFrameDiscontinuous(unit.frameNumber)
+        val discontinuity = isFrameDiscontinuous(lastReceivedFrameNumber, unit.frameNumber)
         lastReceivedFrameNumber = unit.frameNumber
         if (discontinuity) {
             clearQueuedAccessUnits()
@@ -254,11 +271,6 @@ internal class PairingMediaSession(
         if (!discontinuity || unit.idr) {
             enqueueAccessUnit(unit, output, connectionGeneration, outputDecoder)
         }
-    }
-
-    private fun isFrameDiscontinuous(frameNumber: Long): Boolean {
-        val lastReceived = lastReceivedFrameNumber ?: return false
-        return frameNumber != lastReceived + 1L
     }
 
     private fun clearQueuedAccessUnits() {
@@ -353,6 +365,19 @@ internal class PairingMediaSession(
 }
 
 private data class MediaCredentials(val sessionId: ByteArray, val sessionKey: ByteArray)
+
+/** `true` solo si el frame presentado es estrictamente posterior al último
+ * aceptado (§10: idempotencia); el primero de la conexión siempre es nuevo. */
+private fun isNewFrame(
+    lastPresented: Long?,
+    frameNumber: Long,
+): Boolean = lastPresented?.let { frameNumber > it } ?: true
+
+/** Discontinuidad de número de frame recibido (§14: hueco → re-sync decoder). */
+private fun isFrameDiscontinuous(
+    lastReceived: Long?,
+    frameNumber: Long,
+): Boolean = lastReceived != null && frameNumber != lastReceived + 1L
 
 private fun mediaCredentials(
     machine: PairingStateMachine,

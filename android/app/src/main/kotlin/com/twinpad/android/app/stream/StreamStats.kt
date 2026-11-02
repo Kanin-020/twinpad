@@ -69,11 +69,13 @@ class StreamStats(
     var kbps: Double = 0.0
         private set
 
+    /** Llegó una AU por el canal media TCP (§4.2): registra recibo y bitrate. */
     fun onMediaAccessUnitReceived(
         frameNumber: Long,
         wireBytes: Int,
     ) = recordAccessUnit(frameNumber, wireBytes)
 
+    /** Llegó una imagen por el wire NDJSON (crudo o codec), §4: registro. */
     fun onImageReceived(
         frameNumber: Long,
         wireBytes: Int,
@@ -100,6 +102,7 @@ class StreamStats(
         }
     }
 
+    /** Un frame llegó correcto pero se descartó por ser tardío (§10). */
     fun onFrameRejected() {
         synchronized(lock) {
             rejectedFrames++
@@ -107,6 +110,7 @@ class StreamStats(
         }
     }
 
+    /** Acumula el tiempo de una etapa del pipeline para el HUD §7. */
     fun recordStage(
         stage: VideoStage,
         elapsedNanos: Long,
@@ -118,6 +122,7 @@ class StreamStats(
         }
     }
 
+    /** Corta coherente del HUD (SPEC-003 §7) para la vista/trace. */
     fun snapshot(): Snapshot =
         synchronized(lock) {
             Snapshot(
@@ -142,6 +147,7 @@ class StreamStats(
             )
         }
 
+    /** Publica el frame `fn` en UI; false si era tardío (para no doble-contar). */
     fun onFramePresented(frameNumber: Long): Boolean =
         synchronized(lock) {
             if (lastPresentedFrameNumber?.let { frameNumber <= it } == true) return@synchronized false
@@ -154,6 +160,8 @@ class StreamStats(
             true
         }
 
+    /** Versión sin `fn` (call sites que presentan sin frame number):
+     * devuelve `now` en nanos para medir la etapa de publicación. */
     fun onFramePresented(): Long {
         synchronized(lock) {
             val now = clockMs()
@@ -176,6 +184,7 @@ class StreamStats(
         }
     }
 
+    /** Bytes de audio aceptados (llama el lector de sesión, §7). */
     fun onAudio(wireBytes: Int) {
         synchronized(lock) {
             val now = clockMs()
@@ -184,6 +193,7 @@ class StreamStats(
         }
     }
 
+    /** Chunk de audio que la máquina aceptó (§9); cuenta el chunk. */
     fun onAudioChunkReceived(wireBytes: Int) {
         synchronized(lock) {
             val now = clockMs()
@@ -193,6 +203,7 @@ class StreamStats(
         }
     }
 
+    /** Nudge periódico: recalcula ventanas sin haber recibido nada. */
     fun refresh() {
         synchronized(lock) {
             tickLocked(clockMs())
@@ -206,6 +217,7 @@ class StreamStats(
         }
     }
 
+    /** Reset total de sesión (Pairing closed), no solo epoch del stream. */
     fun reset() {
         synchronized(lock) {
             resetVideoStreamLocked()

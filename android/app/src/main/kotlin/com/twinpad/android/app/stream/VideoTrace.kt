@@ -2,8 +2,10 @@ package com.twinpad.android.app.stream
 
 import android.os.Trace
 
-/** Instrumentation for Perfetto; fixed labels avoid leaking frame content or creating high-cardinality tracks. */
+/** Instrumentación para Perfetto: etiquetas fijas para no filtrar
+ * contenido de frames ni crear tracks de cardinalidad alta. */
 internal object VideoTrace {
+    /** Mide la sección nombrada alrededor del bloque (A/B de systrace). */
     fun <T> section(
         name: String,
         block: () -> T,
@@ -16,6 +18,7 @@ internal object VideoTrace {
         }
     }
 
+    /** Publica un contador por nombre fijo (p. ej. tiles por frame). */
     fun counter(
         name: String,
         value: Long,

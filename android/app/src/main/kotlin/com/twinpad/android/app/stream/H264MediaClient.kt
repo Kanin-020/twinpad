@@ -18,10 +18,11 @@ private const val UINT32_MAX_AS_LONG = 0xffff_ffffL
 private const val FRAME_METADATA_BYTES = Long.SIZE_BYTES * 2 + Byte.SIZE_BYTES
 private const val IDR_FLAG_MASK = 1
 private const val RESERVED_FLAG_MASK = 0xfe
-private const val BYTE_SHIFT = 8
 private const val BYTE_MASK = 0xff
 
-/** One authenticated media connection; caller owns its lifecycle and Surface decoder. */
+/** Conexión media TCP autenticada (SPEC-003 §4.2): handshake con proofs
+ * cruzados, records GCM con counter estricto y entrega de AU H.264. El
+ * caller posee el ciclo de vida y el decodificador (MediaClient). */
 internal class H264MediaClient(
     private val host: String,
     private val sessionId: ByteArray,
@@ -35,24 +36,34 @@ internal class H264MediaClient(
     @Volatile private var socket: Socket? = null
     private var worker: Thread? = null
 
+    /** AU H.264 ya autenticada y ordenada (fn/ts estrictos R2). */
     data class EncodedAccessUnit(
+        /** `fn` del frame (mono creciente, §10). */
         val frameNumber: Long,
+        /** PTS en µs (creciente junto a `fn`). */
         val timestampUs: Long,
+        /** Entra con IDR (flag §4.2); decide H264SurfaceDecoder. */
         val idr: Boolean,
+        /** Anexo B crudo (SPS/PPS/…); sin re-codificación. */
         val bytes: ByteArray,
     )
 
+    /** Arranca el hilo lector una única vez (idempotente). */
     override fun start() {
         if (!running.compareAndSet(false, true)) return
         worker = Thread(::runClient, "twinpad-media-reader").apply { start() }
     }
 
+    /** Corta el socket y despierta el hilo; reentrante. */
     override fun close() {
         running.set(false)
         runCatching { socket?.close() }
         worker?.interrupt()
     }
 
+    /** Loop del hilo lector: handshake una vez, luego records hasta
+     * `close()`. Cualquier violación (framing, GCM, orden) termina el
+     * cliente sin entregar lo inválido; el caller cae a reconexión. */
     private fun runClient() {
         try {
             val connection = Socket()
@@ -79,13 +90,14 @@ internal class H264MediaClient(
             while (running.get()) {
                 val length = input.readInt().toLong() and UINT32_MAX_AS_LONG
                 require(length in MEDIA_MIN_RECORD_BYTES.toLong()..MediaCrypto.MAX_RECORD_BYTES.toLong())
-                val record = ByteArray(MEDIA_HEADER_BYTES + length.toInt())
-                record[0] = (length ushr (BYTE_SHIFT * (MEDIA_HEADER_BYTES - 1))).toByte()
-                record[1] = (length ushr (BYTE_SHIFT * (MEDIA_HEADER_BYTES - 2))).toByte()
-                record[2] = (length ushr BYTE_SHIFT).toByte()
-                record[MEDIA_HEADER_BYTES - 1] = length.toByte()
-                input.readFully(record, MEDIA_HEADER_BYTES, length.toInt())
-                val payload = MediaCrypto.openRecord(mediaKey, expectedCounter, record)
+                val record =
+                    java.nio.ByteBuffer
+                        .allocate(MEDIA_HEADER_BYTES + length.toInt())
+                        .order(java.nio.ByteOrder.BIG_ENDIAN)
+                        .putInt(length.toInt())
+                val recordBytes = record.array()
+                input.readFully(recordBytes, MEDIA_HEADER_BYTES, length.toInt())
+                val payload = MediaCrypto.openRecord(mediaKey, expectedCounter, recordBytes)
                 expectedCounter = Math.addExact(expectedCounter, 1L)
                 require(payload.size > FRAME_METADATA_BYTES)
                 val frame = java.nio.ByteBuffer.wrap(payload).order(java.nio.ByteOrder.BIG_ENDIAN)
@@ -101,7 +113,7 @@ internal class H264MediaClient(
                 lastTimestamp = timestampUs
             }
         } catch (_: Exception) {
-            // The caller reports inactive/reconnecting state; invalid records are never delivered.
+            // El caller marca inactivo/reconectando; lo inválido jamás se entrega.
         } finally {
             running.set(false)
             runCatching { socket?.close() }

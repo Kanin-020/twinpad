@@ -32,15 +32,17 @@ object GameListCodec {
         games: List<GameInfo>,
     ): String? = currentGameId?.takeIf { selected -> games.any { it.gameId == selected } }
 
+    /** ¿La lista exige que el usuario elija? (más de una viva y la
+     * pendiente ya no está). */
     fun needsExplicitSelection(
         games: List<GameInfo>,
         pendingGameId: String?,
-    ): Boolean {
-        return games.size > 1 && retainedSelection(pendingGameId, games) == null
-    }
+    ): Boolean = games.size > 1 && retainedSelection(pendingGameId, games) == null
 
+    /** Construye la línea `game_select` canónica de la sesión (§5). */
     fun selectionLine(gameId: String): String = "{\"type\":\"game_select\",\"game_id\":\"$gameId\"}"
 
+    /** Extrae el gameId de `game_selected`; `null` si la línea no es válida. */
     fun selectedGameId(line: String): String? =
         try {
             val obj = json.parseToJsonElement(line).jsonObject

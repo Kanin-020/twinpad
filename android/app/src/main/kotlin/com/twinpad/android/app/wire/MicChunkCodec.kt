@@ -9,8 +9,13 @@ import java.util.Base64
  * 2·`samples` bytes.
  */
 object MicChunkCodec {
+    /** Cadencia del micrófono HLE de Cemu (CR-035 §3): 32 kHz mono s16le. */
     const val SAMPLE_RATE: Int = 32000
+
+    /** Lote mínimo viable (32 muestras = 1 ms). */
     const val MIN_SAMPLES: Int = 32
+
+    /** Lote máximo permitido (32000 muestras = 1 s completo). */
     const val MAX_SAMPLES: Int = 32000
 
     private const val BYTE_MASK = 0xFF

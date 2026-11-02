@@ -13,9 +13,6 @@ import java.util.TreeSet
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Cipher
-import javax.crypto.Mac
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * CR-062 (SPEC-003 §4.4): cliente media UDP preferente con fallback TCP
@@ -373,23 +370,17 @@ internal class UdpMediaCodec(private val sessionKey: ByteArray) {
         mediaKey: ByteArray,
         seq: Long,
     ): Cipher =
-        Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(
-                mode,
-                SecretKeySpec(mediaKey, "AES"),
-                GCMParameterSpec(MediaCrypto.TAG_BYTES * BITS_PER_BYTE, udpNonce(seq)),
-            )
-        }
+        com.twinpad.android.app.wire.CryptoPrimitives.gcmCipher(
+            mode,
+            mediaKey,
+            MediaCrypto.TAG_BYTES * BITS_PER_BYTE,
+            udpNonce(seq),
+        )
 
     private fun hmac(
         key: ByteArray,
         vararg parts: ByteArray,
-    ): ByteArray {
-        val mac = Mac.getInstance(HMAC_ALGORITHM)
-        mac.init(SecretKeySpec(key, HMAC_ALGORITHM))
-        parts.forEach(mac::update)
-        return mac.doFinal()
-    }
+    ): ByteArray = com.twinpad.android.app.wire.CryptoPrimitives.hmacSha256(key, *parts)
 
     companion object {
         internal val JOIN_MAGIC = "TWPUDP01".toByteArray(Charsets.US_ASCII)
@@ -437,7 +428,6 @@ internal class UdpMediaCodec(private val sessionKey: ByteArray) {
         internal const val DATA_RESERVED_MASK = (FLAG_FIRST or FLAG_LAST).inv() and BYTE_MASK
         private const val BITS_PER_BYTE = 8
         private const val HKDF_FIRST_BLOCK = 1
-        private const val HMAC_ALGORITHM = "HmacSHA256"
 
         internal fun u32Bytes(value: Long): ByteArray =
             ByteBuffer.allocate(U32_BYTES).order(ByteOrder.BIG_ENDIAN).putInt(value.toInt()).array()

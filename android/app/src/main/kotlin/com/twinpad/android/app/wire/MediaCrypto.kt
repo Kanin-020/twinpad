@@ -4,9 +4,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
 import javax.crypto.Cipher
-import javax.crypto.Mac
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 /** Primitives for the authenticated H.264 media channel (SPEC-003 §4.2–4.3). */
 object MediaCrypto {
@@ -27,7 +24,6 @@ object MediaCrypto {
     private const val MIN_RECORD_BYTES = COUNTER_BYTES + TAG_BYTES
     private const val AUTHENTICATED_HEADER_BYTES = RECORD_HEADER_BYTES
     private const val CIPHERTEXT_OFFSET = RECORD_HEADER_BYTES
-    private const val HMAC_ALGORITHM = "HmacSHA256"
     private val CLIENT_CONTEXT = "twinpad.v1 media client".toByteArray(Charsets.US_ASCII)
     private val SERVER_CONTEXT = "twinpad.v1 media server".toByteArray(Charsets.US_ASCII)
     private val MEDIA_INFO = "twinpad.v1 media server-to-client aes-256-gcm".toByteArray(Charsets.US_ASCII)
@@ -39,7 +35,7 @@ object MediaCrypto {
     ): ByteArray {
         require(sessionKey.size == SESSION_KEY_BYTES && sessionId.size == SESSION_ID_BYTES)
         require(nonceC.size == NONCE_BYTES)
-        return hmac(sessionKey, CLIENT_CONTEXT, sessionId, nonceC)
+        return CryptoPrimitives.hmacSha256(sessionKey, CLIENT_CONTEXT, sessionId, nonceC)
     }
 
     fun serverProof(
@@ -52,14 +48,17 @@ object MediaCrypto {
             sessionKey.size == SESSION_KEY_BYTES && sessionId.size == SESSION_ID_BYTES &&
                 nonceC.size == NONCE_BYTES && nonceS.size == NONCE_BYTES,
         )
-        return hmac(sessionKey, SERVER_CONTEXT, sessionId, nonceC, nonceS)
+        return CryptoPrimitives.hmacSha256(sessionKey, SERVER_CONTEXT, sessionId, nonceC, nonceS)
     }
 
+    /** Constant-time equality de los proofs (ENG §5 P10). */
     fun verify(
         expected: ByteArray,
         actual: ByteArray,
     ): Boolean = expected.size == actual.size && MessageDigest.isEqual(expected, actual)
 
+    /** HKDF extract+expand de un bloque (RFC 5869): deriva la media key
+     * del canal TCP (SPEC-003 §4.2). */
     fun deriveMediaKey(
         sessionKey: ByteArray,
         nonceC: ByteArray,
@@ -67,8 +66,8 @@ object MediaCrypto {
     ): ByteArray {
         require(sessionKey.size == SESSION_KEY_BYTES && nonceC.size == NONCE_BYTES && nonceS.size == NONCE_BYTES)
         val salt = nonceC + nonceS
-        val prk = hmac(salt, sessionKey)
-        return hmac(prk, MEDIA_INFO, byteArrayOf(HKDF_FIRST_BLOCK.toByte()))
+        val prk = CryptoPrimitives.hmacSha256(salt, sessionKey)
+        return CryptoPrimitives.hmacSha256(prk, MEDIA_INFO, byteArrayOf(HKDF_FIRST_BLOCK.toByte()))
     }
 
     /** Parses and authenticates a full wire record, requiring the exact next counter. */
@@ -90,19 +89,8 @@ object MediaCrypto {
                 .putInt(ZERO_NONCE_PREFIX)
                 .putLong(counter)
                 .array()
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(GCM_TAG_BITS, nonce))
+        val cipher = CryptoPrimitives.gcmCipher(Cipher.DECRYPT_MODE, key, GCM_TAG_BITS, nonce)
         cipher.updateAAD(record, 0, AUTHENTICATED_HEADER_BYTES)
         return cipher.doFinal(record, CIPHERTEXT_OFFSET, record.size - CIPHERTEXT_OFFSET)
-    }
-
-    private fun hmac(
-        key: ByteArray,
-        vararg parts: ByteArray,
-    ): ByteArray {
-        val mac = Mac.getInstance(HMAC_ALGORITHM)
-        mac.init(SecretKeySpec(key, HMAC_ALGORITHM))
-        parts.forEach(mac::update)
-        return mac.doFinal()
     }
 }

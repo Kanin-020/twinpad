@@ -2,8 +2,6 @@ package com.twinpad.android.app.wire
 
 import com.twinpad.android.app.core.PairingException
 import java.util.Base64
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * Criptografía del Handshake del lado app — HKDF-SHA256 + HMAC-SHA256
@@ -19,7 +17,6 @@ object HandshakeCrypto {
     /** Dominio fijo del proof de reanudación (CR-056, SPEC-001 §4.2). */
     private val RESUME_PROOF_DOMAIN: ByteArray = "twinpad.v1 resume".toByteArray(Charsets.UTF_8)
 
-    private const val HMAC_ALGORITHM: String = "HmacSHA256"
     private const val KEY_BYTES: Int = 32
 
     /** Deriva la clave de sesión: HKDF-SHA256(ikm = token, salt = nonce_s) —
@@ -30,10 +27,10 @@ object HandshakeCrypto {
     ): ByteArray {
         require(token.size == KEY_BYTES) { "token debe ser de 32 bytes" }
         require(nonceS.size == KEY_BYTES) { "nonce_s debe ser de 32 bytes" }
-        // Extract: PRK = HMAC(salt, ikm)
-        val prk = hmac(nonceS, token)
-        // Expand (N=1 para 32 bytes con SHA-256): OKM = HMAC(PRK, info ‖ 0x01)
-        val mac = macInstance(prk)
+        // Extract: PRK = HMAC(salt, ikm); Expand (N=1 para 32 bytes con
+        // SHA-256): OKM = HMAC(PRK, info ‖ 0x01).
+        val prk = CryptoPrimitives.hmacSha256(nonceS, token)
+        val mac = CryptoPrimitives.macSha256(prk)
         mac.update(HKDF_INFO)
         mac.update(0x01)
         return mac.doFinal()
@@ -48,7 +45,7 @@ object HandshakeCrypto {
         nonceS: ByteArray,
         nonceC: ByteArray,
     ): ByteArray {
-        val mac = macInstance(sessionKey)
+        val mac = CryptoPrimitives.macSha256(sessionKey)
         mac.update(requestLine.toByteArray(Charsets.UTF_8))
         mac.update(challengeLine.toByteArray(Charsets.UTF_8))
         mac.update(nonceS)
@@ -73,7 +70,7 @@ object HandshakeCrypto {
         sessionId: ByteArray,
         nonceC: ByteArray,
     ): ByteArray {
-        val mac = macInstance(sessionKey)
+        val mac = CryptoPrimitives.macSha256(sessionKey)
         mac.update(RESUME_PROOF_DOMAIN)
         mac.update(sessionId)
         mac.update(nonceC)
@@ -97,21 +94,6 @@ object HandshakeCrypto {
     /** Nonce criptográficamente aleatorio de 32 bytes (el RNG vive aquí,
      * frontera de I/O según DES-002 §11). */
     fun randomNonce(): ByteArray = ByteArray(ProtocolConstants.NONCE_BYTES).also { secureRandom().nextBytes(it) }
-
-    private fun macInstance(key: ByteArray): Mac {
-        val mac = Mac.getInstance(HMAC_ALGORITHM)
-        mac.init(SecretKeySpec(key, HMAC_ALGORITHM))
-        return mac
-    }
-
-    private fun hmac(
-        key: ByteArray,
-        data: ByteArray,
-    ): ByteArray {
-        val mac = macInstance(key)
-        mac.update(data)
-        return mac.doFinal()
-    }
 
     private fun secureRandom(): java.security.SecureRandom = java.security.SecureRandom()
 }

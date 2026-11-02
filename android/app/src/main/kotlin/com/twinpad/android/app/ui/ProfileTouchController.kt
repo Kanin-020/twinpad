@@ -63,10 +63,6 @@ internal class ProfileTouchController(
     val selectedControlIndex: Int
         get() = selectedIndex
 
-    fun selectControl(index: Int) {
-        selectedIndex = index
-    }
-
     fun availableAssignments(profile: ControlProfile): List<String> {
         val control = profile.controls.getOrNull(selectedIndex) ?: return emptyList()
         return when (control.kind) {
@@ -258,7 +254,6 @@ internal class ProfileTouchController(
             emit()
         }
         if (!editing) pressedControls.forEach { releaseControl(it, profile) }
-        draggingIndex = -1
         return true
     }
 

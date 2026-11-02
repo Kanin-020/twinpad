@@ -11,6 +11,8 @@ const val CAMERA_HEIGHT: Int = 240
  * access unit H.264 de la cámara frontal; `data` es base64url sin relleno.
  */
 object CameraFrameCodec {
+    /** Serializa una AU completa de la cámara a la línea canónica §4:
+     * rechaza AUs vacías antes de codificar para no emitir basura. */
     fun encode(
         tsCaptureUs: Long,
         idr: Boolean,

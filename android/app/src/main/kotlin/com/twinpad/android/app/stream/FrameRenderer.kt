@@ -53,6 +53,8 @@ object FrameRenderer {
         return bitmap
     }
 
+    /** Formato crudo → ARGB píxel a píxel; `null` si el tamaño no cuadra
+     * con `width × height × bpp` (§5). */
     private fun decodeRaw(
         data: ByteArray,
         width: Int,
@@ -77,6 +79,8 @@ object FrameRenderer {
         val fmt: String,
     )
 
+    /** Rellena la bitmap fila a fila según el formato (rgb8 o gray8): los
+     * mismos bytes dan el mismo ARGB (ENG P10, decodificación pura). */
     private fun fillPixels(
         bitmap: Bitmap,
         frame: Frame,

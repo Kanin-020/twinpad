@@ -109,88 +109,100 @@ object ControlProfileCodec {
     fun validate(profile: ControlProfile) {
         validateHeader(profile.game, profile.controls.size)
         val seen = mutableSetOf<String>()
-        for (c in profile.controls) {
-            validateControl(c, seen)
+        for (control in profile.controls) {
+            validateControl(control, seen)
         }
     }
 
     /** Encabezado del perfil (§4: game legible, ≤ 24 controles). */
     private fun validateHeader(
         game: String,
-        nControls: Int,
+        controlCount: Int,
     ) {
         if (game.length > GAME_MAX_CHARS) {
             throw ProfileException(ProfileError.FIELD, "game > $GAME_MAX_CHARS chars")
         }
-        if (nControls > MAX_CONTROLS) {
+        if (controlCount > MAX_CONTROLS) {
             throw ProfileException(
                 ProfileError.TOO_MANY_CONTROLS,
-                "más de $MAX_CONTROLS controles ($nControls)",
+                "más de $MAX_CONTROLS controles ($controlCount)",
             )
         }
     }
 
     /** Valida un control particular contra la lista en curso. */
     private fun validateControl(
-        c: TouchControl,
+        control: TouchControl,
         seen: MutableSet<String>,
     ) {
-        validateTextFields(c)
-        if (!seen.add(c.id)) {
-            throw ProfileException(ProfileError.DUPLICATE_ID, "id duplicado: '${c.id}'")
+        validateTextFields(control)
+        if (!seen.add(control.id)) {
+            throw ProfileException(ProfileError.DUPLICATE_ID, "id duplicado: '${control.id}'")
         }
-        validateHid(c)
-        validateCoords(c)
+        validateHid(control)
+        validateCoords(control)
     }
 
     /** id/label/kind válidos (SPEC-007 §4). */
-    private fun validateTextFields(c: TouchControl) {
-        if (c.id.isEmpty() || c.id.length > ID_MAX_CHARS) {
-            throw ProfileException(ProfileError.FIELD, "id inválido: '${c.id}'")
+    private fun validateTextFields(control: TouchControl) {
+        if (control.id.isEmpty() || control.id.length > ID_MAX_CHARS) {
+            throw ProfileException(ProfileError.FIELD, "id inválido: '${control.id}'")
         }
-        if (c.label.isEmpty() || c.label.length > LABEL_MAX_CHARS) {
-            throw ProfileException(ProfileError.FIELD, "label inválido en '${c.id}'")
+        if (control.label.isEmpty() || control.label.length > LABEL_MAX_CHARS) {
+            throw ProfileException(ProfileError.FIELD, "label inválido en '${control.id}'")
         }
-        if (c.kind !in KINDS) {
-            throw ProfileException(ProfileError.FIELD, "kind inválido en '${c.id}': ${c.kind}")
+        if (control.kind !in KINDS) {
+            throw ProfileException(ProfileError.FIELD, "kind inválido en '${control.id}': ${control.kind}")
         }
     }
 
     /** R1 reforzada: stick→stick_l/r, dpad→dpad, button→un botón/trigger. */
-    private fun validateHid(c: TouchControl) {
-        if (c.hid.isEmpty()) return // §8.1: sin asignación es válido (atenuado)
-        if (c.hid !in HID_ELEMENTS) {
+    private fun validateHid(control: TouchControl) {
+        if (control.hid.isEmpty()) return // §8.1: sin asignación es válido (atenuado)
+        if (control.hid !in HID_ELEMENTS) {
             throw ProfileException(
                 ProfileError.INVALID_HID,
-                "hid '${c.hid}' no es un Elemento HID válido (control '${c.id}')",
+                "hid '${control.hid}' no es un Elemento HID válido (control '${control.id}')",
             )
         }
         val stickPair = setOf("stick_l", "stick_r")
-        when (c.kind) {
+        when (control.kind) {
             KIND_STICK ->
-                if (c.hid !in stickPair) {
-                    throw ProfileException(ProfileError.INVALID_HID, "stick '${c.id}' debe asignar a stick_l/stick_r")
+                if (control.hid !in stickPair) {
+                    throw ProfileException(
+                        ProfileError.INVALID_HID,
+                        "stick '${control.id}' debe asignar a stick_l/stick_r",
+                    )
                 }
             KIND_DPAD ->
-                if (c.hid != KIND_DPAD) {
-                    throw ProfileException(ProfileError.INVALID_HID, "dpad '${c.id}' debe asignar a dpad")
+                if (control.hid != KIND_DPAD) {
+                    throw ProfileException(
+                        ProfileError.INVALID_HID,
+                        "dpad '${control.id}' debe asignar a dpad",
+                    )
                 }
             else ->
-                if (c.hid in stickPair || c.hid == KIND_DPAD) {
-                    throw ProfileException(ProfileError.INVALID_HID, "button '${c.id}' no puede asignar a ${c.hid}")
+                if (control.hid in stickPair || control.hid == KIND_DPAD) {
+                    throw ProfileException(
+                        ProfileError.INVALID_HID,
+                        "button '${control.id}' no puede asignar a ${control.hid}",
+                    )
                 }
         }
     }
 
     /** Coordenadas normalizadas 0…1 con tamaño mínimo (SPEC-008 §4). */
-    private fun validateCoords(c: TouchControl) {
-        val originOk = inUnitRange(c.x) && inUnitRange(c.y)
-        val sizeOk = c.w >= MIN_SIZE && c.h >= MIN_SIZE
-        val inside = c.x + c.w <= MAX_COORD + EPS && c.y + c.h <= MAX_COORD + EPS
+    private fun validateCoords(control: TouchControl) {
+        val originOk = inUnitRange(control.x) && inUnitRange(control.y)
+        val sizeOk = control.w >= MIN_SIZE && control.h >= MIN_SIZE
+        val insideHorizontal = control.x + control.w <= MAX_COORD + EPS
+        val insideVertical = control.y + control.h <= MAX_COORD + EPS
+        val inside = insideHorizontal && insideVertical
         if (!(originOk && sizeOk && inside)) {
             throw ProfileException(
                 ProfileError.OUT_OF_RANGE,
-                "coordenadas fuera de 0…1 en '${c.id}' (x=${c.x},y=${c.y},w=${c.w},h=${c.h})",
+                "coordenadas fuera de 0…1 en '${control.id}' " +
+                    "(x=${control.x},y=${control.y},w=${control.w},h=${control.h})",
             )
         }
     }

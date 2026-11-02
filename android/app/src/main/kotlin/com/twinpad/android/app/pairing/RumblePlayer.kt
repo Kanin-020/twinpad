@@ -12,9 +12,12 @@ import com.twinpad.android.app.wire.RumbleMessage
  * de Cemu (CR-033). Sin vibrador, el mensaje se ignora.
  */
 class RumblePlayer(context: Context) {
+    /** Vibrador por defecto del sistema; null en entornos sin vibrator service. */
     private val vibrator: Vibrator? =
         context.getSystemService(VibratorManager::class.java)?.defaultVibrator
 
+    /** Sincroniza el patrón del mensaje con una única onda (nada de cola:
+     * el último mensaje de rumble manda, CR-033 §3). */
     fun play(message: RumbleMessage) {
         val device = vibrator ?: return
         if (!device.hasVibrator()) return

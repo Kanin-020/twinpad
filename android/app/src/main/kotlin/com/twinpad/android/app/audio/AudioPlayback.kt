@@ -68,6 +68,7 @@ class AudioPlayback internal constructor(
         commands.close()
     }
 
+    /** Escribe en el track, re-creándolo si cambian los parámetros (§7/§10). */
     private fun write(chunk: AudioChunk) {
         if (track == null || chunk.rate != rate || chunk.channels != channels) {
             releaseTrack()
@@ -80,6 +81,7 @@ class AudioPlayback internal constructor(
         track?.write(chunk.pcm)
     }
 
+    /** Suelta el track vigente y borra el parámetro cacheado. */
     private fun releaseTrack() {
         track?.stopAndRelease()
         track = null
@@ -89,16 +91,21 @@ class AudioPlayback internal constructor(
 }
 
 internal sealed interface PlaybackCommand {
+    /** Escribe un fragmento PCM aceptado por la máquina (§6). */
     data class Write(val chunk: AudioChunk) : PlaybackCommand
 
+    /** Cambia el volumen del track vigente (no del host). */
     data class SetVolume(val volume: Float) : PlaybackCommand
 
+    /** Silencia y libera el track; canal abierto para un nuevo stream. */
     data object Stop : PlaybackCommand
 
+    /** Último comando: libera el track y termina el consumidor. */
     data object Close : PlaybackCommand
 }
 
 internal fun interface PlaybackTrackFactory {
+    /** Crea un track con ese rate/channels; null si el sistema no puede. */
     fun create(
         rate: Int,
         channels: Int,
@@ -106,13 +113,17 @@ internal fun interface PlaybackTrackFactory {
 }
 
 internal interface PlaybackTrack {
+    /** PCM s16le bloqueante sobre el track vigente. */
     fun write(pcm: ByteArray)
 
+    /** Volumen local en 0..1. */
     fun setVolume(volume: Float)
 
+    /** Pausa, vacía y libera los recursos del track. */
     fun stopAndRelease()
 }
 
+/** Adaptador real sobre AudioTrack del sistema (desconocido en JVM). */
 private object AndroidPlaybackTrackFactory : PlaybackTrackFactory {
     override fun create(
         rate: Int,
@@ -144,6 +155,7 @@ private object AndroidPlaybackTrackFactory : PlaybackTrackFactory {
     }
 }
 
+/** Fallback del track real creado por vía system (no JVM). */
 private class AndroidPlaybackTrack(
     private val track: AudioTrack,
 ) : PlaybackTrack {

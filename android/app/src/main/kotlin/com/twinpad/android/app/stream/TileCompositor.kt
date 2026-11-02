@@ -9,8 +9,11 @@ internal data class PixelTile(
     val pixels: IntArray,
 )
 
-/** Compositor puro: valida el lote entero y devuelve una imagen nueva o null sin alterar la base. */
+/** Compositor puro: valida el lote entero y devuelve una imagen nueva o
+ * null sin alterar la base (transaccional, CR-002; sin Android para JVM). */
 internal object TileCompositor {
+    /** Devuelve la imagen compuesta con los tiles aplicados, o `null` si
+     * el lote no es válido: nunca una imagen a medio componer. */
     fun compose(
         base: IntArray,
         width: Int,
@@ -26,6 +29,7 @@ internal object TileCompositor {
         return result
     }
 
+    /** Dimensiones de la base + geometría de cada tile + anti-solape. */
     private fun validImage(
         base: IntArray,
         width: Int,
@@ -39,6 +43,8 @@ internal object TileCompositor {
         return tiles.all { tile -> isValidTile(tile, width, height, tileSize) && seen.add(tile.x to tile.y) }
     }
 
+    /** Un tile es válido si está alineado, en-bounds y trae exactamente
+     * los píxeles de su geometría (§4.5). */
     private fun isValidTile(
         tile: PixelTile,
         width: Int,
@@ -54,6 +60,7 @@ internal object TileCompositor {
         return aligned && inBounds && dimensionsMatch && pixelCountMatches
     }
 
+    /** Copia las filas del tile a su destino en la imagen compuesta. */
     private fun composeTile(
         result: IntArray,
         imageWidth: Int,
