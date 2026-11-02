@@ -1,2 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
-
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- CR-059/ADR-009: registrar y usar el HID Device role del teléfono
+         como gamepad (Bluetooth classic). minSdk 31+: solo CONNECT. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+</manifest>

@@ -1,11 +1,13 @@
 package com.twinpad.android.app.ui
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -23,6 +25,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -72,6 +75,7 @@ class PairingActivity : AppCompatActivity() {
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
+
     /** CR-054: bloque «Métricas avanzadas» del HUD vigente (drawer). */
     private var advancedMetricsVisible = false
 
@@ -175,6 +179,17 @@ class PairingActivity : AppCompatActivity() {
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             viewModel.onCameraPermissionResult(granted)
+        }
+
+    /** CR-059: permiso del rol HID Bluetooth (gamepad por BT como alternativa
+     * completa/failover). Se pide juntos al de la cámara al iniciar el
+     * emparejamiento; si se deniega, el canal BT queda deshabilitado y la
+     * app informa como estado (SPEC-004 §8.3, ADR-009). */
+    private val btPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Log.i("TwinpadBt", "bt-hid: BLUETOOTH_CONNECT denegado; sin canal BT")
+            }
         }
 
     /** CR-035: permiso del micrófono bajo demanda; al concederlo se reevalúa
@@ -651,8 +666,19 @@ class PairingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             viewModel.cameraEffects.collect { effect ->
                 when (effect) {
-                    is Effect.RequestCamera ->
+                    is Effect.RequestCamera -> {
+                        if (
+                            ContextCompat.checkSelfPermission(
+                                this@PairingActivity,
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            // CR-059: se lanza primero; la cámara lo hace
+                            // cuando el diálogo BT se cierra.
+                            btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        }
                         permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
                     is Effect.StartCamera -> cameraController.start()
                     is Effect.StopCamera -> cameraController.stop()
                     else -> Unit

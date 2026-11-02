@@ -78,6 +78,12 @@ class PairingViewModel(
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
 
+    /** CR-059: canal del gamepad por Bluetooth HID nativo (failover/alterna-
+     * tiva completa); el ciclo, la ruta y la histéresis los gobierna el
+     * switcher (ADR-009). */
+    private val gamepadSwitcher =
+        GamepadBtSwitcher(app, gamepad, viewModelScope) { _uiState.value is PairingUiState.Linked }
+
     /** Efectos que la Activity ejecuta (permiso, apertura/cierre de cámara). */
     private val _cameraEffects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     val cameraEffects: SharedFlow<Effect> = _cameraEffects
@@ -202,13 +208,21 @@ class PairingViewModel(
             "stream_start", "stream_stop" -> handleStreamControlLine(line)
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
+            "camera_request", "mic_request", "keyboard_request", "video_stage_stats" ->
+                handleRequestLine(line)
+            else -> Unit
+        }
+    }
+
+    /** Demandas vigentes del juego (CR-038 cámara, CR-035 micrófono, CR-044
+     * teclado) y CR-053: HUD de etapas del pipeline de video del Plugin. */
+    private val handleRequestLine: (String) -> Unit = { line ->
+        when (lineType(line)) {
             "camera_request" -> CameraRequestCodec.decode(line)?.let { _cameraRequested.value = it.on }
             "mic_request" -> MicRequestCodec.decode(line)?.let { _micRequested.value = it.on }
             "keyboard_request" -> handleKeyboardRequest(line)
-            // CR-053: HUD de etapas del pipeline de video del Plugin.
             "video_stage_stats" ->
                 VideoStageStatsCodec.decode(line)?.let { _videoStageStats.value = it }
-            else -> Unit
         }
     }
 
@@ -359,8 +373,10 @@ class PairingViewModel(
     }
 
     /** SPEC-004 §7: un cambio de la superficie táctil genera un
-     * `input_report` (canal: sesión LAN, ADR-007). Solo en Linked (H1);
-     * el `seq` lo asigna la máquina del gamepad (R2). */
+     * `input_report`; el transporte lo decide HandoverPolicy (CR-059):
+     * LAN si la sesión está Linked, si no el canal BT si está operativo;
+     * en H0 los controles no envían (§6). El `seq` lo asigna la máquina
+     * del gamepad (R2). */
     fun setAudioVolume(volume: Float) = playback.setVolume(volume)
 
     fun onGamepadInput(report: com.twinpad.android.app.wire.InputReport) {
@@ -373,7 +389,16 @@ class PairingViewModel(
                         "accel=${motion.accel.joinToString(",")} gyro=${motion.gyro.joinToString(",")}",
                 )
             }
-            network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
+            // CR-059: transporte según HandoverPolicy (SPEC-004 §8.3).
+            val linked = _uiState.value is PairingUiState.Linked
+            when (gamepadSwitcher.route(linked)) {
+                com.twinpad.android.app.hid.InputTransport.LAN ->
+                    network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
+
+                com.twinpad.android.app.hid.InputTransport.BT -> gamepadSwitcher.sendOverBt(updated)
+
+                com.twinpad.android.app.hid.InputTransport.NONE -> Unit // H0: no envía
+            }
         }
     }
 
@@ -388,39 +413,65 @@ class PairingViewModel(
 
     private fun feed(event: PairingEvent) {
         val effects = machine.onEvent(event)
+        val previous = _uiState.value
         _uiState.value = machine.state
         if (_uiState.value is PairingUiState.Linked) {
             // CR-055 HB5: en U4 el watchdog de silencio (15 s sin ninguna línea)
             // declara la conexión terminada; el pong mantiene viva la sesión.
             network.armSessionWatchdog()
-            // SPEC-004 §6 H0→H1: canal operativo, reporte inicial en reposo
-            // (solo en la transición; Linked persiste en los eventos posteriores).
-            if (gamepad.state == com.twinpad.android.app.hid.GamepadState.OFFLINE) {
-                gamepad.onChannelReady()?.let { network.send(com.twinpad.android.app.wire.InputCodec.encode(it)) }
-            }
-        } else if (gamepad.state != com.twinpad.android.app.hid.GamepadState.OFFLINE) {
-            gamepad.onChannelDown() // §6 H1→H0: los controles dejan de enviar
         }
-        for (effect in effects) {
-            when (effect) {
-                is Effect.RequestCamera ->
-                    if (
-                        ContextCompat.checkSelfPermission(
-                            getApplication(),
-                            android.Manifest.permission.CAMERA,
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        feed(PairingEvent.CameraGranted) // R2: solo pide si falta
-                    } else {
-                        _cameraEffects.tryEmit(effect) // Activity lanza el diálogo del SO
-                    }
+        armGamepadChannel()
+        // CR-059: el switcher decide arranque y liberación con histéresis
+        // (caída de sesión, handshake fallido sin Wi-Fi, regreso a LAN).
+        gamepadSwitcher.onUiState(previous, _uiState.value)
+        effects.forEach(executeEffect)
+    }
 
-                is Effect.Connect -> network.connect(effect.addr, effect.port)
-                is Effect.SendLine -> network.send(effect.line)
-                is Effect.Disconnect -> network.disconnect()
-                is Effect.StartCamera, is Effect.StopCamera, is Effect.ShowError ->
-                    _cameraEffects.tryEmit(effect)
+    /** SPEC-004 §6 H0→H1: arma el canal del gamepad con salida por la ruta
+     * vigente (LAN de la sesión, o el canal BT del switcher sin LAN); si no
+     * hay ruta, resulta H0 y los controles dejan de enviar (§6 H1→H0).
+     * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
+    private val armGamepadChannel: () -> Unit = {
+        val linked = _uiState.value is PairingUiState.Linked
+        val route = gamepadSwitcher.route(linked)
+        if (gamepad.state != com.twinpad.android.app.hid.GamepadState.OFFLINE) {
+            if (route == com.twinpad.android.app.hid.InputTransport.NONE) {
+                gamepad.onChannelDown() // §6 H1→H0: los controles dejan de enviar
             }
+        } else {
+            when (route) {
+                com.twinpad.android.app.hid.InputTransport.LAN ->
+                    gamepad.onChannelReady()?.let { network.send(com.twinpad.android.app.wire.InputCodec.encode(it)) }
+
+                com.twinpad.android.app.hid.InputTransport.BT ->
+                    gamepad.onChannelReady()?.let { gamepadSwitcher.sendOverBt(it) }
+
+                com.twinpad.android.app.hid.InputTransport.NONE -> Unit // H0: no envía
+            }
+        }
+    }
+
+    /** Ejecuta los [Effect]s de la máquina en orden (DES-002 §4).
+     * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
+    private val executeEffect: (Effect) -> Unit = { effect ->
+        when (effect) {
+            is Effect.RequestCamera ->
+                if (
+                    ContextCompat.checkSelfPermission(
+                        getApplication(),
+                        android.Manifest.permission.CAMERA,
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    feed(PairingEvent.CameraGranted) // R2: solo pide si falta
+                } else {
+                    _cameraEffects.tryEmit(effect) // Activity lanza el diálogo del SO
+                }
+
+            is Effect.Connect -> network.connect(effect.addr, effect.port)
+            is Effect.SendLine -> network.send(effect.line)
+            is Effect.Disconnect -> network.disconnect()
+            is Effect.StartCamera, is Effect.StopCamera, is Effect.ShowError ->
+                _cameraEffects.tryEmit(effect)
         }
     }
 
@@ -428,6 +479,8 @@ class PairingViewModel(
         mediaSession.close()
         playback.release()
         network.shutdown()
+        // CR-059: liberar el perfil BT HID si quedó armado.
+        gamepadSwitcher.shutdown()
     }
 
     companion object {

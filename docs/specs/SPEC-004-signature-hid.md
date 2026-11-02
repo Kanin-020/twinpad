@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.10.0 |
+| Version | 1.11.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087 |
-| Last updated | 2026-10-29 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127 |
+| Last updated | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -21,12 +21,13 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 - **Signature HID**: composición fija del Gamepad de v1: 2 joysticks analógicos (X/Y con rango −127…127, centro 0), D-pad de 8 direcciones, 12 botones digitales (A/B/X/Y, L1/R1, L3/R3, Start/Select, 2 extra), triggers analógicos L2/R2 (0…255) y giroscopio de 3 ejes (opcional por dispositivo).
 - **Elemento HID**: cada uno de los ítems anteriores, identificado por nombre canónico (`stick_l`, `button_a`, `trigger_r2`, `gyro_pitch`, …).
 - **Input report**: la instantánea completa del estado de todos los elementos, enviada por la app cuando algo cambia.
+- **Report Map HID Bluetooth (CR-059)**: descriptor HID clásico del gamepad (standes L/R, D-pad hat, 12 botones, triggers L2/R2 analógicos) que la app registra vía HID Device role (ADR-009); SIN touch DRC, giroscopio o rumble (exclusivos de la ruta LAN).
 - Ver CTX §8 para Gamepad HID, Input táctil, Input físico.
 
 ## 3. Preconditions
 
-- Sesión establecida (SPEC-001) o canal HID operativo por Bluetooth (ADR-003).
-- El SO de la PC lista el gamepad (REQ-003 AC-1) — condición de borde gestionada por el adaptador HID, no por este contrato.
+- Ruta LAN: sesión establecida (SPEC-001). Ruta Bluetooth: canal HID operativo por Bluetooth (ADR-009).
+- El SO de la PC lista el gamepad (REQ-003 AC-1) — condición de borde gestionada por el adaptador HID (LAN: adaptador Cemu; BT: stack HID del SO), no por este contrato.
 
 ## 4. Inputs
 
@@ -45,7 +46,13 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 | `touch_x`, `touch_y` | integer (uint16) | posición normalizada sobre la imagen DRC, 0…65535; al soltar se conserva la última coordenada | yes |
 | `touch_pressed` | boolean | true mientras hay contacto con la imagen DRC | yes |
 
-Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo. Bluetooth HID nativo queda diferido. Su alcance y su formato de giroscopio se definirán en un CR posterior; hasta entonces no forma parte del contrato de movimiento. La referencia ADR-003 queda sujeta a CR-024. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad y touch se mapean directamente. Android captura TYPE_ACCELEROMETER y TYPE_GYROSCOPE a SENSOR_DELAY_GAME; cada actualización de sensor produce un reporte con las muestras más recientes de ambos sensores y `timestamp_us` igual al máximo timestamp monotónico de esos eventos, convertido de nanosegundos a microsegundos. `motion` se omite hasta disponer de una muestra válida de ambos sensores; si falta cualquiera de ellos, el estado anterior se invalida y se envía sin `motion`. Cada snapshot enviado contiene muestras finitas y completas. Cemu integra únicamente timestamps estrictamente crecientes; si el intervalo supera 200 ms, no integra esa muestra. Al aplicar el snapshot al VPAD Player 1 de Twinpad, Android envía accel `(y, -z, x)` y gyro `(-y, -z, x)` ya en el marco AndroidDSU de referencia landscape, exclusivo de la orientación landscape fija de la app (CR-022, CR-037); Cemu convierte unidades (gyro ×0.9, accel ×9.8066/100) y alimenta `WiiUMotionHandler` con accel Y/Z negadas y gyro sin cambios, igual que su ruta DSU; su salida fusionada actualiza los datos de movimiento del VPAD. La ruta local de movimiento Cemu permanece activa cuando Twinpad no es el input seleccionado. El monitor Android puede mostrar orientación local del sensor; el monitor Cemu muestra la muestra recibida y el resultado VPAD fusionado. CR-021 supersede la interpretación de orientación absoluta y la ganancia VPAD 0.5× de CR-019.
+Canal: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007) y/o el canal Bluetooth HID nativo (CR-059, ADR-009). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo.
+
+Transporte Bluetooth HID nativo (CR-059, ADR-009): el teléfono expone el gamepad al SO del PC vía HID Device role (BluetoothHidDevice, descriptor del Report Map §2), que Windows lista como gamepad estándar SIN software adicional; los elementos del mando (standes, D-pad, 12 botones, triggers L2/R2) llegan al juego por el HID del sistema.
+
+- **Modo alternativo completo:** sin Wi-Fi el canal BT HID permite jugar (el Servidor PC no participa); touch DRC e inercia NO viajan por BT y la Segunda pantalla/audio no están disponibles (ADR-002: el enlace BT clásico no soporta SPEC-003/SPEC-005).
+- **Failover automático:** cuando la sesión LAN declara HB5/expiry (CR-055) y el canal BT HID está operativo, los reportes conmutan a la ruta BT sin re-pairing; al volver `Linked`, la ruta LAN retoma el envío y el perfil BT se libera tras histéresis de 5 s.
+- Touch DRC, muestras inerciales y rumble siguen siendo únicamente de la ruta LAN/SDK; extender el descriptor HID con ellos exige otro CR. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad y touch se mapean directamente. Android captura TYPE_ACCELEROMETER y TYPE_GYROSCOPE a SENSOR_DELAY_GAME; cada actualización de sensor produce un reporte con las muestras más recientes de ambos sensores y `timestamp_us` igual al máximo timestamp monotónico de esos eventos, convertido de nanosegundos a microsegundos. `motion` se omite hasta disponer de una muestra válida de ambos sensores; si falta cualquiera de ellos, el estado anterior se invalida y se envía sin `motion`. Cada snapshot enviado contiene muestras finitas y completas. Cemu integra únicamente timestamps estrictamente crecientes; si el intervalo supera 200 ms, no integra esa muestra. Al aplicar el snapshot al VPAD Player 1 de Twinpad, Android envía accel `(y, -z, x)` y gyro `(-y, -z, x)` ya en el marco AndroidDSU de referencia landscape, exclusivo de la orientación landscape fija de la app (CR-022, CR-037); Cemu convierte unidades (gyro ×0.9, accel ×9.8066/100) y alimenta `WiiUMotionHandler` con accel Y/Z negadas y gyro sin cambios, igual que su ruta DSU; su salida fusionada actualiza los datos de movimiento del VPAD. La ruta local de movimiento Cemu permanece activa cuando Twinpad no es el input seleccionado. El monitor Android puede mostrar orientación local del sensor; el monitor Cemu muestra la muestra recibida y el resultado VPAD fusionado. CR-021 supersede la interpretación de orientación absoluta y la ganancia VPAD 0.5× de CR-019.
 
 ## 5. Outputs
 
@@ -53,7 +60,7 @@ Canal inicial: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007). El Servido
 |---|---|---|
 | Input en el juego | el elemento cambiado se refleja en el juego como input del gamepad estándar | cada `input_report` válido |
 | Rumble | la app hace vibrar el teléfono con intensidad/duración del evento | el juego dispara rumble (REQ-003 AC-3) |
-| Gamepad visible | el SO de la PC lista el gamepad mientras exista sesión/vínculo | REQ-003 AC-1 |
+| Gamepad visible | el SO de la PC lista el gamepad mientras exista sesión/vínculo (ruta LAN) o el canal HID BT esté conectado (ruta Bluetooth) | REQ-003 AC-1, ADR-009 |
 
 ## 6. States
 
@@ -76,7 +83,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 1. El usuario toca un control, acciona un elemento del mando físico conectado al teléfono (CR-028, §8.1) o mueve el dispositivo: la app actualiza el estado del elemento (fusión por elemento cuando intervienen ambos orígenes); si hay acelerómetro y giroscopio, captura el snapshot inercial más reciente con timestamp monotónico.
 2. La app compone el `input_report` con la instantánea completa y `seq` = último+1.
 3. El reporte viaja por la sesión autenticada LAN al Servidor PC; el Servidor retiene el snapshot más reciente y lo envía por IPC localhost solo al Plugin confirmado para esa sesión, conforme a SPEC-006.
-4. Para una sesión con Plugin seleccionado, el Plugin consume el snapshot más reciente mediante el polling de SPEC-006. La ruta Bluetooth HID nativa hacia el SO de la PC permanece como objetivo separado de ADR-003; no sustituye el contrato del Plugin de esta entrega.
+4. Para una sesión con Plugin seleccionado, el Plugin consume el snapshot más reciente mediante el polling de SPEC-006. En paralelo (CR-059, ADR-009), si la ruta LAN no está disponible pero el canal HID existe, el mismo reporte con `seq` en curso sale hacia el SO por Bluetooth (failover o modo sin Wi-Fi); touch e inercia no salen por esa ruta.
 5. Si el juego emite rumble, la app vibra (AC-3) — reativo al evento, sin bloquear el envío de inputs (ARCH §8: inputs no bloquean por video/audio).
 
 ## 8. Alternative flows
@@ -92,6 +99,18 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 - **Trigger:** el juego dispara un evento de vibración.
 - **Flow:** el evento viaja en sentido PC → app por el canal HID (output report estándar del gamepad).
 - **Result:** el teléfono vibra con la intensidad/duración pedida; los inputs siguen fluyendo durante la vibración.
+
+### 8.3 Failover / alternativa urgente por Bluetooth HID (CR-059, ADR-009)
+
+- **Trigger falta:** la sesión LAN sale de `Linked` (HB5/expiry CR-055) con el
+  canal HID Bluetooth operativo, o el usuario entra en modo sin Wi-Fi y el
+  canal BT está listo.
+- **Flow:** la app conmuta el envío de los reportes con `seq` en curso a la
+  ruta BT (sin re-pairing; touch/inercia quedan excluidos). Al volver la LAN
+  `Linked`, retoma la ruta LAN y libera el perfil BT con histéresis de 5 s.
+- **Result:** el juego nunca pierde el mando aunque la Wi-Fi esté caída; la
+  Segunda pantalla y el audio quedan como indisponibles (ADR-002), no como
+  error.
 
 ## 9. Errors
 
@@ -131,7 +150,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 |---|---|---|
 | Signature HID (elementos y rangos) | este documento §2/§4 | v1; extensible por CR |
 | Transporte de la primera implementación | ADR-007 / SPEC-001 §4.2 | Sesión LAN autenticada; servidor entrega snapshots al Plugin seleccionado mediante SPEC-006 |
-| Descriptor HID del objetivo final | DES-005 (por asignar) | Bluetooth HID de ADR-003 |
+| Descriptor HID del objetivo final | DES-005 (por asignar) | Bluetooth HID de ADR-009 (CR-059): Report Map §2; touch/giroscopio/rumble excluidos |
 | Retención y entrega al Plugin | SPEC-006 §4/§7 | snapshot más reciente por sesión, polling SDK; estados intermedios coalescibles |
 
 ## 13. Examples (Given / When / Then)
@@ -176,12 +195,15 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | Captura Android, wire de muestras inerciales y monitor local/fusionado (CR-021) | TEST-060, TEST-078, TEST-079, TEST-083, TEST-084 |
 | Rumble (AC-3) y edge cases de §10 | TEST-019 |
 | Latencia NFR-002 (p95 ≤ 15 ms) | pruebas de performance en banco físico con inyección HID sintética |
+| Codec Report Map → bytes HID y clamps de la Signature (CR-059, ADR-009) | TEST-0126 |
+| Handover failover/alternativa completa: conmutación de ruta e histórisis de 5 s (CR-059) | TEST-0127 |
 | Snapshot input conservado y sondeable por Plugin | TEST-052 |
 | Snapshot de input retenido antes de selección y polling del Plugin | TEST-052 |
 
 ## 17. Open questions
 
-- ¿Cobertura real de HID device role por dispositivo Android 12+? (encuesta de dispositivos) — owner: Eng lead — 2026-10-07 — abierta
+- ¿Cobertura real de HID device role por dispositivo Android 12+? (encuesta de dispositivos; CR-059 Paso 2 de banco físico la precisa) — owner: Eng lead — 2026-10-07 — abierta
+- ¿Extender el descriptor BT HID con rumble (output report) y giroscopio? — owner: Eng lead — 2026-11-01 — abierta (CR-059 v1 los excluye; exige banco físico).
 - ¿El rumble viaja solo por output reports de BT HID o también por la sesión LAN como respaldo? — owner: Eng lead — 2026-10-07 — abierta (se decide en DES-004)
 - ¿El transporte de `input_report` en la primera implementación es el canal HID Bluetooth de ADR-003 o la sesión LAN de SPEC-001? — owner: Eng lead — 2026-10-07 — **resuelta por el owner (usuario): la primera implementación usa la sesión LAN persistente de SPEC-001 (mismo canal NDJSON que SPEC-003); la vía Bluetooth HID nativa (ADR-003) es la meta final y entra por iteración/ADR posterior.**
 
@@ -202,3 +224,4 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.8.0 | 2026-10-27 | Product owner + Twinpad team (CR-023) | Bluetooth HID nativo queda diferido; el giroscopio para terceros va por SDK Twinpad (SPEC-006); sin cambio wire |
 | 1.9.0 | 2026-10-27 | Product owner + Twinpad team (CR-028) | Mando físico conectado al teléfono: mapper puro (keycodes/sticks/triggers/hat) y fusión por elemento con la superficie táctil; sin cambio wire (§8.1, R6, TEST-087) |
 | 1.10.0 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU de referencia pasa a landscape, exclusivo de la orientación landscape fija de la app: accel `(y, -z, x)`, gyro `(-y, -z, x)`; wire y unidades sin cambios |
+| 1.11.0 | 2026-11-01 | Owner + Buffy (agente) (CR-059, ADR-009) | Doble transporte de la Signature: ruta LAN + ruta Bluetooth HID nativa (alternativa completa sin Wi-Fi y failover automático con histórisis de 5 s); touch/giroscopio/rumble exclusivos de LAN; Test Map TEST-0126/0127 |

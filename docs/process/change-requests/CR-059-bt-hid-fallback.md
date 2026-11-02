@@ -5,11 +5,11 @@
 | ID | CR-059 |
 | Title | Canal de inputs redundante por Bluetooth HID (fallback de red) |
 | Type | Scope change |
-| Status | `Open` |
+| Status | `Approved` |
 | Author | Buffy (agente) |
 | Created | 2026-11-01 |
-| Decided | — |
-| Decided by | — |
+| Decided | 2026-11-01 |
+| Decided by | Owner del proyecto (usuario, en chat de sesión) |
 
 ## 1. Target
 
@@ -35,35 +35,52 @@ tolerar picos, pero los inputs se quedan pegados).
 **Proposed:**
 
 ```text
-SPEC-004 §4 — doble transporte de inputs:
+SPEC-004 §4 — dos rutas de transporte para la Signature HID (decisión del
+owner en chat, 2026-11-01: NO solo fallback; alternativa COMPLETA):
 
-- Primario: LAN autenticada (hoy), sin cambios.
-- Respaldo: BT HID nativo (teléfono expone descriptores de Signature HID §2
-  a Windows por Bluetooth classic; el PC los recibe como gamepad HCI/BLE
-  estándar — requiere driver/virtual gamepad en Windows: decisión de ADR).
-  Entra en el estado H2 «Failover» de SPEC-004 cuando el heartbeat de la
-  sesión (SPEC-001 §4.3, CR-055) declara la sesión caída, o cuando NFR-002
-  supera umbral sostenido; regresa al primario cuando la LAN es sana
-  (histéresis de 5 s). Handover sin re-pairing: la identidad HID es la
-  misma en ambos caminos; en BT elικόstates de firma/seguridad live par de
-  SPEC-004 §3 no aplican (el PC no firma nada: el BT no viaja por la app).
+- Ruta LAN (primaria para la entrega completa): sesión autenticada de
+  SPEC-001, sin cambios — es LA única ruta con Segunda pantalla/audio/
+  touch/giroscopio (video/audio no viajan por BT: ADR-002, ancho de
+  banda del enlace clásico)
+- Ruta Bluetooth HID nativa (motor hid de ARCH §2): teléfono actúa como
+  dispositivo HID clásico (BluetoothHidDevice, role HID Device, API 28+)
+  frente al PC ya emparejado por SO; Windows lista el gamepad estándar
+  SIN software adicional; los inputs llegan al juego por el HID del
+  SO, no por el Servidor PC.
+  - Elementos transportados: sticks L/R, D-pad, 12 botones, triggers
+    L2/R2 (mixed-style gamepad).
+  - Elementos NO transportados por BT: touch DRC e inercia (giroscopio
+    queda solo en la ruta LAN/SDK; el HID clásico no tiene uso paralelo
+    a la Signature sin extender el descriptor — ADR-009 §5.
 
-SPEC-004 §12 — nueva fila: transporte BT HID de respaldo → ADR de detalle.
+Modo alternativo completo: cuando no hay Wi-Fi la app puede entrar en
+  BT activamente (manual/selector) y el juego recibe el mando por el
+  SO aunque el Servidor PC no sea alcanzable.
 
-ADR-007 — trigger de revisión: ADR actualizado a «revisión abierta» con
-  nota de que CR-059 propuso reactivar BT HID como canal de respaldo.
+Modo failover automático ante cortes: cuando la sesión LAN cae
+  (heartbeat CR-055 HB5/expiry), la app conmuta el envío de
+  `input_report` a la ruta BT sin re-pairing; al volver la LAN sana,
+  liberación del perfil BT con histéresis de 5 s.
 
-ADR-003 — nota: CR-024 suspendió el BT HID; CR-059 lo propone reactivar
-  solo como failover, con la decisión de detalle en un nuevo ADR.
+SPEC-004 §12 — filas de transporte BT HID → ADR-009.
 
-Nuevo ADR «Canal de respaldo BT HID» (Proposed):
-- Decisor: propuesto por este CR; pendiente del owner.
-- Alternativas que debe resolver: perfil BT (BLE-HOGP vs classic SPP/HID),
-  receptor en Windows (ViGEm/virtual HID driver vs stack propio), política
-  de handover (automática vs manual), momento de suspensión definitiva si
-  el failover no aporta en pruebas reales.
-- Abrir solo después de validar en banco físico el rendimiento BT del
-  teléfono (NFR-002) y del driver en Windows.
+ADR-007 — nota de que CR-059 activó el trigger de revisión (la meta
+  final BTHID transport se activa, no solo failover).
+
+ADR-003 — nota: CR-024 suspendió el BT HID; CR-059 lo REACTIVA como
+  alternativa completa + failover, con la decisión de detalle en
+  ADR-009 (nuevo ADR).
+
+ADR-009 «Canal Bluetooth HID nativo: alternativa completa + failover»:
+  - Decisor: owner del proyecto (usuario) por chat de sesión 2026-11-01.
+  - Perfil: classic HID Device role (BluetoothHidDevice) — BLE-HOGP
+    descartado (Android no permite host-side HOGP steering desde la app
+    para gamepads; SPP custom descartado: requiere software en la PC).
+  - Receptor en Windows: ninguno (HID nativo del stack BT de Windows);
+    ViGEm/virtual driver solo si en prueba de banco físico el gamepad
+    estándar no llega a algún juego (escala posterior).
+  - Handover: automático en caída de sesión LAN + manual como
+    alternativa completa sin Wi-Fi; histéresis 5 s de liberación.
 ```
 
 ## 3. Motivation
@@ -74,6 +91,11 @@ fiabilidad, y CR-056 reanuda el canal sobre la misma ruta; pero si la ruta
 LAN entera sigue degradada, no hay por dónde reanudar. ADR-002 ya contempla
 BT para HID como uso en el roadmap: la única pieza que falta es el
 receptor en Windows y la política de handover.
+
+Refinamiento del owner (chat 2026-11-01): el alcance NO queda limitado a
+fallback; BT HID debe funcionar también como ALTERNATIVA COMPLETA cuando
+no hay Wi-Fi disponible. Video/audio permanecen en LAN por diseño
+(ADR-002: el enlace BT clásico no soporta SPEC-003 NFR-001).
 
 ## 4. Impact analysis
 
@@ -95,8 +117,10 @@ receptor en Windows y la política de handover.
 
 ## 5. Options considered
 
-1. **Failover BT HID (propuesto)** — mismo descriptor ya construido (SPEC-004
-   §2), independiza los críticos inputs del estado de la Wi-Fi.
+1. **Alternativa completa + failover BT HID (aprobado por el owner)** —
+   mismo contrato de Signature (SPEC-004 §2) en ambos caminos; los inputs
+   nunca dependen del estado de la Wi-Fi; sin Wi-Fi el juego igual recibe
+   el mando (HID nativo al SO).
 2. Mantener LAN como único camino — sin work, los inputs permanecen pegados
    durante cualquier degradación de red: el mayor daño de runtime posible.
 3. USB OTG (phone cable) — fuera de alcance v1: no ad-hoc, exige cable
@@ -104,11 +128,19 @@ receptor en Windows y la política de handover.
 
 ## 6. Decision
 
-- **Outcome:** (pendiente) — aprobado el objetivo, pendiente nuevo ADR para
-  perfil BT y receptor Windows (decisión con riesgo: dependencia de
-  terceros/drivers).
+- **Outcome:** APPROVED por el owner del proyecto (usuario, chat de sesión
+  2026-11-01): alternativa completa + failover automático, con rollout en
+  dos pasos.
 - **Rationale:** es el único fallback físico disponible sin hardware extra;
-  el descriptor ya existe y el Heartbeat de CR-055 provee el trigger.
+  el descriptor ya existe (SPEC-004 §2) y el Heartbeat de CR-055 provee el
+  trigger; el owner amplió el objetivo más allá del failover inicial.
+- **Paso 1 (aprobado, code merged):** módulo `hid` (descriptor + codec
+  Signature→report map) + `BluetoothHidGamepad` (BluetoothHidDevice profile
+  proxy) + handover en `PairingViewModel` con histéresis; prerrequisito:
+  Emparejamiento BT PC↔teléfono hecho por el SO la primera vez.
+- **Paso 2 (banco físico):** validar en teléfono real (cobertura del HID
+  device role, CTX-A2; NFR-002 en la ruta BT; receiver en Windows), y en
+  caso de que algún juego no reconozca el gamepad, considerar ViGEm.
 - **Rollout:** release separado del CR-055/056/057; requiere banco físico.
 
 ## 7. Execution checklist
@@ -126,3 +158,4 @@ receptor en Windows y la política de handover.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Opened en lote de cuellos de botella de conexión |
+| 0.2.0 | 2026-11-01 | Owner + Buffy | CR Approved: owner amplió el scope de «failover de inputs» a «alternativa completa (sin Wi-Fi) + failover automático»; ADR-009 lo registra |

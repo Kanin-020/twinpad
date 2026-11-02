@@ -25,3 +25,8 @@ kotlin {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
+
+dependencies {
+    // Verificación unitaria del codec de la Signature → report map (TEST-0126).
+    testImplementation("junit:junit:4.13.2")
+}

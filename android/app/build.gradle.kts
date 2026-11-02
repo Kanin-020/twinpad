@@ -46,6 +46,9 @@ kotlin {
 }
 
 dependencies {
+    // Motor HID (CR-059): el teléfono como gamepad BT nativo; la app solo
+    // conoce la interfaz (ARCH §3).
+    implementation(project(":hid"))
     // UI clásica de Views (layouts XML + drawables XML, ENG §11: Google/AOSP
     // Apache-2.0); la vista editable se edita en Android Studio.
     implementation("androidx.core:core-ktx:1.15.0")

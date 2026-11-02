@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0126 |
+| TEST | TEST-0128 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -54,6 +54,8 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-0122 | Passed (2026-11-01, host) | CR-055: Tests Kotlin `PairingStateMachineTest` (HB2/HB5) — en Linked el `ping` se responde con `pong` ecuando `t`, pong y tráfico de sesión no alteran el estado, y la señal nula del watchdog de silencio (HB5, 15 s) termina como `SessionEnded` igual que un corte |
 | REQ-002 | SPEC-002 | DES-002 | TEST-0123 | Passed (2026-11-01, host) | CR-055 (regresión del cableado, reporte «la sesión se corta» del owner): Tests Kotlin `PairingViewModelTest` con TCP loopback real — en U4 el `ping` del Servidor llega a la máquina por el colector de `PairingViewModel` (la ruta de medios la tragaba: el Servidor vencía HB4 a los 15 s y mataba la sesión durante el stream); el eco `pong{t:0}` sale por el socket |
 | REQ-002 | SPEC-002 | DES-002 | TEST-0124 | Passed (2026-11-01, host) | CR-060: Tests Kotlin `PairingStateMachineTest` — entrada manual del código sin cámara (§8.4): desde U1 un `QrScanned` válido pasa directo a Handshaking con `Connect`+`pair_request` y SIN efectos de cámara; payload inválido desde U1 → E5 sin abrir conexión; blancos al inicio/fin se recortan y blancos en el medio son E5 |
+| REQ-003 | SPEC-004 | DES-005 | TEST-0126 | Passed (2026-11-01, host) | CR-059/ADR-009: Tests Kotlin `SignatureHidCodecTest` — codec de la Signature al reporte HID BT (report ID, clamps §9 de sticks/triggers, neutro vía Null State, nibbles botones b0…b3/b4…b11, posiciones de byte fijas y End Collection del report map |
+| REQ-003 | SPEC-004 | DES-005 | TEST-0127 | Passed (2026-11-01, host) | CR-059/ADR-009: Tests Kotlin `HandoverPolicyTest` — política de handover del gamepad: LAN con Linked, BT si el canal HID está operativo con la LAN caída (HB5/expiry), H0 sin BT; histéresis de liberación 5 s |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0116 | Passed (2026-10-31, host) | CR-053: Test Rust `video_stage_stats_drains_latest_line_per_live_game` (`server::games::tests`) — `push_video_stage_stats` solo acepta juego vivo, la última línea de ventana reemplaza a la previa, `pop_video_stage_stats` la consume una vez (sin reencolar) y un juego extraño nunca recibe telemetría ajena |
 | REQ-006 | SPEC-006 | DES-004 | TEST-0117 | Passed (2026-10-31, host) | CR-053: Test Kotlin `VideoStageStatsCodecTest` (wire Android) — decodificación estricta paridad con core (ventana fuera de rango, etapa/evento de catálogo, `avg_us > max_us`, `count < 1`, tupla incompleta, etapa repetida, evento desconocido y línea no JSON → null) y formateo compacto del HUD «pix 210 µs (480 µs) · b64 55 µs (90 µs) · 120 ev»; contenido vacío → línea oculta |
 | REQ-006 | SPEC-006 | DES-004 | TEST-044 | Draft | Reenvío de línea NDJSON desde el Server PC al adaptador Cemu vivo (`server::games::tests::cemu_input_is_forwarded_to_live_adapter_only`) |
