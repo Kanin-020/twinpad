@@ -1,7 +1,6 @@
 package com.twinpad.android.app.pairing.network
 
 import com.twinpad.android.app.wire.ProtocolConstants
-
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +40,7 @@ class TcpPairingClient(
     private val lineChannel = Channel<String?>(capacity = Channel.UNLIMITED)
     private val pendingWrites = Channel<String>(capacity = Channel.UNLIMITED)
     private var readerJob: Job? = null
+    private var writerJob: Job? = null
     private var socket: Socket? = null
 
     @Volatile private var connectedHost: String? = null
@@ -63,8 +63,10 @@ class TcpPairingClient(
     ) {
         readerJob =
             scope.launch {
+                // CR-056: la vida del socket abarca TODO el bloque (el closing
+                // `finally` lo referencia por intento, fuera del try).
+                val pairingSocket = Socket()
                 try {
-                    val pairingSocket = Socket()
                     pairingSocket.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
                     pairingSocket.soTimeout = FIVE_SECONDS_MS // sin respuesta en 5 s → E1
                     // CR-049: Nagle absent — sin esto, los input_report (y las
@@ -79,9 +81,13 @@ class TcpPairingClient(
                 } catch (e: java.io.IOException) {
                     // Conexión rechazada o cortada: el `finally` entrega `null`
                     // y la máquina lo interpreta como E1 (SPEC-002 §9).
+                    // (CancellationException se propaga sin catch: la cláusula
+                    // explícita sería un RethrowCaughtException de detekt.)
                 } finally {
-                    closeQuietly()
-                    lineChannel.trySend(null)
+                    // CR-056 (reintento U6): el cierre es POR INTENTO — si el
+                    // intento vivo ya es otro socket, este `finally` no lo mata.
+                    closeAttempt(pairingSocket)
+                    if (socket == null) lineChannel.trySend(null)
                 }
             }
     }
@@ -125,20 +131,22 @@ class TcpPairingClient(
 
     /** Inicia el único escritor: drena [pendingWrites] hacia `s` en FIFO. */
     private fun startWriter(s: Socket) {
-        scope.launch {
-            try {
-                val writer = BufferedWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8))
-                for (line in pendingWrites) {
-                    writer.write(line)
-                    writer.write("\n")
-                    writer.flush()
+        writerJob?.cancel()
+        writerJob =
+            scope.launch {
+                try {
+                    val writer = BufferedWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8))
+                    for (line in pendingWrites) {
+                        writer.write(line)
+                        writer.write("\n")
+                        writer.flush()
+                    }
+                } catch (e: java.io.IOException) {
+                    // El socket cerró con escrituras en vuelo: señal de fin.
+                    closeAttempt(s)
+                    if (socket == null) lineChannel.trySend(null)
                 }
-            } catch (e: java.io.IOException) {
-                // El socket cerró con escrituras en vuelo: señal de fin.
-                closeQuietly()
-                lineChannel.trySend(null)
             }
-        }
     }
 
     /** Encola una línea NDJSON con `\n` final (SPEC-001 §4.2); el escritor
@@ -158,7 +166,6 @@ class TcpPairingClient(
     }
 
     fun disconnect() {
-        readerJob?.cancel()
         closeQuietly()
     }
 
@@ -170,12 +177,30 @@ class TcpPairingClient(
     /** Cierra el socket y descarta escrituras pendientes: sin conexión ya
      * no tienen destino (un intento abortado no deja basura para el siguiente). */
     private fun closeQuietly() {
+        readerJob?.cancel()
+        writerJob?.cancel()
         runCatching { socket?.close() }
         socket = null
         connectedHost = null
         sessionMode.set(false)
         while (true) {
             if (pendingWrites.tryReceive().getOrNull() == null) break
+        }
+    }
+
+    /** CR-056 (reintento U6): cierre por intento. Solo muta el estado
+     * compartido (socket/host/watchdog) si el socket que cierra sigue siendo
+     * el vigente: el `finally` de un intento ANTIGUO nunca puede matar el
+     * socket de un intento nuevo. */
+    private fun closeAttempt(attemptSocket: Socket) {
+        runCatching { attemptSocket.close() }
+        if (socket === attemptSocket) {
+            socket = null
+            connectedHost = null
+            sessionMode.set(false)
+            while (true) {
+                if (pendingWrites.tryReceive().getOrNull() == null) break
+            }
         }
     }
 }

@@ -67,6 +67,17 @@ pub enum HandshakeMsg {
         /// Eco exacto del `t` del `ping` respondido (§4.3 HB3).
         t: u64,
     },
+    /// app → servidor: reanudación de una sesión retenida (§8.2, CR-056).
+    /// Se envía como PRIMERA línea de una conexión de control nueva.
+    #[serde(rename = "pair_resume")]
+    PairResume {
+        /// `session_id`: 16 bytes base64url de la ligadura retenida.
+        session_id: String,
+        /// `nonce_c`: 32 bytes base64url, fresco por intento.
+        nonce_c: String,
+        /// `proof`: 32 bytes base64url sobre `twinpad.v1 resume`.
+        proof: String,
+    },
 }
 
 /// Serializa un mensaje a su línea NDJSON canónica (sin `\n` final).
@@ -119,6 +130,18 @@ fn validate(msg: &HandshakeMsg) -> PairResult<()> {
         // §4.3: `t` es un contador; su rango lo arbitra la política de
         // liveness de `heartbeat` (HB3), no el codec del mensaje.
         HandshakeMsg::Ping { .. } | HandshakeMsg::Pong { .. } => Ok(()),
+        HandshakeMsg::PairResume {
+            session_id,
+            nonce_c,
+            proof,
+        } => {
+            let bytes = decode_b64_32(session_id)?;
+            if bytes.len() != 16 {
+                return Err(PairError::MalformedMessage);
+            }
+            expect_len32(nonce_c)?;
+            expect_len32(proof)
+        }
     }
 }
 
@@ -203,6 +226,29 @@ mod tests {
         for msg in msgs {
             assert_eq!(decode(&encode(&msg).unwrap()).unwrap(), msg);
         }
+    }
+
+    #[test]
+    fn resume_roundtrip_and_field_lengths() {
+        let msg = HandshakeMsg::PairResume {
+            session_id: S16.to_string(),
+            nonce_c: N32.to_string(),
+            proof: N32.to_string(),
+        };
+        let line = encode(&msg).unwrap();
+        assert!(line.starts_with("{\"type\":\"pair_resume\""));
+        assert_eq!(decode(&line).unwrap(), msg);
+
+        // session_id de 15 bytes → E4 (SPEC-001 §4.2; CR-056).
+        let short = format!("{{\"type\":\"pair_resume\",\"session_id\":\"{short16}\",\"nonce_c\":\"{N32}\",\"proof\":\"{N32}\"}}",
+            short16 = "A".repeat(20));
+        assert_eq!(decode(&short), Err(PairError::MalformedMessage));
+        // nonce_c corto → E4.
+        let bad_nonce = format!(
+            "{{\"type\":\"pair_resume\",\"session_id\":\"{S16}\",\"nonce_c\":\"{short_n}\",\"proof\":\"{N32}\"}}",
+            short_n = "A".repeat(42)
+        );
+        assert_eq!(decode(&bad_nonce), Err(PairError::MalformedMessage));
     }
 
     #[test]

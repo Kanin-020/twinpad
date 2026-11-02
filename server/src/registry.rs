@@ -8,15 +8,33 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::sync::Arc;
+use twinpad_core::resume::RetainedSession;
 use twinpad_core::{SessionId, SessionKey};
+
+impl crate::session::ControlRetention for SessionRegistry {
+    fn take_retained(&self, session_id: &SessionId, now_ms: u64) -> Option<RetainedSession> {
+        let taken = lock_or_reset(&self.retained).remove(session_id);
+        if let Some(retained) = taken {
+            if !retained.retention_alive(now_ms) {
+                // La ventana murió entre retener y el intento: el resume
+                // será rechazado y el estado de media se destruye ya.
+                self.destroy_media_state(session_id);
+            }
+            Some(retained)
+        } else {
+            None
+        }
+    }
+}
 
 type StoredMediaCredential = (Arc<SessionKey>, Arc<AtomicBool>);
 
-/// Toma el lock; envenenado → degrada a registro vacío (seguro: las
-/// sesiones "perdidas" se cierran al caer sus streams).
-fn lock_or_reset<'a>(
-    mutex: &'a Mutex<HashMap<SessionId, TcpStream>>,
-) -> std::sync::MutexGuard<'a, HashMap<SessionId, TcpStream>> {
+/// Toma el lock; envenenado → degrada a mapa vacío (seguro: las sesiones
+/// "perdidas" se cierran al caer sus streams). Genérico: sirve igual para
+/// streams, credenciales, selecciones y retenciones (CR-056).
+fn lock_or_reset<'a, V>(
+    mutex: &'a Mutex<HashMap<SessionId, V>>,
+) -> std::sync::MutexGuard<'a, HashMap<SessionId, V>> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -39,6 +57,9 @@ pub struct SessionRegistry {
     keys: Mutex<HashMap<SessionId, StoredMediaCredential>>,
     selected_games: Mutex<HashMap<SessionId, String>>,
     media_games: Mutex<HashMap<SessionId, String>>,
+    /// CR-056 (SPEC-001 §8.2): ligaduras retenidas tras la caída del socket
+    /// de control, con su ventana de 60 000 ms (Sile session state S4).
+    retained: Mutex<HashMap<SessionId, RetainedSession>>,
 }
 
 impl SessionRegistry {
@@ -81,7 +102,7 @@ impl SessionRegistry {
         &self,
         session_id: &SessionId,
     ) -> Option<(Arc<SessionKey>, Arc<AtomicBool>)> {
-        if !self.contains(session_id) {
+        if !self.contains(session_id) && !self.retained_contains(session_id) {
             return None;
         }
         self.keys
@@ -145,6 +166,75 @@ impl SessionRegistry {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(session_id)
             .cloned()
+    }
+
+    /// CR-056 (SPEC-001 §8.2): mueve la sesión a retención tras la caída del
+    /// socket de control en vez de destruirla (TEST-007 la destruía). Mantiene
+    /// session_key y el estado de media; solo libera el stream muerto y llena
+    /// el mapa de retención con ventana de `twinpad_core::resume::RETENTION_MS`
+    /// (estado S4).
+    pub fn retain(&self, session_id: &SessionId, session_key: &SessionKey, now_ms: u64) {
+        lock_or_reset(&self.streams).remove(session_id); // cierra el stream muerto
+        lock_or_reset(&self.retained).insert(
+            *session_id,
+            RetainedSession {
+                session_id: *session_id,
+                session_key: *session_key,
+                retained_since_ms: now_ms,
+            },
+        );
+    }
+
+    /// CR-056: destruye las ligaduras cuya retención venció (requerirá QR).
+    /// Devuelve cuántas expiraron (para el diagnóstico del server).
+    pub fn sweep_retained(&self, now_ms: u64) -> usize {
+        let expired: Vec<SessionId> = {
+            let mut map = lock_or_reset(&self.retained);
+            let expired: Vec<SessionId> = map
+                .values()
+                .filter(|r| !r.retention_alive(now_ms))
+                .map(|r| r.session_id)
+                .collect();
+            for sid in &expired {
+                map.remove(sid);
+            }
+            expired
+        };
+        for sid in &expired {
+            self.destroy_media_state(sid);
+        }
+        expired.len()
+    }
+
+    /// Destruye credencial y estado de media (el “remove” sin stream).
+    fn destroy_media_state(&self, session_id: &SessionId) {
+        if let Some((_, active)) = self
+            .keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id)
+        {
+            active.store(false, Ordering::Release);
+        }
+        self.selected_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id);
+        self.media_games
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id);
+        lock_or_reset(&self.retained).remove(session_id);
+    }
+
+    /// ¿Hay ligadura retenida viva para este id? (canal media en S4).
+    pub fn retained_contains(&self, session_id: &SessionId) -> bool {
+        lock_or_reset(&self.retained).contains_key(session_id)
+    }
+
+    /// Ligadura retenida (sin remover) — para el diagnóstico y las pruebas.
+    pub fn retained(&self, session_id: &SessionId) -> Option<RetainedSession> {
+        lock_or_reset(&self.retained).get(session_id).cloned()
     }
 
     /// ¿Existe una sesión activa con este id? (TEST-007: reanudación §8.2.)

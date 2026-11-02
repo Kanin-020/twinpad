@@ -21,6 +21,11 @@ sealed class PairingUiState {
     /** U4 Vinculado: única con sesión activa (SPEC-002 §14). */
     data class Linked(val sessionId: String) : PairingUiState()
 
+    /** U6 Reconectando (CR-056, SPEC-001 §8.2/S4): la ligadura está retenida
+     * en el servidor; la app intenta `pair_resume` mientras la ventana viva
+     * (60 000 ms). El session_id NO cambia desde aquí.` */
+    data class Reconnecting(val sessionId: String) : PairingUiState()
+
     /** U5 Error, con el error exacto de la tabla SPEC-002 §9. */
     data class Failure(val error: PairingError) : PairingUiState()
 }
@@ -79,6 +84,11 @@ sealed class PairingEvent {
 
     /** El usuario pulsa "reintentar" (U5→U1, y U1 con error previo→escanear). */
     data object Retry : PairingEvent()
+
+    /** CR-056 (U6): tick del temporizador de reanudación programado por la
+     * UI/VM mientras dura la retención del servidor (60 000 ms, §8.2).
+     * `elapsedMs` se mide desde la caída del socket de control. */
+    data class ResumeTick(val elapsedMs: Long) : PairingEvent()
 }
 
 /**
@@ -91,6 +101,10 @@ class PairingStateMachine {
         private set
 
     private var client: ClientHandshake? = null
+
+    /** CR-056: dirección del último servidor conectado — U6 reconecta al
+     * MISMO host:port sin re-escanear (§8.2). */
+    private var lastConnect: Pair<String, Int>? = null
 
     /** Error previo recordado para "reintentar" desde U1 (SPEC-002 §6). */
     private var priorError: PairingError? = null
@@ -105,6 +119,7 @@ class PairingStateMachine {
             PairingUiState.Scanning -> onScanning(event)
             PairingUiState.Handshaking -> onHandshaking(event)
             is PairingUiState.Linked -> onLinked(event)
+            is PairingUiState.Reconnecting -> onReconnecting(event, current)
             is PairingUiState.Failure -> onFailure(event, current)
         }
     }
@@ -164,6 +179,8 @@ class PairingStateMachine {
             }
         val (client, request) = ClientHandshake.start(payload.token)
         this.client = client
+        // CR-056: recordado para la reanudación U6 (§8.2, mismo host:port).
+        lastConnect = payload.serverAddr to payload.serverPort
         state = PairingUiState.Handshaking
         return cameraStop +
             listOf(
@@ -205,9 +222,14 @@ class PairingStateMachine {
                 is HandshakeMessage.Request, is HandshakeMessage.Proof,
                 // CR-055: un ping/pong durante el Handshake también es fuera
                 // de secuencia (SPEC-001 §9 E3).
-                is HandshakeMessage.Ping, is HandshakeMessage.Pong ->
+                is HandshakeMessage.Ping,
+                is HandshakeMessage.Pong,
+                ->
                     // Mensaje fuera de secuencia (SPEC-001 §9 E3).
                     failAttempt(PairingError.Rejected)
+                // CR-056: `pair_resume` es app→servidor; recibido por la app
+                // es fuera de secuencia (E3).
+                is HandshakeMessage.Resume -> failAttempt(PairingError.Rejected)
             }
         } catch (e: PairingException) {
             failAttempt(e.error)
@@ -218,12 +240,15 @@ class PairingStateMachine {
         when (event) {
             is PairingEvent.WireMessage ->
                 if (event.line == null) {
-                    // SESIÓN: corte de conexión estando vinculado (SPEC-002 §9).
+                    // SESIÓN: corte de conexión estando vinculado.
                     // CR-055 HB4/HB6: el heartbeat vencido llega aquí con la
                     // misma señal que un corte (sin error propio).
-                    state = PairingUiState.Failure(PairingError.SessionEnded)
-                    client = null
-                    listOf(Effect.ShowError(PairingError.SessionEnded))
+                    // CR-056 (SPEC-001 §8.2): NO exige re-scan si el servidor
+                    // retiene la ligadura → U6 «Reconectando»; el temporizador
+                    // de la VM alimenta [PairingEvent.ResumeTick] cada reintento.
+                    val current = state as PairingUiState.Linked
+                    state = PairingUiState.Reconnecting(current.sessionId)
+                    emptyList()
                 } else {
                     // CR-055 (SPEC-001 §4.3 HB2): responder `pong` con eco de
                     // `t`. Las demás líneas son tráfico de sesión posterior
@@ -242,6 +267,80 @@ class PairingStateMachine {
             else -> emptyList()
         }
 
+    /** CR-056 (U6, SPEC-001 §8.2): reanudación automática de la sesión
+     * retenida. Cada [PairingEvent.ResumeTick] re-conecta y envía
+     * `pair_resume` con el mismo session_id + session_key (§4.2); el
+     * temporizador lo programa la VM a un ritmo fijo. Vencida la ventana
+     * (60 000 ms) o un E3 del servidor, la sesión termina (U1 con error,
+     * exige re-scan). */
+    private fun onReconnecting(
+        event: PairingEvent,
+        current: PairingUiState.Reconnecting,
+    ): List<Effect> =
+        when (event) {
+            is PairingEvent.ResumeTick ->
+                if (event.elapsedMs > resumeWindowMs) {
+                    state = PairingUiState.Failure(PairingError.SessionEnded)
+                    client = null
+                    listOf(Effect.Disconnect, Effect.ShowError(PairingError.SessionEnded))
+                } else {
+                    val (addr, port) =
+                        lastConnect
+                            ?: return failAttempt(PairingError.SessionEnded)
+                    val resumeLine = buildResumeLine(current.sessionId)
+                    state = PairingUiState.Reconnecting(current.sessionId)
+                    listOf(
+                        Effect.Disconnect,
+                        Effect.Connect(addr, port),
+                        Effect.SendLine(resumeLine),
+                    )
+                }
+            is PairingEvent.WireMessage -> onReconnectingWire(event.line)
+            is PairingEvent.Cancelled -> cancelAttempt(from = state)
+            else -> emptyList()
+        }
+
+    /** Línea recibida durante U6 (CR-056, §8.2): `pair_ack` con el session_id
+     * retenido retoma la sesión; el resto es ruido del intento anterior y no
+     * altera la máquina (el próximo `ResumeTick` reintenta). */
+    private fun onReconnectingWire(line: String?): List<Effect> =
+        when (line) {
+            null -> emptyList() // intento en vuelo cayó: el próximo tick reintenta
+            else ->
+                try {
+                    when (val msg = HandshakeCodec.decode(line)) {
+                        is HandshakeMessage.Ack -> {
+                            // §8.2: el mismo session_id retenido.
+                            state = PairingUiState.Linked(msg.sessionId)
+                            emptyList()
+                        }
+                        is HandshakeMessage.Error ->
+                            failAttempt(PairingError.SessionEnded)
+                        else -> emptyList()
+                    }
+                } catch (e: PairingException) {
+                    emptyList() // línea ruidosa del intento anterior: sin efecto
+                }
+        }
+
+    /** Construye `pair_resume` (§4.2) con nonce fresco + proof HMAC sobre el
+     * dominio fijo usando la session_key ORIGINAL de la ligadura. */
+    private fun buildResumeLine(sessionId: String): String {
+        val key =
+            client?.sessionKeyOrNull()
+                ?: throw PairingException(PairingError.SessionEnded)
+        val sessionIdBytes = HandshakeCrypto.decodeB64(sessionId)
+        val nonceC = HandshakeCrypto.randomNonce()
+        val proof = HandshakeCrypto.computeResumeProof(key, sessionIdBytes, nonceC)
+        return HandshakeCodec.encode(
+            HandshakeMessage.Resume(
+                sessionId = sessionId,
+                nonceC = HandshakeCrypto.encodeB64(nonceC),
+                proof = HandshakeCrypto.encodeB64(proof),
+            ),
+        )
+    }
+
     private fun onFailure(
         event: PairingEvent,
         current: PairingUiState.Failure,
@@ -255,6 +354,10 @@ class PairingStateMachine {
             }
             else -> emptyList()
         }
+
+    /** Ventana de retención del servidor (CR-056, SPEC-001 §8.2): 60 000 ms.
+     * Paridad con `core::resume::RETENTION_MS`. */
+    private val resumeWindowMs: Long = 60_000L
 
     /** Aborta el intento y libera los recursos activos (SPEC-002 §8.2/§8.3). */
     private fun cancelAttempt(from: PairingUiState): List<Effect> {

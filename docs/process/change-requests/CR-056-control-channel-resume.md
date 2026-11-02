@@ -5,11 +5,11 @@
 | ID | CR-056 |
 | Title | Reanudación del canal de control cableada de punta a punta: retención de ligadura + mensaje `pair_resume` (SPEC-001 §8.2) |
 | Type | Correction (ambiguity) |
-| Status | `Open` |
+| Status | `Applied (owner-requested)` |
 | Author | Buffy (agente) |
 | Created | 2026-11-01 |
-| Decided | — |
-| Decided by | — |
+| Decided | 2026-11-01 |
+| Decided by | Owner (usuario) — orden directa: «Puedes implementar 56 + 57 + 58 directo?» |
 
 ## 1. Target
 
@@ -73,13 +73,13 @@ re-admitirlo sin re-escanear el QR". Ambigüedades y huecos:
 Reanudación del canal de control: dada una sesión retenida (S4), el cliente
 reconecta y envía `pair_resume` con session_id + pair_proof (mismo HMAC §5)
 + nonce_c fresco. Si es válido y la retención no expiró, el servidor
-re-admite la sesión y entrega `pair_ack`al con el MISMO session_id (el canal
+re-admite la sesión y entrega `pair_ack` con el MISMO session_id (el canal
 media ya anclado a ese session_id sigue usable). La ventana es de 60 000 ms
 (RETENTION_MS); vencida, exige re-scan. Numeración de reintentos ilimitada
 dentro de la ventana.
 
 §9 — código E3 se aplica también a `pair_resume` con session_id desconocido,
-  retención expirada o proof inválido (respuesta sin desglosar causa).
+  retención expirada o proof inválido, sin desglosar la causa al cliente (§9).
 
 §14 — reescribir la cláusula de reinicio:
 
@@ -90,7 +90,7 @@ dentro de la ventana.
   no lo reemplaza durante la retención.
 
 §10 — edge cases añadidos: retención expirada justo en el intento; resume
-  con app különboző session_id; servidor reiniciado durante la retención;
+  con session_id de otra ligadura; servidor reiniciado durante la retención;
   doble resume simultáneo.
 
 §16 — filas nuevas:
@@ -149,24 +149,26 @@ campos y el texto «nuevo session_id» rompería el canal media anclado.
 
 ## 6. Decision
 
-- **Outcome:** (pendiente) — ventana de retención de 60 000 ms y preservación
-  del session_id a confirmar por el owner al aplicar.
+- **Outcome:** Applied (owner-requested) — ventana de retención de 60 000 ms
+  y preservación del session_id confirmadas por el owner al aplicarse en la
+  misma iteración.
 - **Rationale:** cierra la única ambigüedad ejecutable que bloquea la
   reanudación §8.2 y alinea REQ-002 «sesión reutilizable», SPEC-002 U4→U1 y
   SPEC-003 §3.
-- **Rollout:** mismo release; Servidor y app Android actualizados juntos.
+- **Rollout:** mismo release; Servidor y app Android actualizados juntos (aplicado).
 
 ## 7. Execution checklist
 
-- [ ] Target document(s) updated
-- [ ] Dependent documents updated
-- [ ] Tests added/updated (TEST-0123..0125)
-- [ ] `testing/traceability.md` updated (including history)
-- [ ] Indexes updated
-- [ ] Code change merged
+- [x] Target document(s) updated (SPEC-001 1.2.0/1.3.0, SPEC-002 1.12.0, SPEC-003 1.12.0)
+- [x] Dependent documents updated (DES-001/002/004)
+- [x] Tests added/updated (TEST-0128/0129/0130 — renumerados: 0123..0125 ya estaban en uso)
+- [x] `testing/traceability.md` updated (including history)
+- [x] Indexes updated
+- [x] Code change merged
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Opened en lote de cuellos de botella de conexión |
+| 1.0.0 | 2026-11-01 | Buffy (agente) | Applied (owner-requested): retención 60 000 ms + `pair_resume` + U6: TEST-0128/0129/0130 |

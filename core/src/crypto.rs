@@ -21,7 +21,9 @@ pub use qr::QR_VALIDITY_MS;
 
 /// HMAC-SHA256 con clave de 32 bytes, cero-rellena a 64 (RFC 2104 §2).
 /// Equivalente bit a bit a usar la clave de 32 bytes directamente.
-fn mac(key32: &[u8; 32]) -> Hmac<Sha256> {
+/// `pub(crate)`: los nuevos MAC del protocolo (`resume`, CR-056) comparten
+/// la misma primitiva y su invariante RFC 2104.
+pub(crate) fn mac(key32: &[u8; 32]) -> Hmac<Sha256> {
     let mut block = [0u8; 64];
     block[..32].copy_from_slice(key32);
     <Hmac<Sha256> as KeyInit>::new((&block).into())

@@ -24,6 +24,7 @@ pub mod input;
 pub mod media_crypto;
 pub mod message;
 pub mod qr;
+pub mod resume;
 pub mod stream;
 
 /// Token de sesión: 32 bytes de entropía, un solo uso (SPEC-001 R2, ADR-004).

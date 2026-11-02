@@ -16,6 +16,9 @@ object HandshakeCrypto {
     /** Info fija de HKDF (DES-001 §4). */
     private val HKDF_INFO: ByteArray = "twinpad.v1 session".toByteArray(Charsets.UTF_8)
 
+    /** Dominio fijo del proof de reanudación (CR-056, SPEC-001 §4.2). */
+    private val RESUME_PROOF_DOMAIN: ByteArray = "twinpad.v1 resume".toByteArray(Charsets.UTF_8)
+
     private const val HMAC_ALGORITHM: String = "HmacSHA256"
     private const val KEY_BYTES: Int = 32
 
@@ -61,6 +64,21 @@ object HandshakeCrypto {
         val nonceS: ByteArray,
         val nonceC: ByteArray,
     )
+
+    /** Proof de reanudación (CR-056, SPEC-001 §4.2/§8.2): HMAC-SHA256 con
+     * la session_key sobre `"twinpad.v1 resume" ‖ session_id_raw ‖ nonce_c_raw`
+     * — paridad bit a bit con `core::resume::resume_proof`. */
+    fun computeResumeProof(
+        sessionKey: ByteArray,
+        sessionId: ByteArray,
+        nonceC: ByteArray,
+    ): ByteArray {
+        val mac = macInstance(sessionKey)
+        mac.update(RESUME_PROOF_DOMAIN)
+        mac.update(sessionId)
+        mac.update(nonceC)
+        return mac.doFinal()
+    }
 
     /** Decodifica base64url sin relleno; E4 si es inválido (causa preservada). */
     fun decodeB64(value: String): ByteArray =

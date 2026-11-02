@@ -13,7 +13,7 @@ use std::net::TcpListener;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use twinpad_server::session::{SessionDeps, SessionOutcome, run_handshake};
+use twinpad_server::session::{SessionDeps, SessionOutcome, run_control_session};
 use twinpad_server::tokens::{Clock, RandomBytes, TokenStore};
 
 /// Puerto TCP del servidor (REQ-001; dentro del rango 1024–65535 de §4.1).
@@ -78,6 +78,22 @@ fn main() {
         Err(error) => eprintln!("Twinpad: interfaz local del QR no disponible: {error}"),
     }
     let registry = Arc::new(twinpad_server::registry::SessionRegistry::new());
+
+    // CR-056 (SPEC-001 §8.2): barre las ligaduras retenidas; la vencida se
+    // destruye (exigirá re-scan de QR). Tick de 1 s, sin sondeo activo en
+    // el camino caliente de la sesión.
+    {
+        let sweeper = Arc::clone(&registry);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let expired = sweeper.sweep_retained(SystemClock.now_ms());
+            if expired > 0 {
+                println!(
+                    "Retención expirada: {expired} fijadura(s) destruida(s); exige QR nuevo."
+                );
+            }
+        });
+    }
     let media_hub = Arc::new(twinpad_server::media::MediaHub::default());
     let input_owner = Arc::new(std::sync::Mutex::new(None::<twinpad_core::SessionId>));
 
@@ -232,12 +248,18 @@ fn main() {
                 },
             };
             let mut stream = stream;
-            match run_handshake(&mut stream, record, &mut deps) {
-                SessionOutcome::Established {
-                    session_id,
-                    session_key,
-                } => {
-                    store_ref.mark_consumed(&token_for_thread); // R2, §14
+            // CR-056 (SPEC-001 §8.2): la PRIMERA línea puede ser `pair_resume`
+            // de una ligadura retenida; si no, Handshake normal §7.
+            let retention = Arc::clone(&registry_ref);
+            let outcome =
+                run_control_session(&mut stream, record, retention.as_ref(), &mut deps);
+            let resumed = matches!(outcome, SessionOutcome::Resumed { .. });
+            match outcome {
+                SessionOutcome::Established { session_id, session_key }
+                | SessionOutcome::Resumed { session_id, session_key } => {
+                    if !resumed {
+                        store_ref.mark_consumed(&token_for_thread); // R2, §14
+                    }
                     // Conexión persistente (SPEC-001 §8.2): el server retiene
                     // un duplicado del stream para enviarle a la app; la
                     // conexión no se cierra tras el pair_ack.
@@ -257,7 +279,12 @@ fn main() {
                         );
                         session_alive = true;
                     }
-                    registry_ref.insert_active_key(session_id, session_key);
+                    // CR-056: en resume la credencial media ya está viva en el
+                    // registro; reinsertar apagaría el Arc<AtomicBool> previo
+                    // y cortaría el relay del teléfono conectado.
+                    if !resumed {
+                        registry_ref.insert_active_key(session_id, session_key);
+                    }
 
                     if session_alive {
                         // Anti-lag @60fps (2026-10-10): el socket de sesión
@@ -282,9 +309,18 @@ fn main() {
                         // seleccionado no se emite ningún medio.
                         let write_lock = SessionWriteLock::default();
                         let session_writer = Arc::new(SessionWriter::default());
-                        let selected_game = Arc::new(std::sync::Mutex::new(None::<String>));
+                        // CR-056: al reanudar se respeta la selección vigente
+                        // (el usuario no vuelve a elegir juego tras un corte).
+                        let previous_selected = if resumed {
+                            registry_ref.selected_game(&session_id)
+                        } else {
+                            None
+                        };
+                        let selected_game = Arc::new(std::sync::Mutex::new(previous_selected.clone()));
                         let media_game = Arc::new(std::sync::Mutex::new(None::<String>));
-                        registry_ref.set_selected_game(session_id, None);
+                        if !resumed {
+                            registry_ref.set_selected_game(session_id, None);
+                        }
                         let initial_video_config = twinpad_server::video::VideoConfig::from_env();
 
                         let session_input_snapshot =
@@ -423,7 +459,16 @@ fn main() {
                                     );
                                     session_running
                                         .store(false, std::sync::atomic::Ordering::Release);
-                                    registry_ref.remove(&session_id);
+                                    // CR-056 (SPEC-001 §8.2): en lugar de destruir
+                                    // la ligadura, entra a retención S4 (60 s):
+                                    // session_key + selección de juego siguen
+                                    // vivas y un `pair_resume` re-admite la
+                                    // sesión con el MISMO session_id.
+                                    registry_ref.retain(
+                                        &session_id,
+                                        &session_key,
+                                        SystemClock.now_ms(),
+                                    );
                                     release_input_owner(&input_owner_ref, session_id);
                                     println!("Sesión finalizada.");
                                     break;

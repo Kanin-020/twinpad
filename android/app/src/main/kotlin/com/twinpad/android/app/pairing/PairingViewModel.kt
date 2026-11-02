@@ -2,6 +2,7 @@ package com.twinpad.android.app.pairing
 
 import android.app.Application
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -27,6 +28,7 @@ import com.twinpad.android.app.wire.StreamMessage
 import com.twinpad.android.app.wire.VideoStageStatsCodec
 import com.twinpad.android.app.wire.VideoStageStatsMessage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -442,12 +444,42 @@ class PairingViewModel(
             // declara la conexión terminada; el pong mantiene viva la sesión.
             network.armSessionWatchdog()
         }
+        // CR-056 (U6): el temporizador de reanudación vive mientras U6.
+        scheduleResumeLoop()
         armGamepadChannel()
         // CR-059: el switcher decide arranque y liberación con histéresis
         // (caída de sesión, handshake fallido sin Wi-Fi, regreso a LAN).
         gamepadSwitcher.onUiState(previous, _uiState.value)
         effects.forEach(executeEffect)
     }
+
+    /** Temporizador U6 (CR-056, SPEC-001 §8.2): mientras la máquina esté en
+     * «Reconectando», alimenta [PairingEvent.ResumeTick] con el tiempo desde
+     * la caída. Primer intento inmediato; reintento cada 2 s dentro de la
+     * ventana de retención del servidor (60 s). Al salir de U6 (pair_ack
+     * successful o ventana vencida) el bucle muere solo.
+     * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
+    private val scheduleResumeLoop: () -> Unit = {
+        val inResume = _uiState.value is PairingUiState.Reconnecting
+        if (inResume && resumeJob == null) {
+            val droppedAt = SystemClock.elapsedRealtime()
+            resumeJob =
+                viewModelScope.launch(Dispatchers.IO) {
+                    while (true) {
+                        val stateNow = _uiState.value
+                        if (stateNow !is PairingUiState.Reconnecting) break
+                        feed(PairingEvent.ResumeTick(SystemClock.elapsedRealtime() - droppedAt))
+                        delay(RESUME_RETRY_MS)
+                    }
+                }
+        } else if (!inResume) {
+            resumeJob?.cancel()
+            resumeJob = null
+        }
+    }
+
+    /** CR-056: trabajo vivo del temporizador de reanudación U6. */
+    private var resumeJob: kotlinx.coroutines.Job? = null
 
     /** SPEC-004 §6 H0→H1: arma el canal del gamepad con salida por la ruta
      * vigente (LAN de la sesión, o el canal BT del switcher sin LAN); si no
@@ -498,6 +530,7 @@ class PairingViewModel(
     }
 
     override fun onCleared() {
+        resumeJob?.cancel()
         mediaSession.close()
         playback.release()
         network.shutdown()
@@ -506,6 +539,12 @@ class PairingViewModel(
     }
 
     companion object {
+        /** CR-056 (U6): reintento de `pair_resume` cada 2 000 ms (el primer
+         * intento es inmediato); la ventana de retención del servidor es de
+         * 60 000 ms (SPEC-001 §8.2) — el pacing es de la VM, el límite lo
+         * impone [PairingEvent.ResumeTick]. */
+        const val RESUME_RETRY_MS: Long = 2_000L
+
         /** Factory de producción: el ViewModel usa sus colaboradores por defecto. */
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

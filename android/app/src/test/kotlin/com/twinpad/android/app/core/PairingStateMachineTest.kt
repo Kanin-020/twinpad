@@ -69,6 +69,88 @@ class PairingStateMachineTest {
         assertEquals(PairingUiState.Linked(sessionId), m.state)
     }
 
+    // ---- TEST-0130 — CR-056 (SPEC-002 §6/§9: corte en U4 → U6 Reconectando,
+    // reintento automático ≤ 60 s sin re-escanear el QR; helper: linkedMachine) ----
+
+    @Test
+    fun `control channel drop in Linked enters Reconnecting U6`() {
+        val m = linkedMachine()
+
+        val effects = m.onEvent(PairingEvent.WireMessage(null))
+        assertEquals(PairingUiState.Reconnecting(sessionId), m.state)
+        assertTrue(effects.isEmpty()) // el reintento lo programa el temporizador
+    }
+
+    @Test
+    fun `resume tick reconnects and sends canonical pair_resume`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+
+        val effects = m.onEvent(PairingEvent.ResumeTick(elapsedMs = 2_500))
+        val connect = effects.filterIsInstance<Effect.Connect>().single()
+        assertEquals("127.0.0.1", connect.addr) // mismo host:port, sin QR
+        assertEquals(8420, connect.port)
+        val resume =
+            HandshakeCodec.decode(
+                effects.filterIsInstance<Effect.SendLine>().single().line,
+            ) as HandshakeMessage.Resume
+        assertEquals(sessionId, resume.sessionId)
+
+        // Oráculo server-side: proof = HMAC(session_key, "twinpad.v1 resume" ‖ sid ‖ nonce_c).
+        val token = Base64.getUrlDecoder().decode(tokenStr)
+        val prk = hmac(ByteArray(32) { 11 }, token)
+        val sessionKey = hmac(prk, "twinpad.v1 session".toByteArray() + byteArrayOf(0x01))
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(sessionKey, "HmacSHA256"))
+        mac.update("twinpad.v1 resume".toByteArray())
+        mac.update(HandshakeCrypto.decodeB64(resume.sessionId))
+        mac.update(HandshakeCrypto.decodeB64(resume.nonceC))
+        assertTrue(mac.doFinal().contentEquals(HandshakeCrypto.decodeB64(resume.proof)))
+    }
+
+    @Test
+    fun `resume accepted with same session id returns to Linked U4`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+        m.onEvent(PairingEvent.ResumeTick(elapsedMs = 2_500))
+
+        // §8.2: el server entrega pair_ack con el MISMO session_id.
+        m.onEvent(
+            PairingEvent.WireMessage(
+                HandshakeCodec.encode(HandshakeMessage.Ack(sessionId)),
+            ),
+        )
+        assertEquals(PairingUiState.Linked(sessionId), m.state)
+    }
+
+    @Test
+    fun `resume window expiry forces rescan with session ended`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+
+        val effects = m.onEvent(PairingEvent.ResumeTick(elapsedMs = 60_001))
+        assertEquals(PairingUiState.Failure(PairingError.SessionEnded), m.state)
+        assertTrue(effects.any { it is Effect.Disconnect })
+    }
+
+    @Test
+    fun `resume rejected by server maps to session ended`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+        m.onEvent(PairingEvent.ResumeTick(elapsedMs = 2_500))
+
+        val effects =
+            m.onEvent(
+                PairingEvent.WireMessage(
+                    HandshakeCodec.encode(
+                        HandshakeMessage.Error(code = "E3", message = "rejected"),
+                    ),
+                ),
+            )
+        assertEquals(PairingUiState.Failure(PairingError.SessionEnded), m.state)
+        assertTrue(effects.any { it is Effect.Disconnect })
+    }
+
     /** Verificación del lado servidor: proof = HMAC(session_key, transcript). */
     private fun verifyProofServerSide(
         request: String,
@@ -332,12 +414,14 @@ class PairingStateMachineTest {
         assertEquals("""{"type":"pong","t":7}""", pong.line)
     }
 
-    /** HB5: el silencio (la misma señal `null` que un corte) termina la sesión. */
+    /** HB5: el silencio (la misma señal `null` que un corte) YA NO termina la
+     * sesión: CR-056 (SPEC-001 §8.2/S4) entra a U6 «Reconectando» y la ventana
+     * de retención decide el fin (TEST-0130). De ahí el cambio de historia. */
     @Test
-    fun `silence in linked session ends as SessionEnded`() {
+    fun `silence in linked session enters Reconnecting U6`() {
         val m = linkedMachine()
         m.onEvent(PairingEvent.WireMessage(null))
-        assertEquals(PairingUiState.Failure(PairingError.SessionEnded), m.state)
+        assertEquals(PairingUiState.Reconnecting(sessionId), m.state)
     }
 
     /** El pong no altera el estado; otro tráfico de sesión pasa sin efecto. */

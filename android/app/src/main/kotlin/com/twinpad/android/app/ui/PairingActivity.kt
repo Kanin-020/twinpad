@@ -644,6 +644,16 @@ class PairingActivity : AppCompatActivity() {
                 txtStatus.text = getString(R.string.pairing_handshaking)
                 btnCancel.isVisible = true
             }
+            is PairingUiState.Reconnecting -> {
+                // CR-056 (U6, SPEC-001 §8.2): sesión retenida en el server;
+                // la app reanuda sin QR. El video del server también puede
+                // seguir vivo (SPEC-003 §3: retención viva).
+                session.isVisible = true
+                preview.isVisible = false
+                txtStatus.text = getString(R.string.pairing_reconnecting)
+                btnCancel.isVisible = true
+                SessionForegroundService.start(this@PairingActivity)
+            }
             is PairingUiState.Linked -> {
                 session.isVisible = true
                 preview.isVisible = false

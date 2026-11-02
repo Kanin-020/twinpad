@@ -7,12 +7,12 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.11.0 |
+| Version | 1.12.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089, TEST-0124 (registrados en `testing/traceability.md`) |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089, TEST-0124, TEST-0130, TEST-0131, TEST-0134 (registrados en `testing/traceability.md`) |
 | Last updated | 2026-11-01 |
 
 ## 1. Purpose
@@ -64,7 +64,7 @@ Define el comportamiento observable de la app Twinpad en Android para vinculaci�
 
 ## 6. States
 
-Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Escaneando`, `U3 Handshake`, `U4 Vinculado`, `U5 Error`.
+Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Escaneando`, `U3 Handshake`, `U4 Vinculado`, `U5 Error`, `U6 Reconectando` (CR-056: degradación de U4 mientras la ligadura está en retención, SPEC-001 §8.2/S4).
 
 | From | Event | To | Side effects |
 |---|---|---|---|
@@ -78,7 +78,10 @@ Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Esca
 | U3 | `pair_ack` (SPEC-001 §7 paso 10–11) | U4 | guarda `session_id` y clave de sesión en memoria (§8.2 de SPEC-001) |
 | U3 | `pair_error` E1–E4 o fallo de conexión | U5 | mensaje según §9 |
 | U3 | "cancelar" | U1 | cierra la conexión |
-| U4 | corte de conexión (SPEC-001 §8.2 aplica) | U1 | mensaje "Sesión terminada" |
+| U4 | corte de conexión, retención posible (SPEC-001 §8.2/S4) | U6 | entra «Reconectando»: envía `pair_resume` con `nonce_c` fresco y proof HMAC (SPEC-001 §4.2/§8.2); sin cámara ni dialogo |
+| U6 | `pair_ack` con el mismo `session_id` | U4 | retoma la sesión; conserva credenciales media (SPEC-003) |
+| U6 | ventana de retención vencida (> 60 000 ms) | U1 | mensaje "Sesión terminada"; exige re-scan del QR |
+| U6 | `pair_error` E3 | U1 | mensaje "Vinculación rechazada" (ligadura desconocida o proof inválido) |
 | U4 | `games_available` con exactamente un Plugin | U4 | envía `game_select` automáticamente |
 | U4 | `games_available` con varios Plugins | U4 | muestra lista; envía `game_select` al elegir |
 | U4 | `game_selected` | U4 | marca el Plugin confirmado como fuente activa |
@@ -87,13 +90,13 @@ Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Esca
 | U5 | "reintentar" | U1 | limpia el error; el usuario re-escanea |
 | U2/U3 | app a segundo plano | U1 | cancela el intento y libera recursos (§10) |
 
-Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 y de ahí a U1/U2 por acción del usuario. En U4 se envía automáticamente `game_select` si hay un único Plugin vivo; si hay varios se muestra una lista. Solo se considera activa una fuente tras `game_selected`.
+Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 y de ahí a U1/U2 por acción del usuario. En U4 se envía automáticamente `game_select` si hay un único Plugin vivo; si hay varios se muestra una lista. Solo se considera activa una fuente tras `game_selected`. U6 conserva las credenciales de la sesión (`session_id` + `session_key` en memoria) y solo reintenta `pair_resume`: sin Heartbeat ni discovery del canal media mientras dura la degradación (el canal media anclado sigue vivo si el Servidor está en S4, SPEC-003).
 
 ## 7. Main flow
 
 1. El usuario pulsa "escanear QR": la app solicita permiso de cámara si no está concedido y muestra la Pantalla de escaneo (U2).
 2. La app decodifica el QR; si el payload no cumple SPEC-001 §4.1 → E5 (§9) y termina el intento.
-3. La app abre conexión TCP a `server_addr:server_port`; sin respuesta en 5 s → E1 (§9).
+3. La app resuelve `s` del QR (IP literal directa; nombre vía mDNS, SPEC-009/CR-057) y abre conexión TCP a `server_addr:server_port`; sin respuesta en 5 s → E1 (§9).
 4. La app envía `pair_request` (SPEC-001 §7 paso 5) y espera `pair_challenge`.
 5. La app deriva la clave de sesión y computa el proof exactamente según SPEC-001 §7 paso 8 (HKDF-SHA256 + HMAC-SHA256, transcript idéntico) y envía `pair_proof`.
 6. La app recibe `pair_ack` con `session_id` → U4 "Vinculado", sesión activa en memoria (SPEC-001 §5).
@@ -137,7 +140,7 @@ Invariante: U4 es el único estado con sesión activa; todo error devuelve a U5 
 | E4 | mensaje del servidor no parseable o fuera de constraints (SPEC-001 §4.2/SPEC-006) | "Respuesta no válida" |
 | E5 | payload no conforme a SPEC-001 §4.1, recibido por cámara O por código escrito (§8.4) | "QR no válido" |
 | PERMISO | permiso de cámara denegado (§8.1) | "Se necesita la cámara para escanear el QR" |
-| SESIÓN | corte de conexión estando en U4 | "Sesión terminada" |
+| SESIÓN | ventana de retención U6 vencida (SPEC-001 §8.2, CR-056) | "Sesión terminada" |
 
 La app muestra exactamente estas cadenas, no el campo `message` del `pair_error` (ese campo queda para diagnóstico del servidor; SPEC-001 §4.2).
 
@@ -269,6 +272,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.9.0 | 2026-10-28 | Product owner (CR-031) | Defaults de fábrica: 1920×1080 (R17), contain (R12), bitrate 30.000 kbps (R15); R18: "Mostrar fps" y "Mostrar botones" activados por defecto |
 | 1.10.0 | 2026-10-28 | Product owner (CR-032) | R19: interruptor "Distribución Nintendo" en el drawer (preferencia local persistente, apagado por defecto), táctil y mando físico, wire sin cambios; TEST-089/090 |
 | 1.11.0 | 2026-11-01 | Buffy (agente) (CR-060) | Entrada manual del código de vinculación sin cámara (§3, §4, §8.4, §9-E5, §10, §11-R20); wire y criptografía sin cambios; TEST-0124 |
+| 1.12.0 | 2026-11-01 | Buffy (agente) (CR-056 + CR-057) | U6 «Reconectando»: corte en U4 entra a U6 e intenta `pair_resume` mientras la retención de 60 000 ms viva (SPEC-001 §8.2); U2→U3 y U1→U3 resuelta `s` vía mDNS (SPEC-009) antes de abrir TCP; TEST-0130/0131/0134 |
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |

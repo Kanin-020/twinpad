@@ -47,6 +47,10 @@ sealed class HandshakeMessage {
 
     /** app → servidor: respuesta al latido (SPEC-001 §4.3 HB2, CR-055). */
     data class Pong(val t: Long) : HandshakeMessage()
+
+    /** app → servidor: reanudación de la sesión retenida (CR-056, §8.2).
+     * El proof cubre el dominio fijo §4.2 con la session_key ORIGINAL. */
+    data class Resume(val sessionId: String, val nonceC: String, val proof: String) : HandshakeMessage()
 }
 
 /**
@@ -74,6 +78,9 @@ object HandshakeCodec {
                 """{"type":"ping","t":${msg.t}}"""
             is HandshakeMessage.Pong ->
                 """{"type":"pong","t":${msg.t}}"""
+            is HandshakeMessage.Resume ->
+                """{"type":"pair_resume","session_id":"${msg.sessionId}",""" +
+                    "\"nonce_c\":\"${msg.nonceC}\",\"proof\":\"${msg.proof}\"}"
         }
 
     fun decode(line: String): HandshakeMessage {
@@ -91,6 +98,7 @@ object HandshakeCodec {
             "pair_error" -> decodeError(obj)
             "ping" -> HandshakeMessage.Ping(decodeHeartbeatCounter(obj))
             "pong" -> HandshakeMessage.Pong(decodeHeartbeatCounter(obj))
+            "pair_resume" -> decodeResume(obj)
             else -> throw unknownType(type)
         }
     }
@@ -121,6 +129,14 @@ object HandshakeCodec {
 
     private fun decodeAck(obj: JsonObject): HandshakeMessage.Ack =
         HandshakeMessage.Ack(obj.stringField("session_id").also { expectLen(it, SESSION_ID_BYTES) })
+
+    /** CR-056 (§4.2): session_id 16 B + nonce/proof 32 B (decode estricto). */
+    private fun decodeResume(obj: JsonObject): HandshakeMessage.Resume {
+        val sessionId = obj.stringField("session_id").also { expectLen(it, SESSION_ID_BYTES) }
+        val nonceC = obj.stringField("nonce_c").also { expectLen(it, NONCE_BYTES) }
+        val proof = obj.stringField("proof").also { expectLen(it, NONCE_BYTES) }
+        return HandshakeMessage.Resume(sessionId, nonceC, proof)
+    }
 
     private fun decodeError(obj: JsonObject): HandshakeMessage.Error {
         val code = obj.stringField("code")

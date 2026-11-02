@@ -7,12 +7,12 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 1.1.0 |
+| Version | 1.3.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
 | Realized by | DES-001 (núcleo puro implementado en `core/`; adaptadores TCP/servidor pendientes) |
-| Verified by | TEST-001 … TEST-009, TEST-0120 … TEST-0122 (registrados en `testing/traceability.md`) |
+| Verified by | TEST-001 … TEST-009, TEST-0120 … TEST-0130 (registrados en `testing/traceability.md`) |
 | Last updated | 2026-11-01 |
 
 ## 1. Purpose
@@ -29,6 +29,7 @@ Los términos de dominio (Pairing, QR de vinculación, Framebuffer, Signature HI
 - **Handshake**: el intercambio acotado de mensajes de §7 sobre la conexión TCP abierta tras el escaneo del QR. El término no designa aquí ninguna otra secuencia.
 - **Nonce**: cadena aleatoria de 32 bytes codificada base64url (`nonce_s` del servidor, `nonce_c` del cliente).
 - **Heartbeat**: intercambio periódico `ping`/`pong` de §4.3 durante S3 que mantiene viva la ligadura y hace observable un corte silencioso (sin EOF) en cualquier extremo.
+- **Sesión retenida**: estado de la ligadura tras la caída del socket de control (S4), durante `RETENTION_MS` = 60 000 ms, en el que el servidor conserva `session_id` + `session_key` y admite la reanudación de §8.2 con `pair_resume`.
 
 ## 3. Preconditions
 
@@ -48,6 +49,8 @@ El QR contiene una única cadena URI con el formato:
 | `s` | server_addr | string: dirección IPv4/IPv6 del Servidor PC en la LAN (o `twinpad.local.` vía mDNS), 1–253 chars | yes |
 | `p` | server_port | integer 1024–65535 | yes |
 | `t` | token | base64url (RFC 4648 §5, sin relleno), decodifica exactamente 32 bytes (43 chars) | yes |
+
+El nombre `twinpad.local.` de `s` se resuelve vía mDNS/DNS-SD (SPEC-009): el Servidor PC anuncia `_twinpad._tcp.local.` mientras su socket de control escucha; sin mDNS operativo el payload requiere IP literal y el anuncio es best-effort (sin efecto en el Handshake).
 
 Reglas del payload: esquema `twinpad://v1` obligatorio; pares `clave=valor` tras `#`; el orden es libre; duplicar una clave o incluir una clave extra es inválido (→ E5).
 
@@ -70,8 +73,14 @@ Transporte: conexión TCP hacia `server_addr:server_port`. Cada mensaje es una l
 | `pair_error` | servidor → app | `type` | string | fijo `pair_error` | yes |
 | | | `code` | string | uno de E1–E5 (§9) | yes |
 | | | `message` | string | texto legible ≤ 200 chars | yes |
+| `pair_resume` | app → servidor | `type` | string | fijo `pair_resume` | yes |
+| | | `session_id` | string | base64url, decodifica 16 bytes; ligadura existente no expirada | yes |
+| | | `nonce_c` | string | base64url, decodifica 32 bytes, fresco | yes |
+| | | `proof` | string | base64url, decodifica 32 bytes | yes |
 
 Un mensaje recibido con `type` desconocido, campo faltante o campo con longitud/valor fuera de constraints se rechaza por E4 o E5 según la tabla §9.
+
+El `proof` del `pair_resume` (CR-056) se computa: `proof = HMAC-SHA256(key = session_key, data = "twinpad.v1 resume" ‖ session_id ‖ nonce_c)` (§8.2).
 
 ### 4.3 Heartbeat de sesión (S3)
 
@@ -105,19 +114,22 @@ Reglas del heartbeat:
 
 ## 6. States
 
-Estados (lado app; el servidor mantiene un registro espejo por conexión): `S1 Desconectado`, `S2 Handshake`, `S3 Sesión autenticada`.
+Estados (lado app; el servidor mantiene un registro espejo por conexión): `S1 Desconectado`, `S2 Handshake`, `S3 Sesión autenticada`, `S4 Sesión retenida` (lado servidor: ligadura viva sin socket de control; lado app: Vinculado degradado, «Reconectando»).
 
 | From | Event | To | Side effects |
 |---|---|---|---|
 | S1 | escaneo de QR válido | S2 | app abre TCP a `server_addr:server_port` |
 | S2 | `pair_ack` recibido | S3 | app guarda `session_id` y `session_key` (§8.2) |
 | S2 | `pair_error` o fallo de conexión | S1 | app muestra el mensaje del §9 correspondiente |
-| S3 | corte de conexión (cualquier extremo) | S1 | app muestra "Sesión terminada"; §8.2 permite reanudar |
+| S3 | corte de conexión (cualquier extremo) | S4 | la ligadura entra en retención (§8.2); la app pasa a «Reconectando» e intenta `pair_resume` |
+| S4 | `pair_resume` válido (§8.2) | S3 | mismo `session_id` y misma `session_key`; el canal media anclado sigue usable |
+| S4 | retención > 60 000 ms | S1 | el servidor destruye la ligadura; la app muestra "Sesión terminada" (requiere QR nuevo) |
+| S4 | desconexión simultánea sin `pair_resume` | S1 | según expire la ventana; sin nuevo `pair_ack` de Handshake |
 | S1 | revocación del emparejamiento | S1 | el servidor destruye la credencial (§8.3) |
 
 Invariantes del ciclo: de S2 solo se sale a S3 vía `pair_ack` o a S1 por error; un token expira (R3) o se consume (R2), nunca ambos.
 
-En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expiración produce S3→S1 con los side effects de «corte de conexión», incluido el cierre del canal media asociado (SPEC-003).
+En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expiración produce S3→S1 con los side effects de «corte de conexión», incluido el cierre del canal media asociado (SPEC-003). En S4 no hay heartbeat: el canal media anclado al `session_id` conservado sigue aceptando tráfico mientras la retención viva (SPEC-003).
 
 ## 7. Main flow (Handshake exitoso)
 
@@ -145,11 +157,12 @@ En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expir
 - **Flow:** no puede derivar `session_key` (HKDF-SHA256 con el token que no conoce), por lo que su `proof` es inválido salvo una colisión SHA-2 práctica.
 - **Result:** la conexión recibe `pair_error` E3 y no crea ninguna sesión — NFR-004 y REQ-002 AC-2.
 
-### 8.2 Reanudación de sesión (REQ-002 §2)
+### 8.2 Reanudación del canal de control (CR-056)
 
-- **Trigger:** se pierde la conexión TCP (corte de red, app suspendida, router) sin que se haya revocado el emparejamiento.
-- **Flow:** la app conserva `session_id` y `session_key` en memoria; reconecta y envía `pair_proof` (formato §4.2) con `nonce_c` fresco y `session_id` conocido; el servidor busca la ligadura con ese `session_id` y verifica la prueba con la misma `session_key`.
-- **Result:** `pair_ack` con un `session_id` nuevo (cada conexión TCP recibe su propio `session_id`), pero el servidor reanuda la misma sesión; sin re-escanear el QR.
+- **Trigger:** se pierde el socket de control (S3→S4): corte de red, app suspendida o router; SST sin revocación del emparejamiento.
+- **Flow (lado servidor):** al caer el socket el servidor entra la ligadura (`session_id` + `session_key`) en retención por `RETENTION_MS` = 60 000 ms. Durante la ventana admite `pair_resume` (§4.2): verifica en tiempo constante `proof = HMAC-SHA256(session_key, "twinpad.v1 resume" ‖ session_id ‖ nonce_c)`; aceptado → re-admite la sesión y responde `pair_ack` con el MISMO `session_id` (el canal media ya anclado a ese `session_id` sigue usable). Reintentos ilimitados dentro de la ventana; cada `pair_resume` aceptado conserva el `session_id` retenido sin reemplazarlo.
+- **Flow (lado app):** la app conserva `session_id` y `session_key` en memoria mientras la ventana viva y reintenta `pair_resume` con `nonce_c` fresco (delay 2 000 ms entre reintentos, primer intento inmediato). Ventana vencida → "Sesión terminada" (requiere re-scan del QR).
+- **Result:** reanudación sin re-escanear el QR ni re-derivar credenciales media; `pair_error` E3 ante ligadura desconocida, retención expirada o `proof` inválido, sin desglosar la causa al cliente.
 
 ### 8.3 Revocación del emparejamiento
 
@@ -163,7 +176,7 @@ En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expir
 |---|---|---|
 | E1 | conexión TCP rechazada o sin respuesta en 5 s (paso 4) | la app muestra "Servidor no disponible" y vuelve a S1 (REQ-001 AC-3) |
 | E2 | `pair_request` con token emitido hace más de 300 s según el servidor | `pair_error` E2; la app muestra "QR expirado, generar uno nuevo" y vuelve a S1 (REQ-002 AC-3) |
-| E3 | token ya consumido (otro dispositivo completó el Handshake), o `proof` HMAC inválido, o `session_id` de §8.2 no reconocida, o mensajes fuera de secuencia en el flujo | `pair_error` E3; la app muestra "Vinculación rechazada" y cierra la conexión |
+| E3 | token ya consumido (otro dispositivo completó el Handshake), o `proof` HMAC inválido, o `pair_resume` (§8.2) con `session_id` desconocido, retención expirada o `proof` inválido, o mensajes fuera de secuencia en el flujo | `pair_error` E3; la app muestra "Vinculación rechazada" y cierra la conexión |
 | E4 | mensaje NDJSON no parseable como JSON, `type` desconocido, campo faltante o valor fuera de constraints (§4.2) | `pair_error` E4 (servidor) o rechazo silencioso del mensaje (app) |
 | E5 | payload del QR no conforme a §4.1 (esquema equivocado, token con longitud de bytes distinta de 32, clave duplicada o extra) | la app muestra "QR no válido" sin abrir conexión (paso 3) |
 
@@ -184,6 +197,10 @@ El heartbeat (§4.3 HB4–HB6) no genera códigos E: su expiración equivale a u
 | Corte de red en mitad del Handshake (S2) | la app vuelve a S1 con E1 o a S3 según el resultado del paso 9; no hay estado nuevo |
 | Reinicio del servidor en mitad del Handshake | la conexión cae; la app recibe E1 y puede reintentar con un QR nuevo |
 | Nombres de campo case-sensitive | `type` y demás claves JSON son case-sensitive; un `"Type"` distinto es E4 |
+| Retención expirada justo en el intento de `pair_resume` (CR-056) | E3 sin desglosar causa (§9): la app vuelve a U1/S1 y exige re-scan |
+| `pair_resume` con `session_id` de otra ligadura (CR-056) | E3 sin desglosar causa (§9) |
+| Reinicio del servidor durante la retención (CR-056) | todas las ligaduras se pierden: cualquier `pair_resume` posterior es E3 y exige QR nuevo (§14) |
+| Doble `pair_resume` simultáneo (CR-056) | el primero consuma la ligadura y gane; el segundo recibe E3 |
 
 ## 11. Business rules
 
@@ -227,10 +244,13 @@ Scenario: Segundo dispositivo con el mismo QR
   When un segundo dispositivo envía pair_request con ese token
   Then recibe pair_error E3 y no crea sesión (REQ-002 AC-2)
 
-Scenario: Reanudación de sesión sin re-escaneo
-  Given una Sesión autenticada previa con session_id vigente y no revocada
-  When la conexión cae y la app reconecta presentando pair_proof con session_id conocido
-  Then el servidor verifica con la misma session_key y responde pair_ack (REQ-002 §2)
+Scenario: Reanudación de sesión sin re-escaneo (CR-056)
+  Given una sesión S3 previa cuya ligadura está en retención (S4, ventana de 60 000 ms vivo) y no revocada
+  When la app reconecta y envía pair_resume (session_id + nonce_c + proof HMAC "twinpad.v1 resume")
+  Then el servidor verifica con la misma session_key y responde pair_ack con el MISMO session_id (el canal media anclado sigue usable; REQ-002 §2)\n\nScenario: Retención vencida
+  Given una ligadura en S4 cuya retención supera los 60 000 ms
+  When la app intenta pair_resume
+  Then recibe pair_error E3 y la app queda en U1/S1, exigiendo un QR nuevo
 
 Scenario: Servidor no disponible
   Given el Servidor PC inactivo
@@ -258,7 +278,8 @@ Scenario: Teléfono desaparece sin EOF (sesión zombi)
 - Un token expira (R3) o se consume (R2), nunca ambos; ningún consumo parcial.
 - El QR mostrado en pantalla del Servidor PC es siempre vigente: al expirar se regenera automáticamente (R7).
 - En S2 el token sigue de un solo uso: un intento abortado no lo consume; solo el paso 10 lo hace.
-- Dentro de S3, cada `session_id` identifica exactamente una ligadura activa con su propia `session_key`; un reinicio del servidor elimina todas las ligaduras (la reanudación §8.2 ya no es posible).
+- Dentro de S3, cada `session_id` identifica exactamente una ligadura activa con su propia `session_key`; un reinicio del servidor elimina todas las ligaduras (la reanudación §8.2 ya no es posible): la retención es solo memoria de proceso, alineada con el almacenamiento de la `session_key` (R6).
+- Cada `pair_resume` aceptado reutiliza el `session_id` retenido; el servidor no lo reemplaza durante la retención.
 - `session_key` nunca sale de la memoria del proceso y no se firma en ningún mensaje (solo derivados como `proof`).
 - El heartbeat de §4.3 no consume ni renueva tokens (R2/R3 intactos) y no modifica `session_id` ni `session_key`; solo mantiene viva la ligadura de S3.
 
@@ -276,12 +297,16 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | E3 sin token / token consumido / proof inválido | TEST-004 |
 | E3 segundo dispositivo con el mismo QR | TEST-005 |
 | E4 mensaje malformado / schema desconocido | TEST-006 |
-| §8.2 reanudación | TEST-007 |
+| §8.2 reanudación (CR-056: `pair_resume` + retención) | TEST-0128, TEST-0129 (TEST-007: fluj §8.2/registro, ya realizada por CR-056) |
+| §4.1 resolución mDNS de `twinpad.local.` (CR-057) | TEST-0130, TEST-0133, TEST-0134 |
 | §8.3 revocación | TEST-008 |
 | R7 regeneración automática del QR al expirar | TEST-009 |
 | HB1–HB3 (emisión, eco de `t` y validación del rango) | TEST-0120, TEST-0122 |
 | HB4 expiración server-side (sesión zombi sin EOF) | TEST-0120, TEST-0121 |
 | HB5 silencio del Servidor percibido por la app | TEST-0122 |
+| CR-056: retención y destrucción de la ligadura a los 60 000 ms | TEST-0128, TEST-0129 |
+| CR-056: `pair_resume` válido y rechazado (proof, session_id, expiración) | TEST-0128, TEST-0129 |
+| CR-056: app — corte de control en S3 → reintento automático ≤ 60 s sin QR | TEST-0130 |
 
 ## 17. Open questions
 
@@ -307,4 +332,6 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 0.2.0 | 2026-10-07 | Twinpad team | OQ-1 resuelta: regeneración automática del QR al expirar (R7, TEST-009) |
 | 0.3.0 | 2026-10-07 | Twinpad team | OQ-2 resuelta: primitivas HKDF-SHA256 + HMAC-SHA256 definitivas; Status → `In review` |
 | 1.1.0 | 2026-11-01 | Buffy (agente) | CR-055: heartbeat `ping`/`pong` en S3 (§4.3, HB1–HB6) con expiración de sesión zombi; TEST-0120/0121/0122 |
+| 1.2.0 | 2026-11-01 | Buffy (agente) | CR-056: reanudación del canal de control — estado S4, mensaje `pair_resume` (§4.2) con proof sobre "twinpad.v1 resume", retención 60 000 ms y `session_id` preservado; TEST-0128/0129/0130 |
+| 1.3.0 | 2026-11-01 | Buffy (agente) | CR-057: §4.1 nota de resolución mDNS de `twinpad.local.` (SPEC-009) |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
