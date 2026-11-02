@@ -5,9 +5,12 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(test)]
+use std::sync::atomic::AtomicU64;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use twinpad_core::bitrate::{BitrateLadder, CongestionObserver, WindowStats};
 use twinpad_core::media_crypto::{
     MAX_MEDIA_RECORD_BYTES, client_proof, derive_media_key, open_record, seal_record, server_proof,
 };
@@ -24,6 +27,77 @@ const MEDIA_STREAM_SND_BUF_BYTES: usize = 4 * 1024 * 1024;
 /// IDR inmediata (SPEC-003 §8.2) sin esperar la cadencia periódica de
 /// ~1 s del encoder.
 pub type MediaJoinedHook = dyn Fn() -> bool + Send + Sync;
+/// CR-058 (SPEC-003 §4.3): enganche del cambio de rung de la escalera; el
+/// server lo conecta al reenvío de `video_config` (CR-027) + IDR (CR-051).
+pub type MediaBitrateApply = dyn Fn(u32) -> bool + Send + Sync;
+
+/// CR-058 (SPEC-003 §4.3): ámbito global de la escalera de bitrate del
+/// encoder compartido. Cada sesión de media observa su propia ventana P/D
+/// (descartes latest-frame-wins) y la ingiere aquí; el rung es global y el
+/// cambio pendiente dispara `apply(effective_kbps)` (mismo mecanismo que
+/// CR-027/CR-030; el Android nunca solicita degradación, R5 vigente).
+pub struct CongestionScope {
+    now_ms: Box<dyn Fn() -> u64 + Send + Sync>,
+    configured_kbps: Box<dyn Fn() -> u32 + Send + Sync>,
+    ladder: Mutex<BitrateLadder>,
+    apply: Arc<MediaBitrateApply>,
+}
+
+impl CongestionScope {
+    pub fn new(
+        now_ms: Box<dyn Fn() -> u64 + Send + Sync>,
+        configured_kbps: Box<dyn Fn() -> u32 + Send + Sync>,
+        apply: Arc<MediaBitrateApply>,
+    ) -> Self {
+        Self {
+            now_ms,
+            configured_kbps,
+            ladder: Mutex::new(BitrateLadder::new()),
+            apply,
+        }
+    }
+
+    /// Reloj vigente en ms (el mismo dominio que losObservers). Método
+    /// público para que el caller observe con ticks consistentes.
+    pub fn now_ms(&self) -> u64 {
+        (self.now_ms)()
+    }
+
+    pub fn effective_kbps(&self) -> u32 {
+        let configured = (self.configured_kbps)();
+        self.ladder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .effective_kbps(configured)
+    }
+
+    /// Rung actual (0 = sin degradación). Diagnóstico/integraciones.
+    pub fn rung(&self) -> u32 {
+        self.ladder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .rung()
+    }
+
+    /// Ingesta de una ventana cerrada del relay de una sesión (§4.3).
+    pub fn ingest_window(&self, stats: WindowStats) {
+        let now = (self.now_ms)();
+        let configured = (self.configured_kbps)();
+        let mut ladder = self
+            .ladder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        ladder.on_window(stats, now);
+        if ladder.take_change_pending() {
+            // Nunca supera el bitrate del usuario (§8.4): la escalera parte
+            // de `configured`; el caller reenvía video_config + IDR.
+            let apply = Arc::clone(&self.apply);
+            let effective = ladder.effective_kbps(configured);
+            drop(ladder); // evita mantener la escalera bloqueada durante el apply
+            let _ = apply(effective);
+        }
+    }
+}
 /// CR-051: tope de espera en el hub; acota la reevaluación de estado
 /// externo al hub (selección/超前 media pair) sin sondeo activo.
 const HUB_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
@@ -140,6 +214,7 @@ pub fn run_media_listener(
     selected_game: Arc<SelectedGameLookup>,
     media_game: Arc<MediaGameLookup>,
     on_media_joined: Arc<MediaJoinedHook>,
+    congestion: Arc<CongestionScope>,
 ) {
     for incoming in listener.incoming() {
         let Ok(stream) = incoming else { continue };
@@ -148,7 +223,10 @@ pub fn run_media_listener(
         let selected = Arc::clone(&selected_game);
         let media = Arc::clone(&media_game);
         let joined = Arc::clone(&on_media_joined);
-        std::thread::spawn(move || handle_media_client(stream, keys, hub, selected, media, joined));
+        let congestion = Arc::clone(&congestion);
+        std::thread::spawn(move || {
+            handle_media_client(stream, keys, hub, selected, media, joined, congestion)
+        });
     }
 }
 
@@ -159,6 +237,7 @@ fn handle_media_client(
     selected_game: Arc<SelectedGameLookup>,
     media_game: Arc<MediaGameLookup>,
     on_media_joined: Arc<MediaJoinedHook>,
+    congestion: Arc<CongestionScope>,
 ) {
     prepare_stream_socket(&stream);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -207,6 +286,9 @@ fn handle_media_client(
     let mut current_game = None::<String>;
     let mut last_fn = None;
     let mut last_timestamp_us = None;
+    // CR-058 (SPEC-003 §4.3): ventana P/D de esta sesión; al cerrar la
+    // ventana móvil se ingiere en la escalera global (encoder compartido).
+    let mut congestion_window = CongestionObserver::new(congestion.now_ms());
 
     while pair_active.load(Ordering::Acquire) {
         let Some(game_id) = selected_game(&session_id) else {
@@ -263,8 +345,15 @@ fn handle_media_client(
             Some(value) => value,
             None => return,
         };
+        // CR-058 (SPEC-003 §4.3): el hueco entre AUs reenviadas son los
+        // descartes latest-frame-wins; observados antes de actualizar last_fn.
+        let prev_fn = last_fn;
         last_fn = Some(source.latest.fn_);
         last_timestamp_us = Some(source.latest.timestamp_us);
+        congestion_window.observe(prev_fn, source.latest.fn_);
+        if let Some(stats) = congestion_window.rollover(congestion.now_ms()) {
+            congestion.ingest_window(stats);
+        }
         // CR-029: sin pacing por fps; el bucle vuelve a esperar en el hub
         // (Condvar) hasta la AU siguiente y retransmite en cuanto llega.
     }
@@ -303,6 +392,73 @@ pub fn read_record(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use twinpad_core::media_crypto::{MediaCryptoError, seal_record};
+
+    /// Reloj inyectable por estado atómico (ENG §5 P10/P11) y ámbito de
+    /// congestión neutro para los tests de relay que no ejercitan CR-058.
+    #[derive(Clone)]
+    struct TestClock(Arc<AtomicU64>);
+    impl TestClock {
+        fn now_ms(&self) -> u64 {
+            self.0.load(Ordering::Relaxed)
+        }
+        fn advance(&self, ms: u64) {
+            self.0.store(ms, Ordering::Relaxed);
+        }
+    }
+
+    fn congestion_scope_neutral() -> (Arc<CongestionScope>, TestClock) {
+        let clock = TestClock(Arc::new(AtomicU64::new(0)));
+        let scope = Arc::new(CongestionScope::new(
+            Box::new({
+                let clock = clock.clone();
+                move || clock.now_ms()
+            }),
+            Box::new(|| 8_000),
+            Arc::new(|_| true),
+        ));
+        (scope, clock)
+    }
+
+    // TEST-0132 — CR-058 (SPEC-003 §4.3): integración server — ventanas del
+    // relay alimentan la escalera; el rung baja con ≥2 ventanas congestionadas
+    // (reenvío video_config + IDR vía `apply`) y sube con el hold de 10 s.
+    #[test]
+    fn congestion_windows_drive_ladder_down_and_recovery_up() {
+        let clock = TestClock(Arc::new(AtomicU64::new(0)));
+        let applied: Arc<std::sync::Mutex<Vec<u32>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let applied_for_hook = Arc::clone(&applied);
+        let scope = CongestionScope::new(
+            Box::new({
+                let clock = clock.clone();
+                move || clock.now_ms()
+            }),
+            Box::new(|| 8_000),
+            Arc::new(move |effective: u32| {
+                applied_for_hook.lock().unwrap().push(effective);
+                true
+            }),
+        );
+        let congested = WindowStats { published: 40, discarded: 20 };
+        clock.advance(100);
+        scope.ingest_window(congested);
+        assert_eq!(scope.rung(), 0); // 1 ventana: aún no degrada
+        clock.advance(2_100);
+        scope.ingest_window(congested);
+        assert_eq!(scope.rung(), 1);
+        assert_eq!(scope.effective_kbps(), 4_000); // 1/2 del bitrate base
+        assert_eq!(applied.lock().unwrap().as_slice(), &[4_000]);
+        // Recuperación: hold claro de 10 s sube un rung con su reenvío.
+        let clear = WindowStats { published: 100, discarded: 4 };
+        clock.advance(20_000);
+        scope.ingest_window(clear);
+        assert_eq!(scope.rung(), 1); // el hold aún no venció
+        clock.advance(30_100); // 20_000 + 10_001: hold de recuperación vencido
+        scope.ingest_window(clear);
+        assert_eq!(scope.rung(), 0);
+        assert_eq!(scope.effective_kbps(), 8_000); // nunca supera el config
+        assert_eq!(applied.lock().unwrap().as_slice(), &[4_000, 8_000]);
+    }
 
     // TEST-072 — CR-014 listener authorization and relay primitives.
     #[test]
@@ -369,6 +525,7 @@ mod tests {
             true
         });
         let server_hub = Arc::clone(&hub);
+        let (test_congestion, _test_clock) = congestion_scope_neutral();
         let server_thread = std::thread::spawn(move || {
             handle_media_client(
                 server,
@@ -377,6 +534,7 @@ mod tests {
                 selected,
                 media_game,
                 on_media_joined,
+                test_congestion,
             );
         });
 
@@ -451,8 +609,9 @@ mod tests {
         let media_game: Arc<MediaGameLookup> = Arc::new(|_| None);
         let hub = Arc::new(MediaHub::default());
         let on_media_joined: Arc<MediaJoinedHook> = Arc::new(|| false);
+        let (congestion_neutral, _test_clock) = congestion_scope_neutral();
         let server_thread = std::thread::spawn(move || {
-            handle_media_client(server, keys, hub, selected, media_game, on_media_joined);
+            handle_media_client(server, keys, hub, selected, media_game, on_media_joined, congestion_neutral);
         });
         let mut request = Vec::with_capacity(MEDIA_HANDSHAKE_BYTES);
         request.extend_from_slice(&session_id.0);

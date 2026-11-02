@@ -176,6 +176,13 @@ fn main() {
         ),
     }
 
+    // CR-058 (SPEC-003 §4.3): configuración vigente del encoder del plugin
+    // (un solo encoder compartido; la app la actualiza desde el drawer por
+    // sesión). Global para que la escalera R10 lea siempre lo vigente.
+    let plugin_video_config = Arc::new(std::sync::Mutex::new(
+        twinpad_server::video::VideoConfig::from_env(),
+    ));
+
     match TcpListener::bind(("0.0.0.0", twinpad_server::media::MEDIA_PORT)) {
         Ok(media_listener) => {
             let media_registry = Arc::clone(&registry);
@@ -193,6 +200,42 @@ fn main() {
             let games_for_media = Arc::clone(&game_registry);
             let on_media_joined: Arc<twinpad_server::media::MediaJoinedHook> =
                 Arc::new(move || games_for_media.send_cemu_video_force_idr());
+            // CR-058 (SPEC-003 §4.3): ámbito global de la escalera R10.
+            let plugin_cfg_for_ladder = Arc::clone(&plugin_video_config);
+            let plugin_cfg_for_scope = Arc::clone(&plugin_video_config);
+            let games_for_ladder = Arc::clone(&game_registry);
+            let on_bitrate_apply: Arc<twinpad_server::media::MediaBitrateApply> =
+                Arc::new(move |effective_kbps: u32| {
+                    let Ok(cfg_slot) = plugin_cfg_for_ladder.lock() else {
+                        return false;
+                    };
+                    // R10: mismo mecanismo que CR-027/CR-030 (video_config
+                    // del plugin) + gancho post-handshake de CR-051 (IDR).
+                    let sent = games_for_ladder.send_cemu_video_config(
+                        cfg_slot.width,
+                        cfg_slot.height,
+                        effective_kbps,
+                    );
+                    let idr_requested = games_for_ladder.send_cemu_video_force_idr();
+                    if sent && idr_requested {
+                        println!(
+                            "CR-058: congestión media — encoder a {effective_kbps} kbps con IDR."
+                        );
+                    }
+                    sent && idr_requested
+                });
+            let congestion: Arc<twinpad_server::media::CongestionScope> = Arc::new(
+                twinpad_server::media::CongestionScope::new(
+                    Box::new(|| SystemClock.now_ms()),
+                    Box::new(move || {
+                        plugin_cfg_for_scope
+                            .lock()
+                            .map(|cfg| cfg.bitrate_kbps)
+                            .unwrap_or(0)
+                    }),
+                    Arc::clone(&on_bitrate_apply),
+                ),
+            );
             std::thread::spawn(move || {
                 println!(
                     "Canal media autenticado activo en 0.0.0.0:{} (SPEC-003).",
@@ -205,6 +248,7 @@ fn main() {
                     selected,
                     media_game,
                     on_media_joined,
+                    congestion,
                 );
             });
         }
@@ -231,6 +275,9 @@ fn main() {
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
+        // CR-058: el drawer de esta sesión actualiza la referencia global
+        // del bitrate del encoder del plugin (la escalera la lee).
+        let plugin_cfg_for_reader = Arc::clone(&plugin_video_config);
         // R2: cada conexión usa el registro vigente; el consumo lo arbitra
         // el almacén con exclusión mutua (DES-001 §10).
         let record = store.ensure_fresh_qr().record;
@@ -514,6 +561,13 @@ fn main() {
                                         }) {
                                             if let Ok(mut slot) = reader_cfg.lock() {
                                                 *slot = cfg;
+                                            }
+                                            // CR-058: el drawer del usuario es la
+                                            // referencia de la escalera (§8.4:
+                                            // nunca degradar por encima del
+                                            // bitrate configurado).
+                                            if let Ok(mut plugin_slot) = plugin_cfg_for_reader.lock() {
+                                                *plugin_slot = cfg;
                                             }
                                             // CR-029: sin fps reenviado; resolución + bitrate (CR-030).
                                             if selected_game

@@ -5,11 +5,11 @@
 | ID | CR-058 |
 | Title | Degradación automática de bitrate por congestión (cierra OQ de SPEC-003 §17) |
 | Type | New behavior |
-| Status | `Open` |
+| Status | `Applied (owner-requested)` |
 | Author | Buffy (agente) |
 | Created | 2026-11-01 |
-| Decided | — |
-| Decided by | — |
+| Decided | 2026-11-01 |
+| Decided by | Owner (usuario) — orden directa: «Puedes implementar 56 + 57 + 58 directo?» |
 
 ## 1. Target
 
@@ -68,15 +68,14 @@ transcodificación en el Servidor.» — abierto con esta CR como gatillo.
   configuración de Servidor, no parte de contrato wire (no hay cambio de
   mensajes; video_config ya existe).
 
-§17 — eliminar la OQ; quedará «Resuelta por CR-058 (R10 §2, degserver
-  automática en el relay §4.3)».
+§17 — eliminar la OQ; queda «Resuelta por CR-058 (R10 §11, degradación automática en el relay §4.3)».
 
 §16 — filas nuevas:
 
 | Aspect | Verified by |
 |---|---|
-| Política pura de congestión y escalera (ventanas, histéresis, límites) | TEST-0126 |
-| Integración: congestión simulada baja rung reenviando video_config + IDR; recuperación sube rung | TEST-0127 |
+| Política pura de congestión y escalera (ventanas, histéresis, límites) | TEST-0131 |
+| Integración: congestión simulada baja rung reenviando video_config + IDR; recuperación sube rung | TEST-0132 |
 ```
 
 ## 3. Motivation
@@ -118,8 +117,8 @@ SPEC-003 v1.1.0.
 
 ## 6. Decision
 
-- **Outcome:** (pendiente) — umbrales (0,25/0,05; escalera 1/2-1/4-1/8;
-  suelo 500 kbps) a confirmar por el owner al aplicar.
+- **Outcome:** Applied (owner-requested) — umbrales 0,25/0,05 y escalera
+  1/2-1/4-1/8 con suelo 500 kbps aplicados tal como se propuso.
 - **Rationale:** cierra una OQ abierta y armoniza con R5; no requiere
   cambios de wire ni de plugin (infra de CR-051 ya despliega IDR on demand).
 - **Rollout:** mismo release; Servidor actualizado, teléfono sin cambios,
@@ -127,15 +126,16 @@ SPEC-003 v1.1.0.
 
 ## 7. Execution checklist
 
-- [ ] Target document(s) updated
-- [ ] Dependent documents updated (DES-004)
-- [ ] Tests added/updated (TEST-0126, TEST-0127)
-- [ ] `testing/traceability.md` updated
-- [ ] Indexes updated
-- [ ] Code change merged
+- [x] Target document(s) updated (SPEC-003 1.13.0)
+- [x] Dependent documents updated (DES-004)
+- [x] Tests added/updated (TEST-0131 core, TEST-0132 server — renumerados)
+- [x] `testing/traceability.md` updated
+- [x] Indexes updated
+- [x] Code change merged
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Opened en lote de cuellos de botella de conexión |
+| 1.0.0 | 2026-11-01 | Buffy (agente) | Applied (owner-requested): R10 implementado en core::bitrate + server::media; TEST-0131/0132 |

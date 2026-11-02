@@ -13,6 +13,7 @@
 //! allí es requerido (SPEC-001 §15).
 
 pub mod audio;
+pub mod bitrate;
 pub mod crypto;
 pub mod error;
 pub mod game;

@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.11.0 |
+| Version | 1.13.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
-| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088 |
-| Last updated | 2026-10-28 |
+| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132 |
+| Last updated | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -28,7 +28,7 @@ Define transporte y presentación del Stream de video de la Segunda pantalla, pu
 
 ## 3. Preconditions
 
-- Sesión autenticada establecida según SPEC-001 (estado U4/`Established`); el transporte de SPEC-003 no acepta conexiones fuera de sesión (NFR-004).
+- Sesión autenticada establecida según SPEC-001 (estado U4/`Established`, o S4 con retención viva — CR-056, SPEC-001 §8.2); el transporte de SPEC-003 no acepta conexiones fuera de sesión (NFR-004).
 - La sesión ha confirmado un Plugin vivo con `game_selected` (SPEC-006); solo los Framebuffers publicados por esa fuente pueden alimentar el stream.
 
 ## 4. Inputs
@@ -44,7 +44,7 @@ El control se codifica como línea UTF-8 JSON + LF. `stream_start` se emite solo
 
 ### 4.2 Handshake del canal media TCP
 
-Android conecta a `server_addr:8425` y envía `session_id[16] || nonce_c[32] || HMAC-SHA256[32]`, donde HMAC cubre ASCII `twinpad.v1 media client` || `session_id` || `nonce_c` con `session_key`. El servidor valida que la sesión y el socket de control sigan activos, genera `nonce_s[32]` criptográficamente aleatorio y responde `nonce_s || HMAC-SHA256[32]`; el MAC cubre ASCII `twinpad.v1 media server` || `session_id` || `nonce_c` || `nonce_s`. Fallo cierra TCP sin payload.
+Android conecta a `server_addr:8425` y envía `session_id[16] || nonce_c[32] || HMAC-SHA256[32]`, donde HMAC cubre ASCII `twinpad.v1 media client` || `session_id` || `nonce_c` con `session_key`. El servidor valida que la sesión y el socket de control sigan activos o la retención de la ligadura siga viva (SPEC-001 §8.2/S4, CR-056), genera `nonce_s[32]` criptográficamente aleatorio y responde `nonce_s || HMAC-SHA256[32]`; el MAC cubre ASCII `twinpad.v1 media server` || `session_id` || `nonce_c` || `nonce_s`. Fallo cierra TCP sin payload.
 
 Ambos derivan `media_key = HKDF-SHA256(ikm=session_key, salt=nonce_c||nonce_s, info="twinpad.v1 media server-to-client aes-256-gcm", L=32)`. La clave solo vive mientras el canal media; el servidor retiene `session_key` solo en memoria por la vida del Pairing.
 
@@ -55,6 +55,8 @@ Cada registro servidor→Android tiene `length:u32 BE` (bytes que siguen, inclui
 Plaintext: `fn:u64 BE || ts_capture_us:u64 BE || flags:u8 || AnnexB access_unit`. `fn` comienza en cero y aumenta estrictamente; `ts_capture_us` es monótono desde inicio del encoder; bit 0 de flags indica IDR y bits 1–7 deben ser cero. H.264/AVC Baseline (66, con o sin `constraint_set0`) o Main (77), nivel ≤4.2, YUV 4:2:0; sin B-frames (CR-041: el driver VAAPI freeworld no expone Constrained Baseline y el contrato estricto rebota; la ruta hardware descarta cualquier candidato negociado fuera de este contrato y reinicia con OpenH264 CPU). Cemu usa OpenH264 CPU por defecto. CR-036: Cemu no recrea el encoder por cambios de cadencia medida; la cadencia solo alimenta la metadata del rate-control y el encoder se recrea únicamente cuando cambian las dimensiones o el bitrate configurados. Con plugin conectado y sin frame nuevo del DRC en 100 ms, Cemu publica una repetición del último frame (mismo contrato de AU, sin `stream_gap`). La preferencia persistente local `twinpad_hardware_acceleration` (false por defecto) habilita el intento de un encoder hardware disponible; si el encoder no puede inicializarse/configurarse o falla el contrato AVC, Cemu reinicia la codificación con OpenH264 CPU, sin alterar las dimensiones ni el FPS configurados. El cambio de preferencia se aplica en el siguiente frame/configuración vigente. Ambas rutas emiten Annex B con SPS/PPS en cada IDR. Longitudes fuera de rango, AU vacía o flags inválidos cierran canal; el servidor no modifica el payload.
 
 Los nonces frescos derivan subclave nueva en cada conexión; no hay reanudación de clave/counter. Cerrar el socket Pairing revoca y cierra inmediatamente su canal media asociado. El canal solo recibe la fuente seleccionada; el servidor conserva como máximo una AU pendiente por cliente (latest-frame-wins), no decodifica ni recodifica y nunca sirve a clientes no autenticados.
+
+CR-058 (R10) — degradación automática por congestión en el relay: por ventana móvil de 2 000 ms y por sesión cliente el Servidor cuenta P = AUs publicadas por la fuente destinadas a esa sesión y D = AUs que sustituyeron a una AU pendiente por latest-frame-wins sin haber podido escribirse al socket (descartes). Sesión congestionada si D/P ≥ 0,25 y P ≥ 10 en la ventana; sale de congestión si D/P < 0,05 durante 10 000 ms continuados (histéresis). Ante ≥ 2 ventanas congestionadas el Servidor baja un rung de la escalera del encoder [configurado → 1/2 → 1/4 → 1/8 → suelo 500 kbps] reenviando `video_config` con el nuevo `bitrate_kbps` (mismo mecanismo de CR-027/CR-030; resolución intacta) y solicita IDR (`video_force_idr`, CR-051). Con múltiples sesiones, el rung ejecutado es el mínimo entre sesiones congestionadas. Tras 10 000 ms sin congestión en todas las sesiones se sube un rung, sin superar jamás el bitrate configurado por el usuario. La escalera y los umbrales son parámetros de configuración del Servidor, no contrato wire.
 ## 5. Outputs
 
 | Result | Value / shape | Condition |
@@ -115,11 +117,12 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 - **Flow:** el servidor envía `stream_stop`, descarta la AU pendiente anterior y deja de relayar esa fuente. El nuevo `stream_start` incluye dimensiones/fps; Cemu inicia con IDR y `fn=0`.
 - **Result:** Android reinicia decoder; ninguna AU de la fuente anterior se presenta después del cambio.
 
-### 8.4 Congestión
+### 8.4 Congestión (CR-058)
 
-- **Trigger:** el relay no puede mantener el ritmo configurado.
-- **Flow:** la AU pendiente se reemplaza por la más reciente; el servidor comunica la configuración deseada por el control existente. El Plugin reconfigura el encoder y emite IDR. El servidor nunca transcodifica.
-- **Result:** pueden presentarse menos frames, sin acumular video viejo; NFR permanece sujeto al banco físico.
+- **Trigger:** ≥ 2 ventanas de relay (2 000 ms cada una) con D/P ≥ 0,25 y P ≥ 10 en la sesión cliente (§4.3, R10).
+- **Flow:** el Servidor baja un rung de la escalera de bitrate (configurado → 1/2 → 1/4 → 1/8 → suelo 500 kbps) reenviando `video_config` con el nuevo `bitrate_kbps` y solicita IDR (`video_force_idr`); el Plugin reconfigura el encoder y emite IDR. El servidor nunca transcodifica ni cambia resolución.
+- **Recuperación:** 10 000 ms sin congestión (D/P < 0,05 en todas las sesiones) → sube un rung con IDR, sin superar el bitrate configurado por el usuario.
+- **Result:** se reduce el descarte de AU conservando el video vivo; la calidad efectiva la decide el Servidor (R5/R10), sin mensajes nuevos en wire.
 
 ## 9. Errors
 
@@ -154,6 +157,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 - **R8 (CR-014):** el canal media se asocia a un SessionId autenticado vivo y termina al cerrar su canal de Pairing.
 - **R4:** ante corte < 10 s, la reanudación reutiliza la sesión autenticada y jamás exige re-pairing (REQ-005 AC-2).
 - **R5:** la degradación la decide siempre el Server (resolución; el framerate ya no degrada por pacing desde CR-029); el Android nunca la solicita en v1.
+- **R10 (CR-058):** el Servidor decide la degradación automática de bitrate del encoder compartido ante congestión observada en el relay del canal media (§4.3). El Android sigue sin solicitar degradación (R5 vigente).
 - **R6:** si no hay stream, la vista lo indica explícitamente; jamás muestra un Frame congelado como si estuviera vivo (REQ-004 AC-3).
 - **R9 (CR-025):** el modo de escalado `contain`/`expand` es presentación local de Android; no cambia resolución, codec ni wire. Cambiarlo relayout el SurfaceView sin renegociar el stream ni reiniciar el decoder.
 
@@ -220,10 +224,12 @@ Una implementación cumple este SPEC si y solo si honra §3–§14 y pasa las ve
 | Preferencia hardware opt-in, fallback CPU y contrato AVC preservado | TEST-082 |
 | MediaCodec/Surface y recuperación por IDR | TEST-074 |
 | Latencia NFR-001 y CPU NFR-005 | pruebas de performance en banco físico (fuera de CI) |
+| R10: política pura de congestión y escalera (ventanas, histéresis, límites) | TEST-0131 |
+| R10: integración — congestión simulada baja rung reenviando video_config + IDR; recuperación sube rung | TEST-0132 |
 
 ## 17. Open questions
 
-La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía siguen pendientes; no cambian el wire contract CR-014. El umbral exacto de degradación automática continúa abierto; no autoriza transcodificación en el Servidor.
+La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía siguen pendientes; no cambian el wire contract CR-014. La degradación automática quedó resuelta por CR-058 (R10 §11, política en §4.3/§8.4).
 
 ## Definition of Done
 
@@ -244,6 +250,8 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.9.0 | 2026-10-28 | Product owner (CR-029) | FPS unlimited: sin pacing ni tope 30/60; `stream_start.fps` metadata 0–255 (`0` = unlimited); `video_config` sin fps |
 | 1.10.0 | 2026-10-28 | Product owner (CR-030) | `video_config` reenvía w/h a Cemu; el DRC se escala (nearest, sin upscale) antes del encode; trigger §8.1 define el escalado |
 | 1.11.0 | 2026-10-30 | Product owner (CR-041) | Contrato de perfil relajado a Baseline (66) o Main (77), nivel ≤4.2, para admitir el encoder VAAPI freeworld; 4:2:0 y sin B-frames sin cambios |
+| 1.12.0 | 2026-11-01 | Buffy (agente) (CR-056) | §3/§4.2: el handshake media también se admite con ligadura en retención (SPEC-001 §8.2/S4) |
+| 1.13.0 | 2026-11-01 | Buffy (agente) (CR-058) | R10: degradación automática de bitrate por congestión (ventana D/P 2 000 ms, escalera 1/2→1/4→1/8→500 kbps, histéresis 10 000 ms); §8.4 reescrita; OQ §17 cerrada; TEST-0131/0132 |
 | 0.1.0 | 2026-10-07 | Eng lead + agent | Draft inicial: transporte de framebuffers sobre la sesión de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Eng lead | Approved: OQ-1 resuelta (rgb8 sin compresión en v1) |
 | 1.1.0 | 2026-10-08 | Owner (usuario, CR-001) | `fmt=jpeg`: compresión del stream para 720p/1080p a 30/60 fps |
