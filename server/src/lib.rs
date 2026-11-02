@@ -12,6 +12,7 @@ pub mod audio;
 pub mod game_media;
 pub mod games;
 pub mod heartbeat;
+pub mod mdns;
 pub mod media;
 pub mod qr;
 pub mod qr_render;

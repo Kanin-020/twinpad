@@ -6,7 +6,7 @@
 
 | Type | Next |
 |---|---|
-| SPEC | SPEC-009 |
+| SPEC | SPEC-010 |
 
 > 💡 Reserve here when creating a Draft. Numbers are never reused.
 
@@ -44,6 +44,7 @@
 | SPEC-006 | Detección/selección de Plugin y SDK Twinpad | REQ-006 (monitor Cemu externo CR-017) | `Approved` | DES-004 (Draft) | TEST-021, TEST-044, TEST-046, TEST-047, TEST-051..055, TEST-079 | [SPEC-006-plugin-sdk-detection.md](SPEC-006-plugin-sdk-detection.md) |
 | SPEC-007 | Config externa para juegos no integrados | REQ-007 | `Draft` | `-` | TEST-022 | [SPEC-007-external-config.md](SPEC-007-external-config.md) |
 | SPEC-008 | Superficie de controles táctiles configurables | REQ-008 | `Draft` | `-` | TEST-023 | [SPEC-008-touch-controls.md](SPEC-008-touch-controls.md) |
+| SPEC-009 | Descubrimiento mDNS/DNS-SD del Servidor PC (CR-057) | REQ-002 AC-4 | `Approved` | DES-001, DES-002 | TEST-0130, TEST-0133, TEST-0134 | [SPEC-009-mdns-discovery.md](SPEC-009-mdns-discovery.md) |
 
 ## Deprecated
 
@@ -55,7 +56,7 @@
 
 | Metric | Value |
 |---|---|
-| Active SPECs | 7 |
+| Active SPECs | 8 |
 | Approved SPECs without TEST | 0 |
 | Approved SPECs | 5 |
 | SPECs whose REQ is Deprecated | 0 |

@@ -24,6 +24,9 @@ jpeg-encoder = { version = "0.6.1", features = ["simd"] }
 # sin deps transitivas, mantenido por Nayuki)
 qrcodegen = "1.8"
 socket2 = "0.6"
+# CR-057 (SPEC-009): anunciador mDNS/DNS-SD `_twinpad._tcp.local.`. ENG §11:
+# puro Rust, MIT/Apache, mantenido, sin unsafe y sin runtime async.
+mdns-sd = "0.21"
 
 [dev-dependencies]
 # Los tests de integración simulan al juego con SDK (AC-2) contra el

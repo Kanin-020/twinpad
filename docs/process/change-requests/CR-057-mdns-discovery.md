@@ -5,11 +5,11 @@
 | ID | CR-057 |
 | Title | Descubrimiento mDNS/zeroconf del Servidor PC (tolerancia a cambio de IP DHCP) |
 | Type | Scope change |
-| Status | `Open` |
+| Status | `Applied (owner-requested)` |
 | Author | Buffy (agente) |
 | Created | 2026-11-01 |
-| Decided | — |
-| Decided by | — |
+| Decided | 2026-11-01 |
+| Decided by | Owner (usuario) — orden directa: «Puedes implementar 56 + 57 + 58 directo?» |
 
 ## 1. Target
 
@@ -102,23 +102,24 @@ día uno), pero no hay nadie que anuncie ni resuelva.
 
 ## 6. Decision
 
-- **Outcome:** (pendiente) — aprobado el requisito general, pendiente
-  decidir crate/runtime del anunciador en servidor.
+- **Outcome:** Applied (owner-requested) — anunciador con crate `mdns-sd`
+  en server y `NsdManager` en la app.
 - **Rationale:** cierra el hueco de descubrimiento identificado en el
   análisis; reutiliza el formato de QR y la topología LAN ya existentes.
 - **Rollout:** mismo release; Servidor y app actualizados juntos.
 
 ## 7. Execution checklist
 
-- [ ] Target document(s) updated (incluye crear SPEC-009)
-- [ ] Dependent documents updated
-- [ ] Tests added/updated
-- [ ] `testing/traceability.md` updated
-- [ ] Indexes updated
-- [ ] Code change merged
+- [x] Target document(s) updated (REQ-002 0.2.0 AC-4; SPEC-009 creado; SPEC-001 §4.1; SPEC-002 §6)
+- [x] Dependent documents updated (DES-001/002)
+- [x] Tests added/updated (TEST-0133 server, TEST-0134 app)
+- [x] `testing/traceability.md` updated
+- [x] Indexes updated (specs/_index → SPEC-010)
+- [x] Code change merged
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Opened en lote de cuellos de botella de conexión |
+| 1.0.0 | 2026-11-01 | Buffy (agente) | Applied (owner-requested): anunciador `mdns-sd` + `ServerDiscovery`/NsdManager; TEST-0133/0134 |

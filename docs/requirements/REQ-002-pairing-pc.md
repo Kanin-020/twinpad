@@ -10,7 +10,7 @@
 | Owner | Eng lead |
 | Refines | CTX scope item "Vinculación PC ↔ celular (pairing mediante QR)" |
 | Implemented by | `-` |
-| Last updated | 2026-10-07 |
+| Last updated | 2026-11-01 |
 
 ## 1. Objective
 
@@ -44,6 +44,7 @@ El usuario debe poder vincular su Android device con el PC Host escaneando un QR
 - [ ] AC-1: Dado el servidor activo, cuando el usuario escanea el QR con la app Twinpad, entonces queda establecida una sesión autenticada entre ambos dispositivos sin ingresar IP/puerto manualmente.
 - [ ] AC-2: Dado un dispositivo que no escaneó el QR, cuando intenta conectarse directamente al servidor, entonces es rechazado (NFR-004).
 - [ ] AC-3: Dado un QR mostrado hace más del tiempo de validez definido en su SPEC, cuando se escanea, entonces la vinculación es rechazada con un mensaje de "QR expirado, generar uno nuevo".
+- [ ] AC-4 (CR-057): Dado un teléfono ya emparejado con el PC y una IP del PC renovada tras un reinicio del router, cuando la app intenta conectar o reanudar (SPEC-001 §8.2), entonces resuelve el servidor vía mDNS (SPEC-009) usando el nombre anunciado y la sesión se restablece sin re-escanear.
 
 ## 7. Non-functional concerns
 
@@ -63,7 +64,7 @@ El usuario debe poder vincular su Android device con el PC Host escaneando un QR
 
 ## 10. Related specifications
 
-- `-` until assigned
+- SPEC-001 (pairing), SPEC-002 (UI), SPEC-009 (descubrimiento mDNS)
 
 ## 11. Notes and open questions
 
@@ -84,3 +85,4 @@ El usuario debe poder vincular su Android device con el PC Host escaneando un QR
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
+| 0.2.0 | 2026-11-01 | Buffy (agente) (CR-057) | AC-4: re-resolución mDNS del servidor tras cambio de IP DHCP, sin re-scan (SPEC-009) |

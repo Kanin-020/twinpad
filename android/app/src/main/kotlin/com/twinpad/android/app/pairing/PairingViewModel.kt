@@ -54,6 +54,17 @@ data class PairingCollaborators(
     val playback: AudioPlayback = AudioPlayback(),
     val streamStats: com.twinpad.android.app.stream.StreamStats =
         com.twinpad.android.app.stream.StreamStats(),
+    /** CR-057 (SPEC-009): resuelve el `s` del QR antes de abrir TCP — IP
+     * literal directa, `twinpad.local.` vía NsdManager. `null`: resolver venció
+     * → E1. Inyectable para tests; producción lo conecta la factory. */
+    val resolveServerHost: suspend (host: String, port: Int) -> Pair<String, Int>? =
+        { host, port ->
+            if (com.twinpad.android.app.pairing.network.HostResolution.isIpLiteral(host)) {
+                host to port
+            } else {
+                null
+            }
+        },
 )
 
 /**
@@ -521,7 +532,18 @@ class PairingViewModel(
                     _cameraEffects.tryEmit(effect) // Activity lanza el diálogo del SO
                 }
 
-            is Effect.Connect -> network.connect(effect.addr, effect.port)
+            is Effect.Connect ->
+                // CR-057 (SPEC-009 §6): la conexión pasa por el resolver en
+                // cada intento (also en la reanudación CR-056). Falla del
+                // resolver con timeout = señal E1 determinista.
+                viewModelScope.launch(Dispatchers.IO) {
+                    val target = collaborators.resolveServerHost(effect.addr, effect.port)
+                    if (target != null) {
+                        network.connect(target.first, target.second)
+                    } else {
+                        feed(PairingEvent.WireMessage(null))
+                    }
+                }
             is Effect.SendLine -> network.send(effect.line)
             is Effect.Disconnect -> network.disconnect()
             is Effect.StartCamera, is Effect.StopCamera, is Effect.ShowError ->
@@ -545,14 +567,26 @@ class PairingViewModel(
          * impone [PairingEvent.ResumeTick]. */
         const val RESUME_RETRY_MS: Long = 2_000L
 
-        /** Factory de producción: el ViewModel usa sus colaboradores por defecto. */
+        /** Factory de producción: colaboradores con descubrimiento real. */
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     require(modelClass.isAssignableFrom(PairingViewModel::class.java)) {
-                        "Clase de ViewModel no soportada: ${modelClass.name}"
+                        "Clase de ViewModel no soportado: ${modelClass.name}"
                     }
-                    return modelClass.cast(PairingViewModel(application, PairingCollaborators()))
+                    // CR-057 (SPEC-009): resolver NsdManager real; IP literal directa.
+                    val discovery =
+                        com.twinpad.android.app.pairing.network.ServerDiscovery(application)
+                    return modelClass.cast(
+                        PairingViewModel(
+                            application,
+                            PairingCollaborators(
+                                resolveServerHost = { host, port ->
+                                    discovery.resolveServer(host, port)
+                                },
+                            ),
+                        ),
+                    )
                 }
             }
     }

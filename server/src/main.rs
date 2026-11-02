@@ -62,6 +62,12 @@ fn main() {
         std::process::exit(1);
     };
     let addr = local_addr_for_qr();
+    // CR-057 (SPEC-009): anunciador mDNS `_twinpad._tcp.local.` mientras el
+    // socket de control escucha; permite re-resolver tras renovación DHCP sin
+    // re-escanear. Si mDNS no opera, el pairing por IP literal sigue intacto.
+    if let Ok(ip) = addr.parse::<std::net::IpAddr>() {
+        twinpad_server::mdns::spawn_announcer(port, ip);
+    }
     let store = Arc::new(TokenStore::new(
         OsRandomBytes,
         SystemClock,
