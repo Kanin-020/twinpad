@@ -145,13 +145,43 @@ no hay Wi-Fi disponible. Video/audio permanecen en LAN por diseño
 
 ## 7. Execution checklist
 
-- [ ] Target document(s) updated
-- [ ] Dependent documents updated (ADR-007, ADR-003)
-- [ ] New ADR (perfil, receptor, handover)
-- [ ] Tests added/updated
-- [ ] `testing/traceability.md` updated
-- [ ] Indexes updated
-- [ ] Code change merged
+- [x] Target document(s) updated
+- [x] Dependent documents updated (ADR-007, ADR-003)
+- [x] New ADR (perfil, receptor, handover)
+- [x] Tests added/updated
+- [x] `testing/traceability.md` updated
+- [x] Indexes updated
+- [x] Code change merged (Paso 1: `b35b5fe4`, fábrica `hid` + handover)
+
+## 8. Estado: paso 2 (banco físico) — PENDIENTE
+
+**Pendiente del banco físico (2026-11-01):** la conexión BT al PC
+(Fedora/BlueZ) no se establece porque el stack Bluetooth del teléfono
+(MIUI, Android) **no emite el intento L2CAP** del rol HID Device hacia el
+host — comprobado con captura HCI (`btmon` en el PC): el teléfono loguea
+`CONNECTING` y aborta a los ~13 s sin un solo paquete en la radio, y la
+conexión inversa (PC→teléfono, `Device1.ConnectProfile 1124`) falla en
+`br-connection-create-socket`.
+
+Partes descartadas con evidencia (2026-11-01, teléfono POCO X8 Pro +
+PC Fedora "fedora"):
+
+- Registro HID de la app: OK (rol ganado tras toggle BT; conflicto
+  «another app is registered» de MIUI se resuelve con el reintento
+  persistente; **el SO desregistra en caliente al re-emparejar**: retry
+  lo recupera solo).
+- Publicación SDP del gamepad: OK (UUID `00001124` visible en BlueZ tras
+  re-emparejar con la app abierta; `disconnect→connect` obligó el
+  redescubrimiento).
+- Emparejamiento/confianza: OK (`Bonded: yes · Trusted: yes`).
+- Cambio del tipo de dispositivo emparejado («auto»→otro): sin efecto.
+- Reintentos de registro y conexión indefinidos (tope 20 s): en la app,
+  incluidos en el APK de banco; el canal queda REGISTERED esperando.
+
+Bloqueo definitivo pendiente de resolver con: reinicio completo del
+teléfono (último descarte del HAL de MIUI), otra ROM/charola de
+Bluetooth u otro teléfono. El código de la app y el lado PC quedan
+listos; sin cambios de contrato v1. Ver también ADR-009 §5.
 
 ## Changelog
 
@@ -159,3 +189,4 @@ no hay Wi-Fi disponible. Video/audio permanecen en LAN por diseño
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Opened en lote de cuellos de botella de conexión |
 | 0.2.0 | 2026-11-01 | Owner + Buffy | CR Approved: owner amplió el scope de «failover de inputs» a «alternativa completa (sin Wi-Fi) + failover automático»; ADR-009 lo registra |
+| 0.3.0 | 2026-11-01 | Buffy (agente) | Paso 1 code-merged (cableado de permiso en caliente + reintentos indefinidos de registro/conexión del canal HID); paso 2 (banco físico) quedó PENDIENTE: stack de MIUI no emite el intento L2CAP del rol HID Device (evidencia en §8) |
