@@ -131,33 +131,135 @@ fn build_app_window_command(program: &str, url: &str) -> std::process::Command {
     command
 }
 
+/// Aperturas fallback (CR-063 0.1.2): `xdg-open` (host normal) y, en
+/// Toolbx/Flatpak —donde el navegador del escritorio vive FUERA del
+/// sandbox— `flatpak-spawn --host` con `xdg-open` o `gio open`, que lanza
+/// el comando en la sesión real del host. `.status()`: los helpers de
+/// apertura devuelven rápido, así el canal puede decidir por resultado.
+const FALLBACK_OPENERS: &[&[&str]] = &[
+    &["xdg-open"],
+    &["flatpak-spawn", "--host", "xdg-open"],
+    &["flatpak-spawn", "--host", "gio", "open"],
+];
+
+/// webview del sistema (CR-063 0.2.0): Gtk.Window + WebKit2.WebView por
+/// PyGObject — WebKitGTK 4.1 real, SIN chrome de navegador ni pestañas.
+/// El script se pasa con `-c` y el URL llega por argv[1] (sin
+/// interpolación en el código). reqs del HOST Fedora Workstation:
+/// python3-gobject + webkit2gtk4.1 (preinstalados; sin dependeuerzas).
+const HOST_WEBVIEW_SCRIPT: &str = r#"import sys
+import gi
+gi.require_version("WebKit2", "4.1")
+gi.require_version("Gtk", "3.0")
+from gi.repository import WebKit2, Gtk
+
+window = Gtk.Window(title="Twinpad Servidor PC")
+window.set_default_size(880, 980)
+view = WebKit2.WebView()
+view.load_uri(sys.argv[1])
+window.add(view)
+window.connect("destroy", Gtk.main_quit)
+window.show_all()
+Gtk.main()
+"#;
+
+/// argv de la fase webview: `flatpak-spawn --host python3 -c <script> URL`.
+fn build_host_webview_command(url: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("flatpak-spawn");
+    command.args(["--host", "python3", "-c", HOST_WEBVIEW_SCRIPT, url]);
+    command
+}
+
+/// Lanza la ventana webview del sistema en el HOST (Toolbx/Flatpak: el
+/// binario corre en el sandbox sin GTK/WebKit; el escritorio del host sí
+/// los tiene). `.status()`: puede bloquear hasta cerrar la ventana — se
+/// llama desde el hilo dedicado de la cascada.
+fn launch_host_webview(url: &str) -> Result<std::process::ExitStatus, std::io::Error> {
+    build_host_webview_command(url).status()
+}
+
 /// Acción «Abrir interfaz de gestión» (SPEC-010 W3, CR-063): la página se
-/// abre como ventana propia del escritorio. Desapegada (`spawn()` sin
-/// `wait()`): el callback de los ash tray no queda esperando al cierre de
-/// la ventana. Si ningún navegador de modo app está disponible (E4),
-/// fallback a `xdg-open` (comportamiento CR-061). También la invoca
-/// `main.rs` una vez al arrancar (CR-063 §2: la UI se muestra sola).
+/// abre como ventana del sistema, en cascada:
+///
+/// 0. WEBVIEW del sistema en el HOST: WebKitGTK real (`flatpak-spawn --host
+///    python3` + PyGObject) — la ventana nativa que pide el owner (CR-063
+///    0.2.0), sin navegador de por medio.
+/// 1. LOCAL modo app: `--app=URL` del primer Blink en [`APP_MODE_BROWSERS`]
+///    (spawn desapegado: el caller no espera al cierre).
+/// 2. HOST modo app (Toolbx/Flatpak): `--app=URL` del Blink del host con
+///    `flatpak-spawn --host`.
+/// 3. HOST/LOCAL genérico: [`FALLBACK_OPENERS`] (`xdg-open`/`gio open`;
+///    pestaña del navegador por defecto).
+///
+/// Fases 0/2/3 usan `.status()` (bloquean mientras da vida a la ventana),
+/// así que toda la cascada corre en un hilo dedicado: el caller nunca
+/// queda esperando.
 pub fn open_app_window(port: u16) {
     let url = format!("http://127.0.0.1:{port}/");
+    std::thread::spawn(move || open_app_window_cascade(&url));
+}
+
+fn open_app_window_cascade(url: &str) {
+    // Fase 0: webview del sistema (WebKitGTK del host).
+    if try_fallback(launch_host_webview(url)) {
+        println!("Twinpad: ventana webview del sistema abierta en {url} (CR-063 0.2.0).");
+        return;
+    }
+    // Fase 1: Blink local en modo app (spawn desapegado, no bloquea).
     for program in APP_MODE_BROWSERS {
-        let spawn = build_app_window_command(program, &url).spawn();
-        match spawn {
-            Ok(_) => {
-                println!("Twinpad: ventana de gestión abierta en {url} ({program}; CR-063 W3).");
-                return;
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                continue;
-            }
-            Err(_) => break,
+        if build_app_window_command(program, url).spawn().is_ok() {
+            println!(
+                "Twinpad: ventana de gestión abierta en {url} ({program}; fallback navegador; CR-063 W3)."
+            );
+            return;
         }
     }
-    match std::process::Command::new("xdg-open").arg(&url).status() {
-        Ok(_) => {
-            println!("Twinpad: interfaz local abierta en {url} (fallback navegador; CR-063 W3).")
+    // Fase 2: Blink del host en modo app.
+    for program in APP_MODE_BROWSERS {
+        let status = std::process::Command::new("flatpak-spawn")
+            .args(["--host", program, &format!("--app={url}")])
+            .status();
+        if try_fallback(status) {
+            println!(
+                "Twinpad: ventana de gestión abierta en {url} (host {program}; fallback navegador; CR-063 W3)."
+            );
+            return;
         }
+    }
+    // Fase 3: aperturas genéricas (pestaña en el navegador por defecto).
+    for opener in FALLBACK_OPENERS {
+        let [bin, extra_args @ ..] = opener else {
+            continue;
+        };
+        let status = std::process::Command::new(bin)
+            .args(extra_args)
+            .arg(url)
+            .status();
+        if try_fallback(status) {
+            println!(
+                "Twinpad: interfaz local abierta en {url} (fallback {extra}; CR-063 W3).",
+                extra = extra_args.join(" ")
+            );
+            return;
+        }
+    }
+    eprintln!("Twinpad: sin opener disponible; abre {url} manualmente (E4).");
+}
+
+/// Un intento de la cascada es exitoso con exit code 0; con otro exit code
+/// o runtime falla, loguea E4 y la cascada prueba lo siguiente. NotFound
+/// se descarta en silencio (SIN opener en ese sandbox).
+fn try_fallback(status: Result<std::process::ExitStatus, std::io::Error>) -> bool {
+    match status {
+        Ok(code) if code.success() => true,
+        Ok(code) => {
+            eprintln!("Twinpad: opener salió con {code} (E4); prueba el siguiente de la cascada.");
+            false
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
         Err(err) => {
-            eprintln!("Twinpad: no se pudo abrir la ventana web ({err}); usa {url} (E4).")
+            eprintln!("Twinpad: opener no se pudo ejecutar ({err}) (E4).");
+            false
         }
     }
 }
@@ -198,6 +300,30 @@ mod tests {
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
         assert_eq!(args, vec![format!("--app={url}")]);
+    }
+
+    // TEST-0142 — verifies CR-063 0.2.0 (SPEC-010 W3): el webview del
+    // sistema es `flatpak-spawn --host python3 -c <script> URL` (el URL va
+    // por argv[1] del script, sin interpolación; el script crea
+    // Gtk.Window + WebKit2.WebView del host).
+    #[test]
+    fn host_webview_launch_is_flatpak_spawn_python_webkit() {
+        let url = "http://127.0.0.1:8430/";
+        let command = build_host_webview_command(url);
+        assert_eq!(command.get_program(), "flatpak-spawn");
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args.len(), 5);
+        assert_eq!(args[0], "--host");
+        assert_eq!(args[1], "python3");
+        assert_eq!(args[2], "-c");
+        assert!(args[3].contains("WebKit2.WebView"));
+        assert!(args[3].contains("load_uri(sys.argv[1])"));
+        assert_eq!(args[4], url);
+        // El script no interpola el URL: argv es su única vía de entrada.
+        assert!(!args[3].contains(url));
     }
 
     // TEST-0141 — verifies CR-063 (SPEC-010 W3): la canasta de candidatos es

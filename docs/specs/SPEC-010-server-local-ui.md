@@ -9,7 +9,7 @@
 |---|---|
 | ID | SPEC-010 |
 | Title | Interfaz local de gestión del Servidor PC |
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-001 (AC-1, AC-2) y operación/detención de CR-061 |
@@ -64,12 +64,13 @@ usuario y parada con gracia (CR-061).
   actualmente para el encoder del Plugin.
 - **W3 — Abrir interfaz:** la acción de menú del tray abre la página de
   gestión (solicitud HTTP GET al puerto local, desde el propio PC) en una
-  ventana del sistema: modo app del navegador del PC (navegador Blink con
-  `--app=URL`: ventana propia, sin barra de direcciones ni pestañas);
-  si no hay navegador de modo app, fallback al navegador predeterminado
-  (CR-063). Al arrancar, el Servidor PC abre la ventana una vez por sí
-  mismo (fail-soft sin entorno de escritorio); la URL queda impresa en
-  stdout como vía alternativa (CR-063 §2 0.1.1).
+  ventana del sistema: por defecto el WEBVIEW DEL SISTEMA del escritorio
+  del host (WebKitGTK vía `flatpak-spawn --host` + PyGObject en el host —
+  CR-063 0.2.0; ventana propia sin barra de direcciones ni pestañas); el
+  navegador del PC queda SOLO como fallback (modo app Blink →
+  predeterminado normal). Al arrancar, el Servidor PC abre la ventana una
+  vez por sí mismo (fail-soft sin entorno de escritorio); la URL queda
+  impresa en stdout como vía alternativa (CR-063 §2 0.1.1).
 - **W4 — Detener servidor:** la acción de menú del tray y el botón de la
   página detienen el servidor con gracia: no se aceptan nuevas sesiones
   y el  proceso termina. Los clientes vivos de la app observan el cierre por su
@@ -154,3 +155,4 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Initial (CR-061) |
 | 0.2.0 | 2026-11-02 | Buffy (agente) | `Approved` — W3 abre en ventana web del sistema (modo `--app` de navegador Blink, fallback navegador normal); CR-063; TEST-0141 |
+| 0.3.0 | 2026-11-02 | Buffy (agente) | `Approved` — W3 abre en el WEBVIEW del sistema (WebKitGTK del host vía flatpak-spawn+PyGObject); navegadores bajan a fallback (0.2.0 CR-063); TEST-0141/0142 |

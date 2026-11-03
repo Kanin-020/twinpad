@@ -46,6 +46,12 @@ La superficie HTTP del servidor no cambia.
 Además, al ARRANCAR el Servidor PC la ventana se abre SOLA una vez (el
 owner no tiene que abrir el tray): fail-soft si no hay entorno de escritorio;
 el stdout mantiene la URL de siempre como vía alternativa.
+«»0.2.0 (solicitud directa del owner, 2026-11-02): la ventana del sistema NO
+es el navegador: es el WEBVIEW DEL SISTEMA (WebKitGTK 4.1 del escritorio del
+host, vía `flatpak-spawn --host python3` + PyGObject, ya preinstalados en
+Fedora Workstation). La cascada queda: (0) webview del sistema del host,
+(1) modo app Blink local, (2) modo app Blink del host, (3) xdg-open/gio;
+el navegador solo sobrevive como fallback.
 ```
 
 ## 3. Motivation
@@ -107,3 +113,4 @@ el stdout mantiene la URL de siempre como vía alternativa.
 |---|---|---|---|
 | 0.1.0 | 2026-11-02 | Buffy (agente) | Opened, decidido y aplicado en la misma iteración (owner-requested) |
 | 0.1.1 | 2026-11-02 | Buffy (agente) | Ampliado: la ventana del sistema se auto-abre UNA vez al arrancar el server (fail-soft, sin entorno de escritorio) |
+| 0.2.0 | 2026-11-02 | Buffy (agente) | Cambio de mecanismo por orden del owner: la ventana es el WEBVIEW del sistema (WebKitGTK del host vía flatpak-spawn + PyGObject); navegadores movidos a fallback; evidencia PYGI-OK + WebKit vivo en el host |

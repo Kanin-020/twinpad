@@ -4,8 +4,8 @@
 |---|---|
 | ID | DES-005 |
 | Title | Interfaz local del Servidor PC: tray + página HTTP loopback |
-| Version | 0.2.0 |
-| Status | `Approved` (CR-061; CR-063 para la apertura en ventana) |
+| Version | 0.3.0 |
+| Status | `Approved` (CR-061; CR-063 apertura en webview del sistema) |
 | Owner | Eng lead |
 | Realizes | SPEC-010 (full) |
 | Depends on | DES-001, ADR-010 |
@@ -20,10 +20,14 @@ Dos componentes nuevos en el adaptador ejecutable del Servidor PC
   puro-Rust sobre D-Bus/zbus). Menú: «Abrir interfaz», «Mostrar URI
   (terminal)», «Iniciar al arrancar el equipo» (casilla), «Detener
   servidor». Fail-soft: si el spawn falla, solo log y sin bandeja.
-  «Abrir interfaz» (CR-063) lanza la página como ventana del sistema con
-  `--app=URL` del primer navegador Blink disponible (sin dependencias
-  nuevas); si no hay, fallback a `xdg-open`. El arranque del server abre
-  la ventana UNA vez por sí mismo (`main.rs`, fail-soft; CR-063 §2 0.1.1).
+  «Abrir interfaz» (CR-063 0.2.0) lanza la página en el WEBVIEW del
+  sistema: `flatpak-spawn --host python3 -c <script> URL` crea una
+  `Gtk.Window + WebKit2.WebView` (WebKitGTK 4.1) en el escritorio del
+  HOST (el binario corre en sandbox Toolbx sin GTK/WebKit; el host
+  Fedora ya trae python3-gobject + webkit2gtk4.1). Cascada de fallback:
+  `--app=URL` del Blink local/host → `xdg-open`/`gio open` (local/host).
+  El arranque del server abre la ventana UNA vez por sí mismo
+  (`main.rs`, fail-soft; CR-063 §2 0.1.1).
 - `server/src/webui.rs` — hilo HTTP artesanal (std::net) en
   `127.0.0.1:WEBUI_PORT` (defecto 8430). `GET /` renderiza una página
   HTML estática con datos vivos (QR, URI, sesiones, juegos,
@@ -151,3 +155,4 @@ No aplica (cada petición re-lee estado; W8 exige frescura por consulta).
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Initial (CR-061) |
 | 0.2.0 | 2026-11-02 | Buffy (agente) | `Approved` — la action «Abrir interfaz» abre ventana web del sistema (`--app` Blink, fallback `xdg-open`); CR-063; TEST-0141 |
+| 0.3.0 | 2026-11-02 | Buffy (agente) | `Approved` — la ventana es el WEBVIEW del sistema (WebKitGTK del host vía flatpak-spawn+PyGObject); navegadores bajan a fallback; TEST-0141/0142 |
