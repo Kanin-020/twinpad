@@ -25,6 +25,16 @@ private const val MEDIA_RECOVERY_WINDOW_MS = 10_000L
 private const val MEDIA_RECONNECT_INITIAL_DELAY_MS = 250L
 private const val MEDIA_RECONNECT_MAX_DELAY_MS = 2_000L
 
+/**
+ * Capacidad del canal entre lector media y feeder del decodificador. Con 2
+ * unidades, una ráfaga de llegadas (WiFi) saturaba el canal y el fallback
+ * `trySend` dispara clear+reset del decodificador — la imagen se congela
+ * hasta la IDR periódica (≈1 s), el microcorte descrito por el owner.
+ * 32 AUs absorben ráfagas largas sin pagar retardación: el feeder drena el
+ * FIFO y solo entrega AU estrictamente consecutivas al decodificador.
+ */
+private const val ACCESS_UNIT_CHANNEL_CAPACITY = 32
+
 /** Ciclo de vida del media de la sesión: reemplaza cliente y decodificador
  * por generación de conexión y reintentos con backoff mientras la ventana
  * de recuperación esté activa (SPEC-003 §6; CR-029, CR-062). */
@@ -45,7 +55,7 @@ internal class PairingMediaSession(
         val surface: Surface,
     )
 
-    private val accessUnits = Channel<PendingAccessUnit>(capacity = 2)
+    private val accessUnits = Channel<PendingAccessUnit>(capacity = ACCESS_UNIT_CHANNEL_CAPACITY)
     private val generation = AtomicLong(0)
 
     @Volatile
@@ -265,12 +275,15 @@ internal class PairingMediaSession(
         val discontinuity = isFrameDiscontinuous(lastReceivedFrameNumber, unit.frameNumber)
         lastReceivedFrameNumber = unit.frameNumber
         if (discontinuity) {
-            clearQueuedAccessUnits()
-            outputDecoder.resetForDiscontinuity()
+            // Hueco §14: un único punto de re-sync, el gate del decoder
+            // (waitingForIdr, abierto solo por IDR). SIN limpiar la cola de
+            // sesión ni flush del codec: las AU previas al hueco son
+            // válidas (§5) y se presentan; las posteriores se descartan
+            // hasta el IDR. El doble clear+reset anterior reiniciaba el
+            // codec dos veces por hueco y congelaba ~333 ms extra.
+            if (!unit.idr) return
         }
-        if (!discontinuity || unit.idr) {
-            enqueueAccessUnit(unit, output, connectionGeneration, outputDecoder)
-        }
+        enqueueAccessUnit(unit, output, connectionGeneration, outputDecoder)
     }
 
     private fun clearQueuedAccessUnits() {

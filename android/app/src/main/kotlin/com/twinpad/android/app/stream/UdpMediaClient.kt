@@ -167,7 +167,17 @@ internal class UdpMediaClient(
             val datagramSocket = DatagramSocket(null as java.net.SocketAddress?)
             socket = datagramSocket
             datagramSocket.reuseAddress = true
+            // CR-065: un IDR de la escena pesada llega como una ráfaga de
+            // cientos de datagramas (varios cientos de KB en pocos ms). El
+            // búfer por defecto del kernel (rmem_default ≈ 224 KB) desborda
+            // en plena ráfaga (RcvbufErrors del kernel subía ~36/s), se
+            // pierden fragmentos del AU clave, el reensamblador lo abandona
+            // incompleto y el gate del decoder se queda esperando un IDR que
+            // ya nunca completa: imagen congelada. Se pide un búfer amplio
+            // ANTES de connect(); el kernel lo acota a rmem_max (8 MB en el
+            // dispositivo de prueba).
             datagramSocket.soTimeout = RECEIVE_TIMEOUT_MS.toInt()
+            runCatching { datagramSocket.receiveBufferSize = RECV_SOCKET_BUFFER_BYTES }
             datagramSocket.connect(InetSocketAddress(host, port))
             val joinNonce = ByteArray(MediaCrypto.NONCE_BYTES).also(SecureRandom()::nextBytes)
             val mediaKey = codec.udpMediaKey(joinNonce)
@@ -218,13 +228,18 @@ internal class UdpMediaClient(
 
     private companion object {
         const val RECEIVE_TIMEOUT_MS = 100L
-        const val KEEPALIVE_PERIOD_NANOS = 5_000L * 1_000_000L
+
+        /** §4.4: keepalive del MISMO nonce cada 1 000 ms (señal R11). */
+        const val KEEPALIVE_PERIOD_NANOS = 1_000L * 1_000_000L
 
         /** Primer JOIN de la conexión: el server resetea `seq` a 0 (§4.4). */
         const val FIRST_JOIN_LAST_SEQ = 0L
 
         /** Tope de lectura: recovery FEC máximo 1 448 B (§4.4). */
         const val RECV_BUFFER_BYTES = 1_448
+
+        /** Búfer del socket UDP (CR-065): absorbe la ráfaga de un IDR. */
+        const val RECV_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024
     }
 }
 
@@ -453,9 +468,15 @@ internal class UdpMediaCodec(private val sessionKey: ByteArray) {
         internal fun u16Bytes(value: Int): ByteArray =
             ByteBuffer.allocate(U16_BYTES).order(ByteOrder.BIG_ENDIAN).putShort(value.toShort()).array()
 
-        /** Nonce GCM: `0x00000000 ‖ seq_be64` (§4.4). */
+        /** Nonce GCM: `0x00000000 ‖ seq_be64` (§4.4). El `putLong` escribe
+         *  en el índice 4: los primeros 4 bytes quedan en cero y la seq
+         *  ocupa los 8 finales (identico al Core Rust, única forma de
+         *  comprender un datagrama servido por el relay real). */
         internal fun udpNonce(seq: Long): ByteArray {
-            return ByteBuffer.allocate(GCM_NONCE_BYTES).order(ByteOrder.BIG_ENDIAN).putLong(seq).array()
+            return ByteBuffer.allocate(GCM_NONCE_BYTES)
+                .order(ByteOrder.BIG_ENDIAN)
+                .putLong(GCM_NONCE_BYTES - U64_BYTES, seq)
+                .array()
         }
 
         internal fun buildHeader(
@@ -642,13 +663,18 @@ internal class UdpReassembler(
         rawBySeq.headMap(cutoff, false).clear()
     }
 
-    private fun purgeAbandoned(seq: Long) {
-        if (seq < UdpMediaCodec.REPLAY_WINDOW.toLong()) return
+    private fun purgeAbandoned(seq: Long): Int {
+        if (seq < UdpMediaCodec.REPLAY_WINDOW.toLong()) return 0
         val cutoff = seq - UdpMediaCodec.REPLAY_WINDOW.toLong()
+        var removed = 0
         val iterator = pending.values.iterator()
         while (iterator.hasNext()) {
-            if (iterator.next().firstSeq <= cutoff) iterator.remove()
+            if (iterator.next().firstSeq <= cutoff) {
+                iterator.remove()
+                removed++
+            }
         }
+        return removed
     }
 
     private fun readBeLong(

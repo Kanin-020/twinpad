@@ -1,5 +1,6 @@
 package com.twinpad.android.app.stream
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -17,6 +18,21 @@ class UdpMediaClientTest {
     private val sessionId = ByteArray(16) { 0x23 }
 
     private fun mediaKey(joinNonce: ByteArray): ByteArray = UdpMediaCodec(sessionKey).udpMediaKey(joinNonce)
+
+    // TEST-0140 — CR-062 (SPEC-003 §4.4): el nonce GCM vale `0x00000000 ‖
+    // seq_be64`; el teléfono y el Core derivan la MISMA clave con este
+    // layout (un nonce invertido deja todas las AU sin autenticar y
+    // fuerza el fallback TCP del §8.5 en cada conexión).
+    @Test
+    fun nonce_gcm_layout_cero_prefijo_seq_sufijo() {
+        val nonce = UdpMediaCodec.udpNonce(0x0102030405L)
+        assertEquals(UdpMediaCodec.GCM_NONCE_BYTES, nonce.size)
+        assertArrayEquals(intArrayOf(0, 0, 0, 0), nonce.copyOfRange(0, 4).map { it.toInt() }.toIntArray())
+        assertEquals(
+            0x0102030405L,
+            ByteBuffer.wrap(nonce, 4, 8).order(ByteOrder.BIG_ENDIAN).long,
+        )
+    }
 
     // TEST-0140 — CR-062 (SPEC-003 §4.4): JOIN de 92 B con la magia
     // exacta y HMAC que liga session_id + last_seq + join_nonce.

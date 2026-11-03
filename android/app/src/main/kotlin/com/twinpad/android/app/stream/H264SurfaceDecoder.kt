@@ -26,6 +26,16 @@ private const val PRESENT_EARLY_NS = 2_000_000L
 /** α del EMA del intervalo (1/4: reacciona lento a ráfagas aisladas). */
 private const val EMA_ALPHA_DIVISOR = 4
 
+/**
+ * Holgura interna de AU pendientes de invertir en el codec. La red bajo WiFi
+ * entrega las AU en ráfagas: si `dequeueInputBuffer` no tenía buffer libre en
+ * ese instante, el flush imediato forzaba esperar la IDR periódica del
+ * encoder (≈1 s de imagen congelada) — exactamente el microcorte descrito
+ * por el owner. El backlog absorbe la ráfaga sin descartar AU consecutivas;
+ * el reset ante stall genuino queda intacto como fallback (SPEC-003).
+ */
+private const val BACKLOG_MAX_UNITS = 64
+
 /** MediaCodec AVC decoder feeding the app-owned SurfaceView. */
 class H264SurfaceDecoder(
     private val surface: Surface,
@@ -35,8 +45,16 @@ class H264SurfaceDecoder(
     private val released = AtomicBoolean(false)
     private var configured = false
     private var waitingForIdr = true
+
+    /** Último fn admitido por orden de llegada (detección de hueco §14). */
+    private var lastReceivedFrameNumber: Long? = null
+
+    /** Último fn invertido en `codec` (orden FIFO del backlog). */
     private var lastQueuedFrameNumber: Long? = null
     private val frameNumbersByTimestamp = HashMap<Long, Long>()
+
+    /** Backlog interno: AU válidas esperando buffer de entrada del codec. */
+    private val pendingUnits = ArrayDeque<H264MediaClient.EncodedAccessUnit>()
 
     // CR-048: llegadas de AU y estado del pacing de presentación.
     private val arrivalNsByTimestamp = HashMap<Long, Long>()
@@ -68,7 +86,9 @@ class H264SurfaceDecoder(
         codec.start()
         configured = true
         waitingForIdr = true
+        lastReceivedFrameNumber = null
         lastQueuedFrameNumber = null
+        pendingUnits.clear()
         frameNumbersByTimestamp.clear()
         arrivalNsByTimestamp.clear()
         lastArrivalNs = 0L
@@ -80,19 +100,32 @@ class H264SurfaceDecoder(
     @Synchronized
     internal fun queue(unit: H264MediaClient.EncodedAccessUnit) {
         if (!isReadyForInput()) return
-        val lastFrame = lastQueuedFrameNumber
+        val lastFrame = lastReceivedFrameNumber
         if (lastFrame != null && unit.frameNumber != lastFrame + 1L) {
-            codec.flush()
+            // Hueco §14: suspende la entrada hasta el próximo IDR SIN
+            // `codec.flush()`. Las AU ya dentro del codec son del tramo
+            // previo al hueco (cadena intacta, §5: contenido válido) y
+            // siguen presentándose; solo se descartan las AU nuevas hasta
+            // el IDR. Esto evita el reinicio destructivo del codec y el
+            // churn de instancias (mId) durante pérdida breve.
             waitingForIdr = true
+            pendingUnits.clear()
+            // El hueco se marca consumido con fn actual: los P siguientes
+            // son secuenciales y no re-disparan esta rama; su descarte
+            // sigue a cargo del gate de abajo (§5: hasta IDR).
+            lastReceivedFrameNumber = unit.frameNumber
             lastQueuedFrameNumber = null
         }
-        if (waitingForIdr && !unit.idr) return
-        val index = codec.dequeueInputBuffer(0)
-        if (index < 0 || !queueInputBuffer(index, unit)) {
+        if (waitingForIdr && !unit.idr) {
+            // Gate §5: hasta IDR, descarte pasivo (sin tocar el codec).
+            return
+        }
+        if (pendingUnits.size >= BACKLOG_MAX_UNITS) {
+            // Stall genuino sostenido (el codec nunca libera entrada durante
+            // BACKLOG_MAX_UNITS): cae al reset de §14 (conserva última imagen).
             resetForDiscontinuity()
             return
         }
-        frameNumbersByTimestamp[unit.timestampUs] = unit.frameNumber
         val arrivalNs = System.nanoTime()
         arrivalNsByTimestamp[unit.timestampUs] = arrivalNs
         if (lastArrivalNs != 0L) {
@@ -100,9 +133,36 @@ class H264SurfaceDecoder(
             emaIntervalNs += (interval - emaIntervalNs) / EMA_ALPHA_DIVISOR
         }
         lastArrivalNs = arrivalNs
-        lastQueuedFrameNumber = unit.frameNumber
-        if (unit.idr) waitingForIdr = false
-        drainOutput()
+        lastReceivedFrameNumber = unit.frameNumber
+        // El IDR encabeza el FIFO: al habilitarlo, las P que siguen ya son
+        // válidas mientras no se inviertan (mismo orden de llegada).
+        if (unit.idr) {
+            waitingForIdr = false
+        }
+        pendingUnits.addLast(unit)
+        feedBacklog()
+    }
+
+    /** Invierte en el codec tantas AU del backlog como buffers de entrada
+     * libere; sin datos no hace nada (cola sigue esperando, nunca descarta). */
+    private fun feedBacklog() {
+        while (pendingUnits.isNotEmpty()) {
+            val index = codec.dequeueInputBuffer(0)
+            if (index < 0) {
+                // Sin buffer libre en este instante: el backlog monta la
+                // ráfaga y reintenta con la siguiente llegada/salida drenada.
+                return
+            }
+            val unit = pendingUnits.first()
+            if (!queueInputBuffer(index, unit)) {
+                resetForDiscontinuity()
+                return
+            }
+            pendingUnits.removeFirst()
+            frameNumbersByTimestamp[unit.timestampUs] = unit.frameNumber
+            lastQueuedFrameNumber = unit.frameNumber
+            drainOutput()
+        }
     }
 
     private fun isReadyForInput(): Boolean = !released.get() && configured
@@ -124,7 +184,9 @@ class H264SurfaceDecoder(
         if (released.get() || !configured) return
         codec.flush()
         waitingForIdr = true
+        lastReceivedFrameNumber = null
         lastQueuedFrameNumber = null
+        pendingUnits.clear()
         frameNumbersByTimestamp.clear()
         arrivalNsByTimestamp.clear()
         lastArrivalNs = 0L

@@ -4,12 +4,14 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-064 |
+| CR | CR-066 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-065 | Receptor UDP Android: búfer de socket 4 MB antes de `connect` (los desbordes de `RcvbufErrors` perdían fragmentos del IDR y dejaban el gate del decoder cerrado: render 0 fps); medido en dispositivo | SPEC-003 §4.4 (nota pendiente), DES-002, CR-062 | Applied (2026-11-03) | Buffy (agente) | [CR-065-udp-receiver-socket-buffer-idr-loss.md](CR-065-udp-receiver-socket-buffer-idr-loss.md) |
+| CR-064 | Drawer Android: eliminar el slider de bitrate y fijar el bitrate del cliente (10 000 kbps, sin control de usuario); wire `video_config` intacto; TEST-061/069/089 actualizados | SPEC-002 (§6, update pendiente) | Applied (2026-11-03) | Buffy (agente) | [CR-064-remove-android-bitrate-slider.md](CR-064-remove-android-bitrate-slider.md) |
 | CR-063 | Interfaz local en ventana web del sistema: modo app del navegador Blink del PC (`--app=URL`, sin barra ni pestañas) con fallback `xdg-open`; sin dependencias nuevas; SPEC-010 0.2.0, DES-005 0.2.0; TEST-0141 | SPEC-010, DES-005 | Applied (2026-11-02) | Buffy (agente) | [CR-063-native-web-window.md](CR-063-native-web-window.md) |
 | CR-062 | Transporte UDP para video/audio con FEC y degradación por pérdida (evita head-of-line de TCP bajo pérdida real de paquetes; fallback al TCP media existente) | SPEC-003, SPEC-005, DES-001/002, ARCH | Open (2026-11-02) | Buffy (agente) | [CR-062-udp-media-transport-fec.md](CR-062-udp-media-transport-fec.md) |
 | CR-061 | Interfaz local del Servidor PC: tray StatusNotifier + página HTTP loopback (QR copiable, estado, configs, autoarranque XDG, parada con gracia); SPEC-010 y DES-005 nuevos; ADR-010; TEST-0135–0137 | REQ-001, SPEC-010, DES-005, ADR-010 | Applied (2026-11-01) | Buffy (agente) | [CR-061-server-local-ui.md](CR-061-server-local-ui.md) |

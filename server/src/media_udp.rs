@@ -233,6 +233,7 @@ fn handle_join(
     let media_key = derive_udp_media_key(&key.0, &join.join_nonce);
     let chan = registry.start_channel(&sid, addr, join.join_nonce, media_key, now);
     let _ = (deps.on_media_joined)();
+    println!("udp-relay join nuevo addr={addr} dueño=UDP (IDR solicitado)");
     let socket = Arc::clone(socket);
     let registry = Arc::clone(registry);
     let deps = Arc::clone(deps);
@@ -288,15 +289,21 @@ fn relay_udp_session(
     let mut current_game: Option<String> = None;
     let mut last_fn: Option<u64> = None;
     let mut last_timestamp_us: Option<u64> = None;
+    let mut park_log_ms: u64 = 0;
     loop {
         if !pair_active.load(Ordering::Acquire) {
+            println!("udp-relay salida: Pairing inactivo");
             registry.drop_if_generation(&session_id, chan.generation);
             return; // el Pairing finalizado elimina el canal (R8)
         }
         if registry.current_generation(&session_id) != chan.generation {
+            println!("udp-relay salida: perdió el dueño (TCP o re-join)");
             return; // perdió la propiedad (TCP o re-join)
         }
         let Some(game_id) = (deps.selected)(&session_id) else {
+            if current_game.is_some() {
+                println!("udp-relay park: sin juego seleccionado");
+            }
             current_game = None;
             last_fn = None;
             last_timestamp_us = None;
@@ -309,6 +316,11 @@ fn relay_udp_session(
             last_timestamp_us = None;
         }
         if (deps.media_game)(&session_id).as_deref() != Some(game_id.as_str()) {
+            let now_ms = deps.congestion.now_ms();
+            if now_ms >= park_log_ms {
+                println!("udp-relay park: media_game no coincide con seleccionado ({game_id})");
+                park_log_ms = now_ms + 2_000;
+            }
             deps.hub.wait_for_change(Duration::from_millis(2));
             continue;
         }
@@ -320,11 +332,20 @@ fn relay_udp_session(
             .hub
             .wait_for_forwardable(&game_id, forwardable, HUB_WAIT)
         else {
+            let now_ms = deps.congestion.now_ms();
+            if now_ms >= park_log_ms {
+                println!(
+                    "udp-relay park: sin AU forwardable en {} ms (last_fn={last_fn:?})",
+                    HUB_WAIT.as_millis(),
+                );
+                park_log_ms = now_ms + 2_000;
+            }
             continue;
         };
         // La propiedad puede cambiar durante el wait (bump TCP §4.2 o
         // re-join): re-chequeo antes de sellar/enviar (§4.4, recencia).
         if registry.current_generation(&session_id) != chan.generation {
+            println!("udp-relay salida: dueño cambió durante el wait");
             return;
         }
         if source.width < 16
@@ -333,6 +354,12 @@ fn relay_udp_session(
             || source.height > 2160
             || source.latest.annex_b.is_empty()
         {
+            println!(
+                "udp-relay salida: fuente inválida {}×{} annex_b={}",
+                source.width,
+                source.height,
+                source.latest.annex_b.len(),
+            );
             registry.drop_if_generation(&session_id, chan.generation);
             return;
         }
@@ -342,13 +369,30 @@ fn relay_udp_session(
             source.latest.idr,
             &source.latest.annex_b,
         ) else {
+            println!("udp-relay salida: seal_au falló (drop canal)");
             registry.drop_if_generation(&session_id, chan.generation);
             return;
         };
         let addr = *lock(&chan.addr);
+        let mut send_failed = 0_usize;
         for datagram in &datagrams {
-            let _ = socket.send_to(datagram, addr);
+            if socket.send_to(datagram, addr).is_err() {
+                send_failed += 1;
+            }
         }
+        if send_failed > 0 {
+            println!(
+                "udp-relay envío fallido: {send_failed}/{} datagramas",
+                datagrams.len()
+            );
+        }
+        println!(
+            "udp-relay AU fn={} idr={} ts={} datagrams={} addr={addr}",
+            source.latest.fn_,
+            source.latest.idr,
+            source.latest.timestamp_us,
+            datagrams.len(),
+        );
         let data_datagrams = datagrams
             .iter()
             .filter(|d| d[8..10] != FEC_AU_ID.to_be_bytes())
