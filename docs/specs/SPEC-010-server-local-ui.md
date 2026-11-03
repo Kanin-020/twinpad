@@ -9,13 +9,13 @@
 |---|---|
 | ID | SPEC-010 |
 | Title | Interfaz local de gestión del Servidor PC |
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-001 (AC-1, AC-2) y operación/detención de CR-061 |
 | Realized by | DES-005 |
 | Verified by | TEST-0135, TEST-0136, TEST-0137 |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -63,7 +63,11 @@ usuario y parada con gracia (CR-061).
   compatibles; (d) la resolución y el bitrate de video configurados
   actualmente para el encoder del Plugin.
 - **W3 — Abrir interfaz:** la acción de menú del tray abre la página de
-  gestión (solicitud HTTP GET al puerto local, desde el propio PC).
+  gestión (solicitud HTTP GET al puerto local, desde el propio PC) en una
+  ventana del sistema: modo app del navegador del PC (navegador Blink con
+  `--app=URL`: ventana propia, sin barra de direcciones ni pestañas);
+  si no hay navegador de modo app, fallback al navegador predeterminado
+  (CR-063).
 - **W4 — Detener servidor:** la acción de menú del tray y el botón de la
   página detienen el servidor con gracia: no se aceptan nuevas sesiones
   y el  proceso termina. Los clientes vivos de la app observan el cierre por su
@@ -147,3 +151,4 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Initial (CR-061) |
+| 0.2.0 | 2026-11-02 | Buffy (agente) | `Approved` — W3 abre en ventana web del sistema (modo `--app` de navegador Blink, fallback navegador normal); CR-063; TEST-0141 |

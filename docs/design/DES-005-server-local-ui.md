@@ -4,12 +4,12 @@
 |---|---|
 | ID | DES-005 |
 | Title | Interfaz local del Servidor PC: tray + página HTTP loopback |
-| Version | 0.1.0 |
-| Status | `Approved` (CR-061) |
+| Version | 0.2.0 |
+| Status | `Approved` (CR-061; CR-063 para la apertura en ventana) |
 | Owner | Eng lead |
 | Realizes | SPEC-010 (full) |
 | Depends on | DES-001, ADR-010 |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 
 ## 1. Overview
 
@@ -20,6 +20,9 @@ Dos componentes nuevos en el adaptador ejecutable del Servidor PC
   puro-Rust sobre D-Bus/zbus). Menú: «Abrir interfaz», «Mostrar URI
   (terminal)», «Iniciar al arrancar el equipo» (casilla), «Detener
   servidor». Fail-soft: si el spawn falla, solo log y sin bandeja.
+  «Abrir interfaz» (CR-063) lanza la página como ventana del sistema con
+  `--app=URL` del primer navegador Blink disponible (sin dependencias
+  nuevas); si no hay, fallback a `xdg-open`.
 - `server/src/webui.rs` — hilo HTTP artesanal (std::net) en
   `127.0.0.1:WEBUI_PORT` (defecto 8430). `GET /` renderiza una página
   HTML estática con datos vivos (QR, URI, sesiones, juegos,
@@ -120,7 +123,7 @@ No aplica (cada petición re-lee estado; W8 exige frescura por consulta).
 | W4 (stop con gracia) | `webui` `/stop` + flag + menú tray | TEST-0136 |
 | W5 (autoarranque idempotente) | `autostart::install/remove/is_installed` | TEST-0137 |
 | W6 (solo loopback) | bind estricto a 127.0.0.1 | TEST-0135 (bind + aserción) |
-| W1/W3/W7 | `tray.rs` fail-soft + acciones | manual (entorno de bandeja del owner) |
+| W1/W3/W7 | `tray.rs` fail-soft + acciones | TEST-0141 (argv modo app) + manual (bandeja del owner) |
 
 ## 13. Related decisions
 
@@ -146,3 +149,4 @@ No aplica (cada petición re-lee estado; W8 exige frescura por consulta).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Initial (CR-061) |
+| 0.2.0 | 2026-11-02 | Buffy (agente) | `Approved` — la action «Abrir interfaz» abre ventana web del sistema (`--app` Blink, fallback `xdg-open`); CR-063; TEST-0141 |
