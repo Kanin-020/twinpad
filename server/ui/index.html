@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Interfaz local del Servidor PC (SPEC-010 W2/W4/W8, CR-061).
+     Plantilla estática: los tokens __*__ los sustituye `webui::render_page`
+     con los datos vivos de la consulta (W8: un solo ciclo `ensure_fresh_qr`
+     por petición). El CSS (server/ui/styles.css) se inyecta compilado. -->
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Twinpad Servidor PC</title>
+    <style>__PAGE_STYLE__</style>
+  </head>
+  <body>
+    <section>
+      <h1>Twinpad Servidor PC — activo</h1>
+      <h2>QR de vinculación vigente</h2>
+      __QR_SVG__
+      <h2>URI de vinculación (copiar/pegar)</h2>
+      <textarea readonly rows="3" style="width:100%">__URI__</textarea>
+      <p>
+        <button
+          onclick="navigator.clipboard.writeText(document.querySelector('textarea').value)"
+        >
+          Copiar URI
+        </button>
+      </p>
+    </section>
+    <section>
+      <h2>Estado</h2>
+      <p>Sesiones activas: __SESSIONS__</p>
+      <p>Juegos compatibles:</p>
+      <ul>__GAMES__</ul>
+      <p>
+        Video del Plugin: __WIDTH__×__HEIGHT__ a __BITRATE__ kbps
+        (CR-058: el degradador nunca supera este target).
+      </p>
+    </section>
+    <section>
+      <h2>Control</h2>
+      <p><button onclick="location.href='/stop'">Detener servidor</button></p>
+      <p>
+        La parada termina el proceso; las sesiones activas observan el fin
+        por su canal de control (SPEC-001 §4.3 HB6).
+      </p>
+    </section>
+  </body>
+</html>

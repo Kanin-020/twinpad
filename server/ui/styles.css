@@ -1,0 +1,17 @@
+/*
+ * Hoja de estilos de la interfaz local del Servidor PC (SPEC-010, CR-061).
+ * Se inyecta en tiempo de compilación dentro del <style> de la página
+ * (DES-005 §12: sin dependencias de render nuevas; una sola ruta GET /).
+ */
+
+body {
+  font-family: sans-serif;
+  max-width: 640px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+code,
+textarea {
+  font-family: monospace;
+}

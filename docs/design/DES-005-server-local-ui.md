@@ -32,6 +32,11 @@ Dos componentes nuevos en el adaptador ejecutable del Servidor PC
   `127.0.0.1:WEBUI_PORT` (defecto 8430). `GET /` renderiza una página
   HTML estática con datos vivos (QR, URI, sesiones, juegos,
   resolución/bitrate); `GET /stop` activa el flag de parada compartido.
+  El markup vive como assets compilados (CR-063 0.2.1):
+  `server/ui/index.html` + `server/ui/styles.css` inyectados con
+  `include_str!` (tokens `__*__` sustituidos por datos vivos; sin
+  HTML/CSS inline en Rust, sin rutas HTTP nuevas: el CSS viaja inline en
+  el `<style>` de la misma página).
 - `server/src/autostart.rs` — instala/elimina el desktop entry XDG en
   `~/.config/autostart/twinpad-server.desktop`.
 
@@ -156,3 +161,4 @@ No aplica (cada petición re-lee estado; W8 exige frescura por consulta).
 | 0.1.0 | 2026-11-01 | Buffy (agente) | Initial (CR-061) |
 | 0.2.0 | 2026-11-02 | Buffy (agente) | `Approved` — la action «Abrir interfaz» abre ventana web del sistema (`--app` Blink, fallback `xdg-open`); CR-063; TEST-0141 |
 | 0.3.0 | 2026-11-02 | Buffy (agente) | `Approved` — la ventana es el WEBVIEW del sistema (WebKitGTK del host vía flatpak-spawn+PyGObject); navegadores bajan a fallback; TEST-0141/0142 |
+| 0.3.1 | 2026-11-02 | Buffy (agente) | UI como assets compilados: server/ui/index.html + styles.css inyectados con include_str! en webui (sin HTML/CSS inline en Rust); sin cambio de comportamiento (TEST-0135 intacto) |

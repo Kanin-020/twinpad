@@ -21,6 +21,13 @@ const MAX_REQUEST_BYTES: usize = 8 * 1024;
 /// argumento desde `main.rs`; fuera de los puertos de sesión/IPC 8420–8426).
 pub const PORT: u16 = 8430;
 
+/// UI estática inyectada en tiempo de compilación (CR-063 0.2.1): el markup
+/// vive en `server/ui/index.html` y la hoja en `server/ui/styles.css`; los
+/// tokens `__*__` de la plantilla los sustituye `render_page` con los datos
+/// vivos de la consulta (sin `format!`: el CSS no tendría que escapar llaves).
+const PAGE_TEMPLATE: &str = include_str!("../ui/index.html");
+const PAGE_STYLE: &str = include_str!("../ui/styles.css");
+
 /// Inyección de estado para la página (los efectos viven en `main.rs`).
 pub struct UiDeps {
     /// URI de vinculación VIGENTE al momento de la consulta (W8: fuerza la
@@ -135,32 +142,15 @@ pub fn render_page(deps: &UiDeps) -> String {
     } else {
         games.iter().map(|id| format!("<li>{id}</li>")).collect()
     };
-    format!(
-        "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">\
-<title>Twinpad Servidor PC</title>\
-<style>body{{font-family:sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem}}\
-code,textarea{{font-family:monospace}}</style></head><body>\
-<section><h1>Twinpad Servidor PC — activo</h1>\
-<h2>QR de vinculación vigente</h2>{qr_svg}\
-<h2>URI de vinculación (copiar/pegar)</h2>\
-<textarea readonly rows=\"3\" style=\"width:100%\">{uri}</textarea>\
-<p><button onclick=\"navigator.clipboard.writeText(document.querySelector('textarea').value)\">Copiar URI</button></p></section>\
-<section><h2>Estado</h2>\
-<p>Sesiones activas: {sessions}</p>\
-<p>Juegos compatibles:</p><ul>{games}</ul>\
-<p>Video del Plugin: {width}×{height} a {bitrate} kbps (CR-058: el degradador nunca supera este target).</p></section>\
-<section><h2>Control</h2>\
-<p><button onclick=\"location.href='/stop'\">Detener servidor</button></p>\
-<p>La parada termina el proceso; las sesiones activas observan el fin por su canal de control (SPEC-001 §4.3 HB6).</p></section>\
-</body></html>",
-        qr_svg = qr_svg,
-        uri = uri,
-        sessions = sessions,
-        games = games_list,
-        width = width,
-        height = height,
-        bitrate = bitrate,
-    )
+    PAGE_TEMPLATE
+        .replace("__PAGE_STYLE__", PAGE_STYLE)
+        .replace("__QR_SVG__", &qr_svg)
+        .replace("__URI__", &uri)
+        .replace("__SESSIONS__", &sessions.to_string())
+        .replace("__GAMES__", &games_list)
+        .replace("__WIDTH__", &width.to_string())
+        .replace("__HEIGHT__", &height.to_string())
+        .replace("__BITRATE__", &bitrate.to_string())
 }
 
 /// QR de `uri` como `<svg>` (DES-005 §10: reutiliza la matriz de
