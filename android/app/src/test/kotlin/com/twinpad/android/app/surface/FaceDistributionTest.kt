@@ -68,6 +68,61 @@ class FaceDistributionTest {
     }
 
     @Test
+    fun `nintendo usa los slots de la geometria del perfil no constantes`() {
+        // CR-070: clúster de cara del rombo dp de profile_map en una
+        // pantalla ancha (2400×1080, aspecto 2.2): los slots NO coinciden
+        // con las constantes del default 16:9. La distribución debe
+        // permutar ENTRE los slots del perfil propio.
+        val wide =
+            ControlProfile(
+                "",
+                listOf(
+                    faceControl("btn_y", "Y", "button_y", 0.79209f, 0.14259f),
+                    faceControl("btn_x", "X", "button_x", 0.72417f, 0.29537f),
+                    faceControl("btn_b", "B", "button_b", 0.86083f, 0.29537f),
+                    faceControl("btn_a", "A", "button_a", 0.79209f, 0.44814f),
+                ),
+            )
+        val nintendo = applyFaceDistribution(wide, nintendo = true)
+        // top / left / right (NO la constante 0.90/0.39) / bottom.
+        val expected =
+            listOf(
+                "button_x" to (0.79209f to 0.14259f),
+                "button_y" to (0.72417f to 0.29537f),
+                "button_a" to (0.86083f to 0.29537f),
+                "button_b" to (0.79209f to 0.44814f),
+            )
+        expected.forEach { (hid, xy) ->
+            val control = controlWith(hid, nintendo)!!
+            assertEquals(xy.first, control.x, EPS)
+            assertEquals(xy.second, control.y, EPS)
+        }
+    }
+
+    @Test
+    fun `apagar restaura el clúster ancho sin tocar sus posiciones`() {
+        val wide =
+            ControlProfile(
+                "",
+                listOf(
+                    faceControl("btn_y", "Y", "button_y", 0.79209f, 0.14259f),
+                    faceControl("btn_x", "X", "button_x", 0.72417f, 0.29537f),
+                    faceControl("btn_b", "B", "button_b", 0.86083f, 0.29537f),
+                    faceControl("btn_a", "A", "button_a", 0.79209f, 0.44814f),
+                ),
+            )
+        assertEquals(wide.controls, applyFaceDistribution(wide, nintendo = false).controls)
+    }
+
+    private fun faceControl(
+        id: String,
+        label: String,
+        hid: String,
+        x: Float,
+        y: Float,
+    ): TouchControl = TouchControl(id, ControlProfileCodec.KIND_BUTTON, label, hid, x, y, 0.0642f, 0.1426f)
+
+    @Test
     fun `etiqueta y asignacion viajan con el control`() {
         val nintendo = applyFaceDistribution(baseline, nintendo = true)
         val a = controlWith("button_a", nintendo)!!

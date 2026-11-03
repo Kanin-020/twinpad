@@ -4,12 +4,17 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-066 |
+| CR | CR-071 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-070 | Distribución Nintendo/Xbox de la cara sin coordenadas constantes: los 4 slots se derivan de la geometría del propio perfil (rombo dp en cualquier aspecto); la vista antigua pisaba el clúster cuadrado con las constantes del default 16:9; TEST-090 actualizado | código Android (`ControlProfile`), TEST-090 | Applied (2026-11-03) | Buffy (agente) | [CR-070-face-distribution-profile-derived-slots.md](CR-070-face-distribution-profile-derived-slots.md) |
+| CR-069 | Posiciones y tamaños libres en `profile_map.xml`: TEST-0143 pasa a paridad estructural (el layout es la fuente del default en runtime; el modelo queda como fallback/fixture) | TEST-0143 (test de app) | Applied (2026-11-03) | Buffy (agente) | [CR-069-free-position-size-in-profile-map.md](CR-069-free-position-size-in-profile-map.md) |
+| CR-068 | La hitbox de los controles táctiles coincide con la forma dibujada (círculo inscrito en los bounds); icono del gear con Material Symbols sin dependencias; TEST-0144 | código Android (`ProfileTouchController`), TEST-0144 | Applied (2026-11-03) | Buffy (agente) | [CR-068-touch-hitbox-matches-drawn-shape.md](CR-068-touch-hitbox-matches-drawn-shape.md) |
+| CR-067 | El mapeo táctil del desarrollador se define en `res/layout/profile_map.xml` (layout Android con `TwinpadControlView` + guidelines porcentuales), editable con drag & drop en el editor de Android Studio; el runtime extrae/normaliza/valida con el modelo (paridad default, TEST-0143) | SPEC-008 (§4/§5/§16, update pendiente) | Applied (2026-11-03) | Buffy (agente) | [CR-067-mapping-layout-android-studio.md](CR-067-mapping-layout-android-studio.md) |
+| CR-066 | La superficie de controles NO se edita en la app: la maquinaria de edición (toggleEditing/S0/drag del editor) se retira del código y el ajuste del mapeo pasa a ser tarea del desarrollador vía config (Android Studio); cierra la OQ de §16; TEST-023 quedará sin «surface editable» (SPEC-008 update pendiente) | SPEC-008 (Draft §2/§3/§5/§8/§16) | Applied (2026-11-03) | Buffy (agente) | [CR-066-remove-screen-editor.md](CR-066-remove-screen-editor.md) |
 | CR-065 | Receptor UDP Android: búfer de socket 4 MB antes de `connect` (los desbordes de `RcvbufErrors` perdían fragmentos del IDR y dejaban el gate del decoder cerrado: render 0 fps); medido en dispositivo | SPEC-003 §4.4 (nota pendiente), DES-002, CR-062 | Applied (2026-11-03) | Buffy (agente) | [CR-065-udp-receiver-socket-buffer-idr-loss.md](CR-065-udp-receiver-socket-buffer-idr-loss.md) |
 | CR-064 | Drawer Android: eliminar el slider de bitrate y fijar el bitrate del cliente (10 000 kbps, sin control de usuario); wire `video_config` intacto; TEST-061/069/089 actualizados | SPEC-002 (§6, update pendiente) | Applied (2026-11-03) | Buffy (agente) | [CR-064-remove-android-bitrate-slider.md](CR-064-remove-android-bitrate-slider.md) |
 | CR-063 | Interfaz local en ventana web del sistema: modo app del navegador Blink del PC (`--app=URL`, sin barra ni pestañas) con fallback `xdg-open`; sin dependencias nuevas; SPEC-010 0.2.0, DES-005 0.2.0; TEST-0141 | SPEC-010, DES-005 | Applied (2026-11-02) | Buffy (agente) | [CR-063-native-web-window.md](CR-063-native-web-window.md) |

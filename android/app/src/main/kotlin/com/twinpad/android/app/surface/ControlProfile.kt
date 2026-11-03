@@ -233,7 +233,7 @@ object ControlProfileCodec {
     /**
      * Decodifica una Config externa `twinpad-config-v1` (SPEC-007 §4) y la
      * normaliza a [ControlProfile]; posiciones ausentes se auto-dispersan
-     * (el editor permite reacomodar). Rechazo con detalle si es inválida.
+     * (la config permite reacomodarlas). Rechazo con detalle si es inválida.
      */
     fun decodeExternalConfig(
         text: String,
@@ -300,53 +300,80 @@ object ControlProfileCodec {
 private val FACE_HIDS: Set<String> =
     setOf("button_a", "button_b", "button_x", "button_y")
 
-/** Posiciones canónicas Xbox/Play (A abajo, B derecha, X izquierda, Y arriba). */
-private val XBOX_FACE_POSITIONS: Map<String, Pair<Float, Float>> =
-    mapOf(
-        "button_a" to (DEF_FACE_BOTTOM_X to DEF_FACE_BOTTOM_Y),
-        "button_b" to (DEF_FACE_RIGHT_X to DEF_FACE_SIDE_Y),
-        "button_x" to (DEF_FACE_LEFT_X to DEF_FACE_SIDE_Y),
-        "button_y" to (DEF_FACE_TOP_X to DEF_FACE_TOP_Y),
-    )
-
-/** Posiciones canónicas Nintendo (A derecha, B abajo, X arriba, Y izquierda). */
-private val NINTENDO_FACE_POSITIONS: Map<String, Pair<Float, Float>> =
-    mapOf(
-        "button_a" to (DEF_FACE_RIGHT_X to DEF_FACE_SIDE_Y),
-        "button_b" to (DEF_FACE_BOTTOM_X to DEF_FACE_BOTTOM_Y),
-        "button_x" to (DEF_FACE_TOP_X to DEF_FACE_TOP_Y),
-        "button_y" to (DEF_FACE_LEFT_X to DEF_FACE_SIDE_Y),
-    )
-
 /**
- * Reposiciona los botones de cara según la distribución elegida
- * (CR-032): Xbox/Play (default del §10: A abajo, B derecha, X
- * izquierda, Y arriba) o Nintendo (A derecha, B abajo, X arriba,
- * Y izquierda). Es una vista del perfil: solo mueve los controles
- * cuyo `hid` es uno de los cuatro Elementos HID de cara; ids,
- * etiquetas y asignaciones viajan con su control y el resto del
- * perfil queda intacto. Determinista e idempotente ante toggles.
+ * Vista de distribución de los cuatro botones de cara según la preferencia
+ * (CR-032, SPEC-008 §11 R5): Xbox/Play (A abajo, B derecha, X izquierda,
+ * Y arriba) o Nintendo (A derecha, B abajo, X arriba, Y izquierda). Los
+ * ids, etiquetas y asignaciones viajan con su control; solo se permutan
+ * las POSICIONES.
+ *
+ * CR-070: los cuatro slots (arriba, abajo, izquierda, derecha) se derivan
+ * de la geometría del PROPIO perfil (rombo dp de `profile_map.xml` o el
+ * perfil guardado), no de constantes porcentuales — así la distribución no
+ * pisaba el clúster cuadrado del CR-067/CR-069 y no depende del aspecto de
+ * la pantalla. slots: top/bottom por cy extremos y, entre los dos del
+ * medio, izquierda/derecha por cx. Si los cuatro botones no forman esa
+ * cruz reconocible, el perfil queda tal cual.
+ *
+ * Es una vista del perfil (el JSON persistido no se reescribe): se aplica
+ * sobre el estado vigente y ambos sentidos derivan de los mismos slots,
+ * así que Nintendo→apagar restaura el profile intacto y es idempotente.
  */
 fun applyFaceDistribution(
     profile: ControlProfile,
     nintendo: Boolean,
-): ControlProfile =
-    profile.copy(
+): ControlProfile {
+    // GEOMETRÍA reconocible: cuatro botones de cara en cruz (top/bottom
+    // por cy extremos, izquierda/derecha por cx entre los dos del medio).
+    // Sin forma reconocible el perfil queda tal cual (guarda única).
+    val faces =
+        profile.controls.filter {
+            it.kind == ControlProfileCodec.KIND_BUTTON && it.hid in FACE_HIDS
+        }
+    val byY = faces.sortedBy { it.y }
+    val middles = byY.drop(1).dropLast(1)
+    val left = middles.minByOrNull { it.x }
+    val right = middles.maxByOrNull { it.x }
+    val crossResolved =
+        faces.size == FACE_HIDS.size &&
+            byY.first().y < byY.last().y &&
+            middles.size == 2 &&
+            left != null &&
+            right != null &&
+            left.x < right.x
+    if (!crossResolved) return profile
+    val top = byY.first()
+    val bottom = byY.last()
+    // hid → slot según distribución; cada control recibe la posición
+    // original del control que ocupa ese slot (oportuna antes de copiar).
+    val slotOf: Map<String, TouchControl> =
+        if (nintendo) {
+            mapOf(
+                "button_x" to top,
+                "button_y" to left,
+                "button_a" to right,
+                "button_b" to bottom,
+            )
+        } else {
+            mapOf(
+                "button_y" to top,
+                "button_x" to left,
+                "button_b" to right,
+                "button_a" to bottom,
+            )
+        }
+    return profile.copy(
         controls =
             profile.controls.map { control ->
-                val position =
-                    if (control.kind == ControlProfileCodec.KIND_BUTTON && control.hid in FACE_HIDS) {
-                        (if (nintendo) NINTENDO_FACE_POSITIONS else XBOX_FACE_POSITIONS)[control.hid]
-                    } else {
-                        null
-                    }
-                if (position != null) {
-                    control.copy(x = position.first, y = position.second)
+                val slot = slotOf[control.hid]
+                if (control.kind == ControlProfileCodec.KIND_BUTTON && slot != null) {
+                    control.copy(x = slot.x, y = slot.y)
                 } else {
                     control
                 }
             },
     )
+}
 
 /** Coordenadas del default (SPEC-008 §10; layout del gamepad genérico). */
 private const val DEF_STICK_W = 0.18f
