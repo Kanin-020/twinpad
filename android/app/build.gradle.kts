@@ -37,6 +37,12 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    // CR-067: los tests JVM de `ProfileMapLayout` inflan
+    // `res/layout/profile_map.xml` (Recursos + attr styleables de app).
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {

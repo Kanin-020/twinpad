@@ -14,6 +14,59 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
+/** Consulta de hit test agrupada (ENG P4, detekt LongParameterList):
+ * punto de toque, superficie y margen de percepción (px). */
+internal data class HitQuery(
+    val px: Float,
+    val py: Float,
+    val surfaceWidth: Float,
+    val surfaceHeight: Float,
+    val marginPx: Float = 0f,
+)
+
+/**
+ * ¿El punto `query.px, query.py` cae dentro de la forma que el renderer
+ * dibuja para el control (más el margen de percepción, CR-072)? Todos los
+ * controles se pintan como el círculo inscrito en sus bounds (lado menor,
+ * CR-068): esta es la hitbox del toque, idéntica a la forma visible (el
+ * D-pad incluido, cuyo plato es el mismo círculo).
+ */
+internal fun insideDrawnShape(
+    query: HitQuery,
+    control: TouchControl,
+): Boolean {
+    val cx = (control.x + control.w / 2f) * query.surfaceWidth
+    val cy = (control.y + control.h / 2f) * query.surfaceHeight
+    val radius = minOf(control.w * query.surfaceWidth, control.h * query.surfaceHeight) / 2f + query.marginPx
+    val dx = query.px - cx
+    val dy = query.py - cy
+    return dx * dx + dy * dy <= radius * radius
+}
+
+/**
+ * Índice del control que captura el toque (CR-072). Entre todos los controles
+ * cuya hitbox contiene el punto gana la de MENOR radio: los iconos pequeños
+ * junto a uno grande (clicks L3/R3 sobre el plato del stick) están dibujados
+ * encima y son el objetivo real; con first-match, cualquier tap entre ambos
+ * iconos se lo llevaba el stick y lo iluminaba/desviaba sin tocarlo. A
+ * igualdad gana el último del orden de dibujo (el top visible).
+ */
+internal fun hitIndex(
+    profile: ControlProfile,
+    query: HitQuery,
+): Int {
+    var bestIndex = -1
+    var bestRadius = Float.MAX_VALUE
+    profile.controls.forEachIndexed { index, control ->
+        val radius = minOf(control.w * query.surfaceWidth, control.h * query.surfaceHeight) / 2f + query.marginPx
+        if (radius <= bestRadius && insideDrawnShape(query, control)) {
+            bestIndex = index
+            bestRadius = radius
+        }
+    }
+    return bestIndex
+}
+
 private const val DPAD_NEUTRAL = 8
 private const val DPAD_NORTH = 0
 private const val DPAD_NORTH_EAST = 1
@@ -30,6 +83,11 @@ private const val DPAD_DIRECTIONS = 8
 private const val MAX_ACTIVE_POINTERS = 10
 private const val MAX_TOUCH_STICKS = 2
 private const val DIGITAL_DPAD_RADIUS_SCALE = 0.65f
+
+/** Margen de percepción del toque (CR-072, × density): hitbox = forma
+ * dibujada + margen, para que los clicks L3/R3 junto a los sticks capten
+ * los taps de sus bordes y no el plato del stick contiguo. */
+private const val HITBOX_MARGIN_DP = 8f
 private const val DIAGONAL_NORTH_EAST_SECTOR = 1
 private const val DIAGONAL_SOUTH_EAST_SECTOR = 3
 private const val DIAGONAL_SOUTH_WEST_SECTOR = 5
@@ -46,76 +104,47 @@ internal class ProfileTouchController(
     private val pointerPositions = linkedMapOf<Int, Pair<Float, Float>>()
     private var drcTouchActive = false
     private var drcPointerId: Int? = null
-    private var selectedIndex = -1
-    private var draggingIndex = -1
-    private var dragLastX = 0f
-    private var dragLastY = 0f
 
-    fun renderState(editing: Boolean) =
+    /** Índice del control con entrada activa (para el render `pressed`). */
+    private var draggingIndex = -1
+
+    fun renderState() =
         ProfileRenderState(
-            selectedIndex,
             draggingIndex,
-            editing,
             activePointers,
             pointerPositions,
         )
-
-    val selectedControlIndex: Int
-        get() = selectedIndex
-
-    fun availableAssignments(profile: ControlProfile): List<String> {
-        val control = profile.controls.getOrNull(selectedIndex) ?: return emptyList()
-        return when (control.kind) {
-            ControlProfileCodec.KIND_STICK -> listOf("stick_l", "stick_r", "")
-            ControlProfileCodec.KIND_DPAD -> listOf("dpad", "")
-            else -> ControlProfileCodec.HID_ELEMENTS.filterNot { it == "dpad" || it.startsWith("stick_") } + ""
-        }
-    }
 
     fun onTouch(
         event: MotionEvent,
         view: View,
         profile: ControlProfile,
-        editing: Boolean,
-        moveSelected: (Int, Float, Float) -> Unit,
     ): Boolean =
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
-                onPointerDown(event, view, profile, editing)
-            MotionEvent.ACTION_MOVE -> onPointersMove(event, view, profile, editing, moveSelected)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> onPointerUp(event, profile, editing)
-            MotionEvent.ACTION_CANCEL -> cancelPointers(profile, editing)
+                onPointerDown(event, view, profile)
+            MotionEvent.ACTION_MOVE -> onPointersMove(event, view, profile)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> onPointerUp(event, profile)
+            MotionEvent.ACTION_CANCEL -> cancelPointers(profile)
             else -> false
         }
-
-    fun toggleEditing() {
-        selectedIndex = -1
-        draggingIndex = -1
-    }
 
     private fun onPointerDown(
         event: MotionEvent,
         view: View,
         profile: ControlProfile,
-        editing: Boolean,
     ): Boolean {
         val index = event.actionIndex
         val pointerId = event.getPointerId(index)
         val normalizedX = event.getX(index) / view.width
         val normalizedY = event.getY(index) / view.height
-        val target = hitTest(normalizedX, normalizedY, profile)
-        if (target == null) return beginDrcTouch(pointerId, normalizedX, normalizedY, editing, view)
+        val target = hitTest(event.getX(index), event.getY(index), view, profile)
+        if (target == null) return beginDrcTouch(pointerId, normalizedX, normalizedY, view)
         if (!canStartControlPointer(target.index, profile)) return false
         activePointers[pointerId] = target.index
         pointerPositions[pointerId] = target.nx to target.ny
         draggingIndex = target.index
-        if (editing) {
-            selectedIndex = target.index
-            dragLastX = event.getX(index)
-            dragLastY = event.getY(index)
-        } else {
-            applyControl(target.index, target.nx, target.ny, true, profile)
-        }
+        applyControl(target.index, target.nx, target.ny, true, profile)
         view.invalidate()
         return true
     }
@@ -124,10 +153,9 @@ internal class ProfileTouchController(
         pointerId: Int,
         nx: Float,
         ny: Float,
-        editing: Boolean,
         view: View,
     ): Boolean {
-        if (editing || drcPointerId != null) return false
+        if (drcPointerId != null) return false
         if (!updateDrcTouch(nx, ny, true, view)) return false
         drcPointerId = pointerId
         drcTouchActive = true
@@ -152,8 +180,6 @@ internal class ProfileTouchController(
         event: MotionEvent,
         view: View,
         profile: ControlProfile,
-        editing: Boolean,
-        moveSelected: (Int, Float, Float) -> Unit,
     ): Boolean {
         if (activePointers.isEmpty() && drcPointerId == null) return false
         for (index in 0 until event.pointerCount) {
@@ -171,7 +197,7 @@ internal class ProfileTouchController(
                 emit()
                 continue
             }
-            updateControlPointer(motion, profile, editing, moveSelected)
+            updateControlPointer(motion, profile)
         }
         return true
     }
@@ -179,26 +205,13 @@ internal class ProfileTouchController(
     private fun updateControlPointer(
         motion: TouchPointerMotion,
         profile: ControlProfile,
-        editing: Boolean,
-        moveSelected: (Int, Float, Float) -> Unit,
     ) {
         val controlIndex = activePointers[motion.pointerId] ?: return
         val control = profile.controls[controlIndex]
         val (adjustedX, adjustedY) =
             adjustDpadPosition(motion.normalizedX, motion.normalizedY, control)
         pointerPositions[motion.pointerId] = adjustedX to adjustedY
-        if (editing) {
-            selectedIndex = controlIndex
-            moveSelected(
-                controlIndex,
-                motion.event.getX(motion.pointerIndex) - dragLastX,
-                motion.event.getY(motion.pointerIndex) - dragLastY,
-            )
-            dragLastX = motion.event.getX(motion.pointerIndex)
-            dragLastY = motion.event.getY(motion.pointerIndex)
-        } else {
-            applyControl(controlIndex, adjustedX, adjustedY, true, profile)
-        }
+        applyControl(controlIndex, adjustedX, adjustedY, true, profile)
         motion.view.invalidate()
     }
 
@@ -220,7 +233,6 @@ internal class ProfileTouchController(
     private fun onPointerUp(
         event: MotionEvent,
         profile: ControlProfile,
-        editing: Boolean,
     ): Boolean {
         val pointerId = event.getPointerId(event.actionIndex)
         if (pointerId == drcPointerId) {
@@ -233,15 +245,12 @@ internal class ProfileTouchController(
         }
         val controlIndex = activePointers.remove(pointerId) ?: return activePointers.isNotEmpty()
         pointerPositions.remove(pointerId)
-        if (!editing) releaseControl(controlIndex, profile)
+        releaseControl(controlIndex, profile)
         draggingIndex = activePointers.values.lastOrNull() ?: -1
         return true
     }
 
-    private fun cancelPointers(
-        profile: ControlProfile,
-        editing: Boolean,
-    ): Boolean {
+    private fun cancelPointers(profile: ControlProfile): Boolean {
         val pressedControls = activePointers.values.toList()
         activePointers.clear()
         draggingIndex = -1
@@ -253,7 +262,7 @@ internal class ProfileTouchController(
             surface.setTouch(snapshot.touchX, snapshot.touchY, pressed = false)
             emit()
         }
-        if (!editing) pressedControls.forEach { releaseControl(it, profile) }
+        pressedControls.forEach { releaseControl(it, profile) }
         return true
     }
 
@@ -358,40 +367,20 @@ internal class ProfileTouchController(
         }
     }
 
+    /** Hitbox = forma dibujada + margen de percepción (CR-068/CR-072);
+     * en solape gana el motivo más pequeño (hitIndex). */
     private fun hitTest(
-        nx: Float,
-        ny: Float,
+        px: Float,
+        py: Float,
+        view: View,
         profile: ControlProfile,
     ): HitTarget? {
         if (!controlsVisible) return null
-        val index =
-            profile.controls.indexOfFirst { control ->
-                nx >= control.x && nx <= control.x + control.w && ny >= control.y && ny <= control.y + control.h
-            }
-        val dpadIndex = profile.controls.indexOfFirst { it.kind == ControlProfileCodec.KIND_DPAD }
-        val dpad = profile.controls.getOrNull(dpadIndex)
-        return when {
-            index >= 0 -> HitTarget(index, nx, ny)
-            dpad == null -> null
-            else -> hitTestDpad(nx, ny, dpadIndex, dpad)
-        }
-    }
-
-    private fun hitTestDpad(
-        nx: Float,
-        ny: Float,
-        index: Int,
-        dpad: TouchControl,
-    ): HitTarget? {
-        val centerX = dpad.x + dpad.w / 2f
-        val centerY = dpad.y + dpad.h / 2f
-        val dx = (nx - centerX) / dpad.w
-        val dy = (ny - centerY) / dpad.h
-        return if (sqrt(dx * dx + dy * dy) <= DIGITAL_DPAD_RADIUS_SCALE) {
-            HitTarget(index, centerX + dx * dpad.w, centerY + dy * dpad.h)
-        } else {
-            null
-        }
+        val width = view.width.toFloat().coerceAtLeast(1f)
+        val height = view.height.toFloat().coerceAtLeast(1f)
+        val marginPx = HITBOX_MARGIN_DP * view.resources.displayMetrics.density
+        val index = hitIndex(profile, HitQuery(px, py, width, height, marginPx))
+        return if (index >= 0) HitTarget(index, px / width, py / height) else null
     }
 
     private fun emit() {

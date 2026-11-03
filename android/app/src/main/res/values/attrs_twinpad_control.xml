@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Attrs de TwinpadControlView (CR-067): un control del mapeo táctil
+     arrastrable en el editor de Android Studio. La posición y el tamaño
+     los colocan las constraints/guidelines del layout; estos attrs viajan
+     con el control al modelo TouchControl de SPEC-008 §4. -->
+<resources>
+    <declare-styleable name="TwinpadControlView">
+        <!-- kind: button | dpad | stick (único discriminante de SPEC-007 §4). -->
+        <attr name="twinpadKind" format="string" />
+        <!-- Etiqueta visible (1–16 chars). -->
+        <attr name="twinpadLabel" format="string" />
+        <!-- Elemento HID canónico de SPEC-004 §2; omitido = sin asignación
+             (el control se muestra atenuado y no envía, SPEC-008 §8.1). -->
+        <attr name="twinpadHid" format="string" />
+    </declare-styleable>
+</resources>

@@ -3,6 +3,7 @@ package com.twinpad.android.app.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import androidx.lifecycle.findViewTreeLifecycleOwner
@@ -12,12 +13,14 @@ import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
 import com.twinpad.android.app.surface.ControlProfileStore
+import com.twinpad.android.app.surface.ProfileException
+import com.twinpad.android.app.surface.ProfileMapLayout
 import com.twinpad.android.app.surface.applyFaceDistribution
 import com.twinpad.android.app.wire.InputReport
 import com.twinpad.android.app.wire.MotionInput
 import kotlinx.coroutines.launch
 
-/** Editable touch surface that maps profile gestures to the Twinpad gamepad signature. */
+/** Touch surface that maps profile gestures to the Twinpad gamepad signature. */
 class ProfileSurface(
     context: Context,
     private val onInput: (InputReport) -> Unit,
@@ -28,6 +31,9 @@ class ProfileSurface(
      * con la superficie táctil al componer cada reporte (SPEC-004). */
     private val physicalGamepad = PhysicalGamepadAlgo()
     private val store = ControlProfileStore(context)
+
+    /** Contexto para inflar el layout de mapeo del desarrollador (CR-067). */
+    private val layoutContext: Context = context.applicationContext
     private val renderer = ProfileSurfaceRenderer(context)
     private val touchController =
         ProfileTouchController(
@@ -45,7 +51,7 @@ class ProfileSurface(
     var showControls: Boolean = true
         set(value) {
             field = value
-            touchController.controlsVisible = value || editing
+            touchController.controlsVisible = value
             invalidate()
         }
     private var motionSample: MotionInput? = null
@@ -53,9 +59,6 @@ class ProfileSurface(
     private var profileLoadGeneration = 0
 
     var profile: ControlProfile = ControlProfileCodec.defaultProfile()
-        private set
-
-    var editing = false
         private set
 
     fun updateMotion(sample: MotionInput?) {
@@ -70,8 +73,20 @@ class ProfileSurface(
         val generation = ++profileLoadGeneration
         val scope = viewLifecycleScope() ?: return
         scope.launch {
-            val loaded = if (gameId.isEmpty()) null else store.load(gameId)
-            if (generation != profileLoadGeneration || editing) return@launch
+            // CR-067: cadena de perfil — JSON por juego de `filesDir/profiles/`
+            // (Config externa, SPEC-007) o el layout de mapeo del desarrollador
+            // con drag & drop (`res/layout/profile_map.xml`) o default canónico.
+            val fromStore = if (gameId.isEmpty()) null else store.load(gameId)
+            val loaded =
+                fromStore
+                    ?: try {
+                        ProfileMapLayout.extract(LayoutInflater.from(layoutContext), width, height)
+                    } catch (_: ProfileException) {
+                        // SPEC-008 §9: un layout de mapeo inválido se descarta
+                        // (sin derribar la superficie) y cae al default.
+                        null
+                    }
+            if (generation != profileLoadGeneration) return@launch
             profile =
                 applyFaceDistribution(
                     loaded ?: ControlProfileCodec.defaultProfile(gameId),
@@ -97,27 +112,9 @@ class ProfileSurface(
         invalidate()
     }
 
-    fun availableAssignments(): List<String> =
-        if (editing) {
-            touchController.availableAssignments(profile)
-        } else {
-            emptyList()
-        }
-
-    fun toggleEditing() {
-        editing = !editing
-        touchController.toggleEditing()
-        touchController.controlsVisible = showControls || editing
-        if (!editing) {
-            profile = profile.copy(game = activeGameId)
-            viewLifecycleScope()?.launch { store.save(profile) }
-        }
-        invalidate()
-    }
-
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val handled = touchController.onTouch(event, this, profile, editing, ::moveControl)
+        val handled = touchController.onTouch(event, this, profile)
         if (handled) invalidate()
         return handled
     }
@@ -128,34 +125,12 @@ class ProfileSurface(
             DrawArgs(
                 canvas = canvas,
                 profile = profile,
-                state = touchController.renderState(editing),
+                state = touchController.renderState(),
                 width = width.toFloat(),
                 height = height.toFloat(),
-                showControls = showControls || editing,
+                showControls = showControls,
             ),
         )
-    }
-
-    private fun moveControl(
-        index: Int,
-        dxPx: Float,
-        dyPx: Float,
-    ) {
-        if (index !in profile.controls.indices || width == 0 || height == 0) return
-        val control = profile.controls[index]
-        val moved =
-            control.copy(
-                x = (control.x + dxPx / width).coerceIn(0f, 1f - control.w),
-                y = (control.y + dyPx / height).coerceIn(0f, 1f - control.h),
-            )
-        profile =
-            profile.copy(
-                controls =
-                    profile.controls.mapIndexed { controlIndex, old ->
-                        if (controlIndex == index) moved else old
-                    },
-            )
-        invalidate()
     }
 
     /** CR-028: tecla del mando físico en keycode de plataforma. Devuelve

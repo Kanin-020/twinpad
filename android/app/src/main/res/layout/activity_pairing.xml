@@ -145,6 +145,15 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/txt_session_message" />
 
+            <FrameLayout
+                android:id="@+id/surface_container"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
             <TextView
                 android:id="@+id/hud_chip"
                 android:layout_width="wrap_content"
@@ -173,6 +182,9 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/hud_chip" />
 
+            <!-- Declarado DESPUÉS de surface_container: el HUD queda encima
+                 de la superficie táctil (sin esto, el halo del trigger_l
+                 tapaba al botón y su toque lo absorbía la superficie). -->
             <ImageButton
                 android:id="@+id/btn_settings"
                 android:layout_width="40dp"
@@ -180,16 +192,8 @@
                 android:layout_margin="8dp"
                 android:background="@drawable/touch_button"
                 android:contentDescription="@string/settings_title"
-                android:src="@android:drawable/ic_menu_preferences"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
-
-            <FrameLayout
-                android:id="@+id/surface_container"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
+                android:src="@drawable/ic_settings"
+                android:tint="#4D4D4D"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
 

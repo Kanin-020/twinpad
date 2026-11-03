@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fondo secundario de controles (surfaceVariant). Editable en Android
-     Studio (ENG P14: formatos compartidos). -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#492F32" />
-    <corners android:radius="8dp" />
+<!-- Plato/base oscuro de los controles (estilo de referencia SNES/N64/DS):
+     círculo detrás del botón (halo), base del D-pad y base del stick. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="#E62E2E2E" />
 </shape>

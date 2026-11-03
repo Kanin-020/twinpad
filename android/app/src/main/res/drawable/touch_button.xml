@@ -1,17 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Botón táctil de la superficie (presionado: resaltado). Selector de
-     estados para feedback de pulsación (SPEC-004 §7). -->
+<!-- Cara del botón táctil: círculo gris claro (estilo de referencia SNES/
+     N64/DS). Presionado: relleno más claro (feedback de pulsación). -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
-        <shape android:shape="rectangle">
-            <solid android:color="#66CCCCCC" />
-            <corners android:radius="8dp" />
+        <shape android:shape="oval">
+            <solid android:color="#E6C9C9C9" />
         </shape>
     </item>
     <item>
-        <shape android:shape="rectangle">
-            <solid android:color="#33BBBBBB" />
-            <corners android:radius="8dp" />
+        <shape android:shape="oval">
+            <solid android:color="#D6A6A6A6" />
         </shape>
     </item>
 </selector>
