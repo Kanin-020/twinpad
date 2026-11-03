@@ -22,7 +22,8 @@ Dos componentes nuevos en el adaptador ejecutable del Servidor PC
   servidor». Fail-soft: si el spawn falla, solo log y sin bandeja.
   «Abrir interfaz» (CR-063) lanza la página como ventana del sistema con
   `--app=URL` del primer navegador Blink disponible (sin dependencias
-  nuevas); si no hay, fallback a `xdg-open`.
+  nuevas); si no hay, fallback a `xdg-open`. El arranque del server abre
+  la ventana UNA vez por sí mismo (`main.rs`, fail-soft; CR-063 §2 0.1.1).
 - `server/src/webui.rs` — hilo HTTP artesanal (std::net) en
   `127.0.0.1:WEBUI_PORT` (defecto 8430). `GET /` renderiza una página
   HTML estática con datos vivos (QR, URI, sesiones, juegos,

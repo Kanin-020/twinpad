@@ -135,8 +135,9 @@ fn build_app_window_command(program: &str, url: &str) -> std::process::Command {
 /// abre como ventana propia del escritorio. Desapegada (`spawn()` sin
 /// `wait()`): el callback de los ash tray no queda esperando al cierre de
 /// la ventana. Si ningún navegador de modo app está disponible (E4),
-/// fallback a `xdg-open` (comportamiento CR-061).
-fn open_app_window(port: u16) {
+/// fallback a `xdg-open` (comportamiento CR-061). También la invoca
+/// `main.rs` una vez al arrancar (CR-063 §2: la UI se muestra sola).
+pub fn open_app_window(port: u16) {
     let url = format!("http://127.0.0.1:{port}/");
     for program in APP_MODE_BROWSERS {
         let spawn = build_app_window_command(program, &url).spawn();

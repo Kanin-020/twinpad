@@ -42,7 +42,10 @@ HTTP GET al puerto local, desde el propio PC) en una VENTANA WEB DEL SISTEMA:
 modo app del navegador del PC (navegador Blink con `--app=URL`: ventana propia,
 sin barra de direcciones ni pestañas). Si ningún navegador de modo app está
 disponible, fallback al navegador predeterminado (comportamiento CR-061).
-La superficie HTTP del servidor no cambia».
+La superficie HTTP del servidor no cambia.
+Además, al ARRANCAR el Servidor PC la ventana se abre SOLA una vez (el
+owner no tiene que abrir el tray): fail-soft si no hay entorno de escritorio;
+el stdout mantiene la URL de siempre como vía alternativa.
 ```
 
 ## 3. Motivation
@@ -103,3 +106,4 @@ La superficie HTTP del servidor no cambia».
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-02 | Buffy (agente) | Opened, decidido y aplicado en la misma iteración (owner-requested) |
+| 0.1.1 | 2026-11-02 | Buffy (agente) | Ampliado: la ventana del sistema se auto-abre UNA vez al arrancar el server (fail-soft, sin entorno de escritorio) |

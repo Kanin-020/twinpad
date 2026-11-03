@@ -356,6 +356,11 @@ fn main() {
                 std::thread::spawn(move || {
                     twinpad_server::webui::run_webui_listener(webui_listener, Arc::new(webui_deps));
                 });
+                // CR-063 §2: la ventana web del sistema se abre sola al
+                // arrancar (el listener ya está bound; falla en fail-soft).
+                std::thread::spawn(move || {
+                    twinpad_server::tray::open_app_window(webui_port);
+                });
             }
             Err(error) => eprintln!(
                 "Twinpad: puerto local de la interfaz {webui_port} en uso ({error}); el server continúa por stdout/bandeja (E1)."

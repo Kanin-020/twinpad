@@ -67,7 +67,9 @@ usuario y parada con gracia (CR-061).
   ventana del sistema: modo app del navegador del PC (navegador Blink con
   `--app=URL`: ventana propia, sin barra de direcciones ni pestañas);
   si no hay navegador de modo app, fallback al navegador predeterminado
-  (CR-063).
+  (CR-063). Al arrancar, el Servidor PC abre la ventana una vez por sí
+  mismo (fail-soft sin entorno de escritorio); la URL queda impresa en
+  stdout como vía alternativa (CR-063 §2 0.1.1).
 - **W4 — Detener servidor:** la acción de menú del tray y el botón de la
   página detienen el servidor con gracia: no se aceptan nuevas sesiones
   y el  proceso termina. Los clientes vivos de la app observan el cierre por su
