@@ -17,9 +17,6 @@ private const val RES_H_1080 = 1080
 private const val AUDIO_VOLUME_PERCENT_MAX = 100
 private const val JOG_WHEEL_PERCENT_SCALE = 100
 
-/** Rango del seek de bitrate: slider 0…29000 + offset = 1000…30000 kbps. */
-private const val BITRATE_SEEK_KBPS_MIN = 1_000
-
 /** Efectos que exceden al drawer y ejecuta el host (PairingActivity). */
 internal interface SettingsDrawerHost {
     fun applyVideoScale(settings: AndroidSettings)
@@ -82,8 +79,6 @@ internal class SettingsDrawerController(
             // CR-031: el default del drawer es 1080p.
             activity.findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked = true
         }
-        activity.findViewById<SeekBar>(R.id.bitrate_seek).progress =
-            settings.videoBitrateKbps - BITRATE_SEEK_KBPS_MIN
         activity.findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
         activity.findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
         activity.findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
@@ -115,7 +110,6 @@ internal class SettingsDrawerController(
     fun bind() {
         bindResolutionButtons()
         bindScaleButtons()
-        bindBitrateSeek()
         bindAudioVolumeSeek()
         bindVisibilitySwitches()
         bindCameraStreamControls()
@@ -140,27 +134,6 @@ internal class SettingsDrawerController(
         activity.findViewById<RadioButton>(R.id.scale_expand).setOnCheckedChangeListener { _, checked ->
             if (checked) updateStreamSettings { it.copy(scaleMode = VideoScaleMode.EXPAND) }
         }
-    }
-
-    /** Slider de bitrate: 0…29000 + offset = 1000…30000 kbps (CR-001). */
-    private fun bindBitrateSeek() {
-        activity.findViewById<SeekBar>(R.id.bitrate_seek).setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(
-                    bar: SeekBar,
-                    value: Int,
-                    fromUser: Boolean,
-                ) {
-                    if (fromUser) {
-                        updateStreamSettings { it.copy(videoBitrateKbps = value + BITRATE_SEEK_KBPS_MIN) }
-                    }
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar) = Unit
-
-                override fun onStopTrackingTouch(bar: SeekBar) = Unit
-            },
-        )
     }
 
     /** CR-001: el volumen del drawer persiste sin notificar al ViewModel. */

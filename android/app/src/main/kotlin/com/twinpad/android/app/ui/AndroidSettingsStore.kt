@@ -6,8 +6,6 @@ private const val MIN_STREAM_WIDTH = 960
 private const val MAX_STREAM_WIDTH = 1920
 private const val MIN_STREAM_HEIGHT = 540
 private const val MAX_STREAM_HEIGHT = 1080
-private const val MIN_VIDEO_BITRATE_KBPS = 1_000
-private const val MAX_VIDEO_BITRATE_KBPS = 30_000
 private const val MIN_AUDIO_VOLUME_PERCENT = 0
 private const val MAX_AUDIO_VOLUME_PERCENT = 100
 
@@ -18,6 +16,11 @@ enum class CameraLens { FRONT, BACK }
 data class AndroidSettings(
     val width: Int = DEFAULT_WIDTH,
     val height: Int = DEFAULT_HEIGHT,
+    /** Bitrate fijo del cliente (sin control de usuario). El slider del
+     * drawer se eliminó a petición del owner: su default de 30 000 kbps
+     * emitía ~3 400 datagrams/s por el UDP §4.4 y desbordaba el lector del
+     * teléfono (drops → AUs incompletas → 0 fps). 10 000 kbps queda debajo
+     * de la capacidad medida del cliente con margen >2×. */
     val videoBitrateKbps: Int = DEFAULT_VIDEO_BITRATE_KBPS,
     val audioVolumePercent: Int = DEFAULT_AUDIO_VOLUME_PERCENT,
     val showGyroMonitor: Boolean = false,
@@ -47,10 +50,11 @@ data class AndroidSettings(
         }
 
     companion object {
-        // CR-031: defaults de fábrica 1080p, bitrate máximo, pantalla "contener".
+        // CR-031: defaults de fábrica 1080p, pantalla "contener". El bitrate
+        // queda fijo en 10 000 kbps (sin control de usuario, decisión del owner).
         const val DEFAULT_WIDTH = 1920
         const val DEFAULT_HEIGHT = 1080
-        const val DEFAULT_VIDEO_BITRATE_KBPS = 30_000
+        const val DEFAULT_VIDEO_BITRATE_KBPS = 10_000
         const val DEFAULT_AUDIO_VOLUME_PERCENT = 100
     }
 }
@@ -63,8 +67,6 @@ internal class AndroidSettingsStore(context: Context) {
         AndroidSettings(
             width = preferences.getInt(KEY_WIDTH, AndroidSettings.DEFAULT_WIDTH),
             height = preferences.getInt(KEY_HEIGHT, AndroidSettings.DEFAULT_HEIGHT),
-            videoBitrateKbps =
-                preferences.getInt(KEY_VIDEO_BITRATE, AndroidSettings.DEFAULT_VIDEO_BITRATE_KBPS),
             audioVolumePercent =
                 preferences.getInt(KEY_AUDIO_VOLUME, AndroidSettings.DEFAULT_AUDIO_VOLUME_PERCENT),
             showGyroMonitor = preferences.getBoolean(KEY_GYRO_MONITOR, false),
@@ -94,10 +96,6 @@ internal class AndroidSettingsStore(context: Context) {
             .putInt(KEY_WIDTH, settings.width.coerceIn(MIN_STREAM_WIDTH, MAX_STREAM_WIDTH))
             .putInt(KEY_HEIGHT, settings.height.coerceIn(MIN_STREAM_HEIGHT, MAX_STREAM_HEIGHT))
             .putInt(
-                KEY_VIDEO_BITRATE,
-                settings.videoBitrateKbps.coerceIn(MIN_VIDEO_BITRATE_KBPS, MAX_VIDEO_BITRATE_KBPS),
-            )
-            .putInt(
                 KEY_AUDIO_VOLUME,
                 settings.audioVolumePercent.coerceIn(MIN_AUDIO_VOLUME_PERCENT, MAX_AUDIO_VOLUME_PERCENT),
             )
@@ -116,7 +114,6 @@ internal class AndroidSettingsStore(context: Context) {
         const val PREFERENCES_NAME = "twinpad_user_settings"
         const val KEY_WIDTH = "stream_width"
         const val KEY_HEIGHT = "stream_height"
-        const val KEY_VIDEO_BITRATE = "video_bitrate_kbps"
         const val KEY_AUDIO_VOLUME = "audio_volume_percent"
         const val KEY_GYRO_MONITOR = "show_gyro_monitor"
         const val KEY_HUD = "show_hud"
