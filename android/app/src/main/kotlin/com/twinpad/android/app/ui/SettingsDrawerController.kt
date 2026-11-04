@@ -8,6 +8,8 @@ import com.twinpad.android.app.R
 
 /** Resoluciones seleccionables (16:9, CR-001). */
 private const val RES_W_960 = 960
+private const val RES_W_NATIVE = 0
+private const val RES_H_NATIVE = 0
 private const val RES_H_540 = 540
 private const val RES_W_1280 = 1280
 private const val RES_H_720 = 720
@@ -234,6 +236,7 @@ internal class SettingsDrawerController(
 
     private fun resolutionButtons(): Map<RadioButton, Pair<Int, Int>> =
         mapOf(
+            activity.findViewById<RadioButton>(R.id.resolution_native) to (RES_W_NATIVE to RES_H_NATIVE),
             activity.findViewById<RadioButton>(R.id.resolution_960x540) to (RES_W_960 to RES_H_540),
             activity.findViewById<RadioButton>(R.id.resolution_1280x720) to (RES_W_1280 to RES_H_720),
             activity.findViewById<RadioButton>(R.id.resolution_1920x1080) to (RES_W_1920 to RES_H_1080),

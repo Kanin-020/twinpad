@@ -891,6 +891,9 @@ fn main() {
 
 /// Extrae `w`/`h` (sin `fps`, CR-029) del mensaje `video_config` del menú de
 /// la app (parseo mínimo sin serde; los valores se validan al construir VideoConfig).
+/// CR-074: el par `0/0` pasa sin clamp como centinela de NATIVO (el drawer
+/// «Nativa» lo envía y Cemu lo resuelve a la dimensión del DRC); un valor
+/// mixto con un solo 0 también deja el 0 intacto (el adaptador resetea ambos).
 fn parse_video_config(
     line: &str,
     current: twinpad_server::video::VideoConfig,
@@ -902,22 +905,20 @@ fn parse_video_config(
         let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         digits.parse().ok()
     };
+    // CR-074: 0 atraviesa (nativo); cualquier otro valor se clampcea al rango.
+    let clamp_or_native = |dim: u32, max: u16| -> u16 {
+        if dim == 0 {
+            0
+        } else {
+            dim.clamp(u32::from(twinpad_core::stream::MIN_DIM), u32::from(max)) as u16
+        }
+    };
     Some(twinpad_server::video::VideoConfig {
         width: extract("w")
-            .map(|v| {
-                v.clamp(
-                    u32::from(twinpad_core::stream::MIN_DIM),
-                    u32::from(twinpad_core::stream::MAX_WIDTH),
-                ) as u16
-            })
+            .map(|v| clamp_or_native(v, twinpad_core::stream::MAX_WIDTH))
             .unwrap_or(current.width),
         height: extract("h")
-            .map(|v| {
-                v.clamp(
-                    u32::from(twinpad_core::stream::MIN_DIM),
-                    u32::from(twinpad_core::stream::MAX_HEIGHT),
-                ) as u16
-            })
+            .map(|v| clamp_or_native(v, twinpad_core::stream::MAX_HEIGHT))
             .unwrap_or(current.height),
         // CR-027: bitrate objetivo del encoder H.264 del Plugin (kbps).
         // CR-029: un `fps` heredado de apps antiguas se ignora.
@@ -1419,6 +1420,62 @@ mod tests {
             "{{\"type\":\"input_report\",\"seq\":{seq},\"stick_lx\":0,\"stick_ly\":0,\"stick_rx\":0,\"stick_ry\":0,\"dpad\":8,\"buttons\":{buttons},\"trigger_l2\":0,\"trigger_r2\":0,\"touch_x\":0,\"touch_y\":0,\"touch_pressed\":false}}"
         );
         InputMsg::decode(&line).unwrap()
+    }
+
+    // TEST-0149 — verifies SPEC-003 §3 (CR-074): el par `0/0` del drawer
+    // «Nativa» atraviesa `parse_video_config` sin clamp como centinela de
+    // NATIVO y el servidor lo reenvía literal a Cemu; los valores fuera de
+    // rango siguen clampceados (16–3840×16–2160) como en CR-030.
+    #[test]
+    fn parse_video_config_zero_is_native_sentinel_and_clamps_others() {
+        use std::io::{BufRead, BufReader};
+
+        let current = twinpad_server::video::VideoConfig::from_env();
+        let native = parse_video_config(
+            "{\"type\":\"video_config\",\"w\":0,\"h\":0,\"bitrate_kbps\":12000}",
+            current,
+        )
+        .unwrap();
+        assert_eq!((native.width, native.height), (0, 0));
+        assert_eq!(native.bitrate_kbps, 12_000);
+
+        // Reenvío literal del 0/0 a la conexión de Cemu (patrón de TEST-068).
+        let registry = twinpad_server::games::GameRegistry::new();
+        let game_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let game_client =
+            std::net::TcpStream::connect(game_listener.local_addr().unwrap()).unwrap();
+        let (game_stream, _) = game_listener.accept().unwrap();
+        registry
+            .register(
+                twinpad_core::game::GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec![],
+                },
+                game_stream,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_video_config(0, 0, 12_000));
+        let mut line = String::new();
+        BufReader::new(game_client.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert_eq!(
+            line,
+            "{\"type\":\"video_config\",\"w\":0,\"h\":0,\"bitrate_kbps\":12000}\n"
+        );
+
+        // Mezcla: w fuera de rango clampceado, h = 0 intacto (el adaptador
+        // reinicia a nativo completo ante cualquier 0).
+        let mixed =
+            parse_video_config("{\"type\":\"video_config\",\"w\":5000,\"h\":0}", current).unwrap();
+        assert_eq!((mixed.width, mixed.height), (3840, 0));
+
+        // Valores normales clampceados como antes (CR-030).
+        let clamped =
+            parse_video_config("{\"type\":\"video_config\",\"w\":5000,\"h\":4000}", current)
+                .unwrap();
+        assert_eq!((clamped.width, clamped.height), (3840, 2160));
     }
 
     // TEST-037 — verifies selected game's PCM is forwarded as audio_start/chunk.

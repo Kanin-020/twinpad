@@ -28,6 +28,23 @@ private fun invalidVideoFrame(
         videoWidth <= 0 || videoHeight <= 0
 
 /**
+ * Dimensiones efectivas del video para el escalado (CR-074): manda el frame
+ * real presentado por el stream cuando se conoce (> 0; también con «Nativa»,
+ * donde el drawer no fija un target); si no, el fallback del drawer.
+ */
+fun effectiveVideoDims(
+    streamWidth: Int,
+    streamHeight: Int,
+    fallbackWidth: Int,
+    fallbackHeight: Int,
+): Pair<Int, Int> =
+    if (streamWidth > 0 && streamHeight > 0) {
+        streamWidth to streamHeight
+    } else {
+        fallbackWidth to fallbackHeight
+    }
+
+/**
  * Calcula dónde se dibuja la imagen del video dentro del contenedor.
  * En `EXPAND` ocupa todo el contenedor; en `CONTAIN` conserva la relación de aspecto
  * de `videoWidth` x `videoHeight` y centra la imagen con barras.

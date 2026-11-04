@@ -35,6 +35,13 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <!-- CR-074: «Nativa» envía w/h = 0/0 (el Plugin publica el DRC tal cual). -->
+            <RadioButton
+                android:id="@+id/resolution_native"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nativa" />
+
             <RadioButton
                 android:id="@+id/resolution_960x540"
                 android:layout_width="wrap_content"

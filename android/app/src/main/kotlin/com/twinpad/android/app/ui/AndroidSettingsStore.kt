@@ -92,9 +92,18 @@ internal class AndroidSettingsStore(context: Context) {
         )
 
     fun save(settings: AndroidSettings) {
+        // CR-074: «Nativa» persiste 0/0 sin clamp; cualquier otro par baja
+        // al rango 960×540–1920×1080 del drawer.
+        val isNative = settings.width == 0 && settings.height == 0
         preferences.edit()
-            .putInt(KEY_WIDTH, settings.width.coerceIn(MIN_STREAM_WIDTH, MAX_STREAM_WIDTH))
-            .putInt(KEY_HEIGHT, settings.height.coerceIn(MIN_STREAM_HEIGHT, MAX_STREAM_HEIGHT))
+            .putInt(
+                KEY_WIDTH,
+                if (isNative) 0 else settings.width.coerceIn(MIN_STREAM_WIDTH, MAX_STREAM_WIDTH),
+            )
+            .putInt(
+                KEY_HEIGHT,
+                if (isNative) 0 else settings.height.coerceIn(MIN_STREAM_HEIGHT, MAX_STREAM_HEIGHT),
+            )
             .putInt(
                 KEY_AUDIO_VOLUME,
                 settings.audioVolumePercent.coerceIn(MIN_AUDIO_VOLUME_PERCENT, MAX_AUDIO_VOLUME_PERCENT),

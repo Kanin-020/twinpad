@@ -7,6 +7,27 @@ import org.junit.Test
 class VideoScaleModeTest {
     private val epsilon = 1e-5f
 
+    /** TEST-0152 — CR-074: el marco de la Segunda pantalla sigue al frame
+     * REAL del stream; «Nativa» (0/0 en el drawer) usa lo presentado. */
+    @Test
+    fun native_option_scales_with_the_real_presented_frame() {
+        // Frame real conocido: manda sobre el drawer (aunque sea 0/0 = Nativa).
+        assertEquals(854 to 480, effectiveVideoDims(854, 480, 0, 0))
+        // Target explícito y frame real desconocido aún: fallback del drawer.
+        assertEquals(1280 to 720, effectiveVideoDims(0, 0, 1280, 720))
+        // Frame real parcialmente desconocido: también fallback.
+        assertEquals(960 to 540, effectiveVideoDims(854, 0, 960, 540))
+    }
+
+    @Test
+    fun contain_with_native_real_frame_letterboxes_even_when_drawer_is_zero() {
+        // El caso del reporte del owner: «Nativa» + contener NO debe estirar.
+        val (nativeWidth, nativeHeight) = effectiveVideoDims(854, 480, 0, 0)
+        val rect = videoContentRect(VideoScaleMode.CONTAIN, 4000f, 2000f, nativeWidth, nativeHeight)
+
+        assertRect(VideoContentRect(0.0552083f, 0f, 0.8895833f, 1f), rect)
+    }
+
     @Test
     fun expand_fills_the_whole_container() {
         val rect = videoContentRect(VideoScaleMode.EXPAND, 1000f, 500f, 1280, 720)

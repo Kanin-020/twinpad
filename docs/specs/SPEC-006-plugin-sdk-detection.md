@@ -215,7 +215,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Preferencia Cemu persistente, estado inicial false, activación/desactivación en vivo y opciones del menú | TEST-046 |
 | QR vigente consultado por loopback y errores locales observables | TEST-047 |
 | Relay Cemu del DRC sin tope de framerate (CR-029), sin selección de pantalla ni captura/demo Server | TEST-054 |
-| Resolución de emisión del GamePad aplicada en Cemu: escala del DRC a w/h de `video_config` antes del encode, sin upscale (CR-030) | TEST-088 |
+| Resolución de emisión del GamePad aplicada en Cemu: escala del DRC a w/h de `video_config` antes del encode, en ambas direcciones (upscale permitido, CR-074); `0/0` = nativo (TEST-0149/0150) | TEST-088 |
 | Cemu TV→PC y DRC/GamePad→Android independientes, sin mezcla y con volúmenes/rutas separados (CR-012) | TEST-062 (gate de banco físico) |
 | Anuncio Cemu confirmado antes de mostrar QR; cancelación manual limpia | TEST-050 |
 | IPC H.264 conserva timestamp monotónico del encoder e indicador IDR (CR-015) | TEST-073 |
@@ -254,6 +254,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.14.0 | 2026-10-27 | Product owner + Twinpad team (CR-023) | SDK Twinpad como vía principal del giroscopio para terceros; Config externa y gamepad estándar sin giroscopio; sin cambio wire |
 | 1.15.0 | 2026-10-28 | Product owner (CR-029) | Cemu publica la DRC sin tope de framerate ni pacing; el wire de SPEC-005 no cambia |
 | 1.16.0 | 2026-10-28 | Product owner (CR-030) | El DRC se escala a la resolución de `video_config` antes del encode (nearest, sin upscale); sin cambio wire |
+| 1.17.0 | 2026-11-04 | Product owner (CR-074) | Escalado bidireccional del DRC y `0/0` = nativo (drawer «Nativa»); sin cambio wire |
 | 1.17.0 | 2026-10-28 | Product owner (CR-033) | Añade el mensaje Cemu→Android `rumble` con el patrón de `VPADControlMotor` (máx. 120 bytes, parada con longitud 0) y su reproducción con vibrador a 60 Hz |
 | 1.18.0 | 2026-10-28 | Product owner (CR-034) | Añade el mensaje Android→Cemu `camera_frame` (H.264 320x240, 30 fps) con cámara frontal; sin cambio en el resto del wire |
 | 1.19.0 | 2026-10-29 | Product owner (CR-038) | Añade el mensaje Cemu→Android `camera_request` (transiciones del uso HLE de cámara del juego); Android solo enciende la cámara frontal con juego seleccionado Y demanda vigente |

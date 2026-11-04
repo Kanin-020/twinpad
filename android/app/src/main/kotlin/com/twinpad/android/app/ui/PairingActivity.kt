@@ -123,18 +123,30 @@ class PairingActivity : AppCompatActivity() {
     private val orientationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
 
+    /** Último par (w, h) REAL presentado por el stream (CR-074): con
+     * «Nativa» el drawer no fija target y el marco debe salir del frame
+     * vivo, no de los 0/0 persistidos. */
+    private var lastStreamFrame: Pair<Int, Int> = 0 to 0
+
     /** Aplica el modo de escalado CR-025: letterbox en `contain`, relleno en `expand`. */
     private fun applyVideoScale(settings: AndroidSettings) {
         val container = findViewById<ViewGroup>(R.id.video_surface_container)
         val video = findViewById<SurfaceView>(R.id.video_view)
         container.post {
+            val (videoWidth, videoHeight) =
+                effectiveVideoDims(
+                    lastStreamFrame.first,
+                    lastStreamFrame.second,
+                    settings.width,
+                    settings.height,
+                )
             val rect =
                 videoContentRect(
                     settings.scaleMode,
                     container.width.toFloat(),
                     container.height.toFloat(),
-                    settings.width,
-                    settings.height,
+                    videoWidth,
+                    videoHeight,
                 )
             video.layoutParams =
                 (video.layoutParams as FrameLayout.LayoutParams).apply {
@@ -450,6 +462,12 @@ class PairingActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             viewModel.streamState.collectLatest { s ->
+                // CR-074: el marco (contener/estirar) sigue al frame REAL;
+                // se re-aplica solo cuando cambia la dimensión presentada.
+                if (lastStreamFrame.first != s.width || lastStreamFrame.second != s.height) {
+                    lastStreamFrame = s.width to s.height
+                    applyVideoScale(drawer.load())
+                }
                 // CR-026: durante la transmisión (STREAMING/INTERRUPTED) la
                 // pantalla queda limpia: sin texto de estado ni de juegos
                 // compatibles. Los textos solo se muestran sin imagen viva.

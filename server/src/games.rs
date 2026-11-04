@@ -486,15 +486,18 @@ impl GameRegistry {
     /// captura+encoder. Cemu aplica w/h SOLO al framebuffer del GamePad
     /// (DRC); la resolución del juego en TV no cambia.
     pub fn send_cemu_video_config(&self, width: u16, height: u16, bitrate_kbps: u32) -> bool {
+        // CR-074: el 0 atraviesa como centinela de nativo (el adaptador
+        // reinicia ambos ejes ante cualquier 0); el resto se clampcea.
+        let clamp_or_native = |dim: u16, max: u16| {
+            if dim == 0 {
+                0
+            } else {
+                dim.clamp(twinpad_core::stream::MIN_DIM, max)
+            }
+        };
         let (width, height) = (
-            width.clamp(
-                twinpad_core::stream::MIN_DIM,
-                twinpad_core::stream::MAX_WIDTH,
-            ),
-            height.clamp(
-                twinpad_core::stream::MIN_DIM,
-                twinpad_core::stream::MAX_HEIGHT,
-            ),
+            clamp_or_native(width, twinpad_core::stream::MAX_WIDTH),
+            clamp_or_native(height, twinpad_core::stream::MAX_HEIGHT),
         );
         let bitrate_kbps = bitrate_kbps.clamp(1_000, 30_000);
         let line = format!(
