@@ -10,6 +10,7 @@ import com.twinpad.android.app.stream.MediaClient
 import com.twinpad.android.app.stream.StreamState
 import com.twinpad.android.app.stream.StreamStats
 import com.twinpad.android.app.stream.StreamUiState
+import com.twinpad.android.app.stream.UdpPreferredEvent
 import com.twinpad.android.app.stream.UdpPreferredMediaClient
 import com.twinpad.android.app.wire.HandshakeCrypto
 import com.twinpad.android.app.wire.MediaCrypto
@@ -42,6 +43,8 @@ internal class PairingMediaSession(
     private val dependencies: PairingMediaDependencies,
     private val currentStreamState: () -> StreamUiState,
     private val setStreamState: (StreamUiState) -> Unit,
+    /** CR-075: transporte media vigente de la conexión (true=UDP, false=TCP). */
+    private val setMediaTransport: (Boolean) -> Unit,
 ) {
     private val scope = dependencies.scope
     private val machine = dependencies.machine
@@ -261,7 +264,12 @@ internal class PairingMediaSession(
             onAccessUnit = { unit ->
                 onAccessUnit(unit, connection.output, connectionGeneration, outputDecoder)
             },
-            onClosed = { onClientClosed(connectionGeneration) },
+            onEvent = { event ->
+                when (event) {
+                    is UdpPreferredEvent.TransportActive -> setMediaTransport(event.isUdp)
+                    UdpPreferredEvent.Closed -> onClientClosed(connectionGeneration)
+                }
+            },
         )
 
     private fun onAccessUnit(

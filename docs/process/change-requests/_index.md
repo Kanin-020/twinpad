@@ -4,12 +4,13 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-075 |
+| CR | CR-076 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-075 | HUD «Métricas avanzadas»: fix del relay corrupto de `video_stage_stats` (desde CR-054), claves opcionales `hw`/`in_w/in_h`/`out_w/out_h` (v2: campos declarados en el variante core) y transporte UDP/TCP desde el teléfono; sección «Debug» final en el drawer; TEST-0153/0154 | código Cemu (Client), core (game.rs), código Android (HUD/drawer/codec media), TEST-0153/0154 | Applied (2026-11-04) | Buffy (agente) | [CR-075-advanced-metrics-debug-section.md](CR-075-advanced-metrics-debug-section.md) |
 | CR-074 | Resolución del GamePad: upscale bidireccional del DRC (nearest, mismo escalador CR-030) y opción «Nativa» (w/h = 0/0 centinela passthrough en server → ruta 0→nativa de Cemu); default del drawer sigue 1080p; TEST-0149/0150, TEST-088 actualizado | SPEC-002, SPEC-003, SPEC-006 | Applied (2026-11-04) | Buffy (agente) | [CR-074-native-option-and-drc-upscale.md](CR-074-native-option-and-drc-upscale.md) |
 | CR-073 | Continuidad del QR en la página local sin recargar: contador de validez (mm:ss) y regeneración automática al vencer o manual («Regenerar QR») vía `GET /qr` (JSON uri+ttl+svg del MISMO token, W8); sustituye QR y URI juntos; dashboard de 2 columnas con QR grande centrado; SPEC-010 0.4.0 (W9/E7/AC-5, NFR-003 reescrito), DES-005 0.4.0; TEST-0146 | SPEC-010, DES-005 | Applied (2026-11-04) | Buffy (agente) | [CR-073-qr-continuity-countdown.md](CR-073-qr-continuity-countdown.md) |
 | CR-070 | Distribución Nintendo/Xbox de la cara sin coordenadas constantes: los 4 slots se derivan de la geometría del propio perfil (rombo dp en cualquier aspecto); la vista antigua pisaba el clúster cuadrado con las constantes del default 16:9; TEST-090 actualizado | código Android (`ControlProfile`), TEST-090 | Applied (2026-11-03) | Buffy (agente) | [CR-070-face-distribution-profile-derived-slots.md](CR-070-face-distribution-profile-derived-slots.md) |

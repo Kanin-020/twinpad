@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0153 |
+| TEST | TEST-0156 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -148,6 +148,9 @@
 | REQ-004 | SPEC-003 | DES-004 | TEST-0150 | Draft | `TwinpadClient_drc_scale_test` (Cemu) extendido: `ScaleRgb` nearest-neighbor en ambas direcciones — upscale 2×2→4×4 muestrea la esquina de cada bloque (CR-074) y el pipeline escala cuando el target difiere del nativo; identidad sin copia |
 | REQ-004 | SPEC-002 | DES-002 | TEST-0151 | Draft | `NativeResolutionTest` (Android, JVM): la opción «Nativa» (0/0) genera el wire `video_config` con `"w":0,"h":0` (centinela CR-074) y el default 1080p (CR-031) queda intacto |
 | REQ-004 | SPEC-002 | DES-002 | TEST-0152 | Draft | `VideoScaleModeTest` extendido (Android, JVM): `effectiveVideoDims` (CR-074) — con «Nativa» el marco contener/estirar sigue al frame REAL presentado (854×480) aunque el drawer persista 0/0; frame desconocido → fallback al target del drawer (contener NO estira) |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0153 | Draft | `VideoStageStatsCodecTest` extendido (Android, JVM, CR-075): claves opcionales `hw`/`in_w,in_h`/`out_w,out_h` de `video_stage_stats` decodan (detalles null en líneas legacy CR-053; valor/par inválido o parcial no invalida la línea); `formatDetails` compone la línea HUD «HW · Trans · E · S» con solo lo conocido (null sin datos) |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0154 | Draft | `video_stage_stats_accepts_optional_details_and_rejects_bad_pairs` (core, TEST nuevo CR-075 v2): la línea EXACTA del Plugin (hw/in/out) atraviesa `GameMsg::decode` pese a `deny_unknown_fields` (campos declarados opcionales); par incompleto, dim 0 o sobre el techo CR-030 → E4; round-trip canónico preserva detalles |
+| REQ-006 | SPEC-006 | DES-004 | TEST-0155 | Draft | `video_stage_stats_relay_integration.rs` (server, integración TCP real CR-075 v2): un plugin crudo por TCP anuncia un juego y la línea EXACTA CR-075 (con hw/in_w/in_h/out_w/out_h) queda retenida VERBATIM en el registro para el drenaje por sesión; la línea canónica CR-053 (sin claves) pasa intacta; el par incompleto no se registra (E4) y la conexión del plugin sobrevive |
 | REQ-006 | SPEC-006 | DES-002 | TEST-097 | Draft | CR-038: Test Rust `camera_request_round_trips_and_rejects_bad_flag` (core) — ida y vuelta del mensaje, rechazo de flag `on` faltante, no booleano y campo desconocido |
 | REQ-006 | SPEC-006 | DES-004 | TEST-098 | Draft | CR-038: Test Rust (servidor) — las transiciones de `camera_request` del juego Cemu seleccionado se encolan/hacen coalescing hacia la sesión Android y se re-emiten al reconectar la sesión/reenviar al re-seleccionar |
 | REQ-006 | SPEC-006 | DES-002 | TEST-099 | Draft | CR-038: Test JVM `CameraRequestCodecTest` (Android) — decodificación estricta de `camera_request` (on/off); el gating combinado (juego «cemu» && demanda vigente) vive en `PairingActivity.observeSelectedGame` |

@@ -66,6 +66,21 @@ pub const VIDEO_STAGE_COUNT_MAX: u32 = 100_000;
 
 pub const GAME_FRAME_MIN_DIM: u16 = crate::stream::MIN_DIM;
 pub const GAME_FRAME_MAX_WIDTH: u16 = crate::stream::MAX_WIDTH;
+
+/// CR-075: par (w,h) opcional de `video_stage_stats` todo-o-nada dentro del
+/// rango real de stream (CR-030/SPEC-003: 16–3840×16–2160) tanto para la
+/// resolución de entrada como la de salida; la ausencia de ambas es válida
+/// (plugins CR-053 sin detalles). Un 0 no es resolución reportable.
+fn video_stats_dims_valid(w: Option<u16>, h: Option<u16>) -> bool {
+    match (w, h) {
+        (Some(w), Some(h)) => {
+            (GAME_FRAME_MIN_DIM..=GAME_FRAME_MAX_WIDTH).contains(&w)
+                && (GAME_FRAME_MIN_DIM..=GAME_FRAME_MAX_HEIGHT).contains(&h)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
 pub const GAME_FRAME_MAX_HEIGHT: u16 = crate::stream::MAX_HEIGHT;
 
 /// Un juego compatible vivo (SPEC-006 §4), tal como viaja en la lista.
@@ -221,6 +236,21 @@ pub enum GameMsg {
         stages: Vec<VideoStageStat>,
         /// Eventos de flujo con actividad en la ventana.
         events: Vec<VideoStageEvent>,
+        /// CR-075: backend del encoder activo en la ventana (`true` =
+        /// hardware). Opcional: los plugins CR-053 no lo envían.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hw: Option<bool>,
+        /// CR-075: resolución de entrada del pipeline (fuente del juego,
+        /// pre-escala), en px. Par todo-o-nada (CR-030 techo 16–3840×16–2160).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        in_w: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        in_h: Option<u16>,
+        /// CR-075: resolución de salida (post-escala, lo que viaja al stream).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        out_w: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        out_h: Option<u16>,
     },
 }
 
@@ -336,14 +366,26 @@ impl GameMsg {
                 window_ms,
                 stages,
                 events,
+                hw,
+                in_w,
+                in_h,
+                out_w,
+                out_h,
             } => {
                 if *window_ms < VIDEO_STAGE_WINDOW_MIN_MS
                     || *window_ms > VIDEO_STAGE_WINDOW_MAX_MS
                     || stages.len() > VIDEO_STAGE_NAMES.len()
                     || events.len() > VIDEO_EVENT_NAMES.len()
+                    // CR-075: resolución de entrada/salida del HUD; par
+                    // todo-o-nada (0 no es resolución reportable).
+                    || !video_stats_dims_valid(*in_w, *in_h)
+                    || !video_stats_dims_valid(*out_w, *out_h)
                 {
                     return Err(PairError::MalformedMessage);
                 }
+                // CR-075: el flag `hw` ya llega como `Option<bool>` por
+                // serde; no hay rango que validar.
+                let _ = hw;
                 for (position, stat) in stages.iter().enumerate() {
                     if !VIDEO_STAGE_NAMES.contains(&stat.stage.as_str())
                         || stat.count == 0
@@ -1013,6 +1055,12 @@ mod tests {
                     count: 120,
                 },
             ],
+            // CR-075: sin detalles (canonical CR-053 sin claves extra).
+            hw: None,
+            in_w: None,
+            in_h: None,
+            out_w: None,
+            out_h: None,
         };
         let line = msg.encode().unwrap();
         assert!(line.starts_with("{\"type\":\"video_stage_stats\""));
@@ -1053,6 +1101,75 @@ mod tests {
         // Campo desconocido (contrato NDJSON estricto).
         assert_eq!(
             GameMsg::decode(&line.replace("\"window_ms\":5000,", "\"window_ms\":5000,\"x\":1,")),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-0154 — verifies CR-075: `video_stage_stats` optional HUD details
+    // (hardware encoder, input/output resolutions) survive the upstream
+    // server decode and reject incomplete or out-of-range pairs.
+    #[test]
+    fn video_stage_stats_accepts_optional_details_and_rejects_bad_pairs() {
+        // Línea EXACTA del Plugin Cemu (CR-075): orden libre + claves extras.
+        let plugin_line = concat!(
+            "{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"hw\":false,",
+            "\"in_w\":854,\"in_h\":480,\"out_w\":854,\"out_h\":480,",
+            "\"stages\":[],\"events\":[]}"
+        );
+        let msg = GameMsg::decode(plugin_line).unwrap();
+        match msg {
+            GameMsg::VideoStageStats {
+                hw,
+                in_w,
+                in_h,
+                out_w,
+                out_h,
+                ..
+            } => {
+                assert_eq!(hw, Some(false));
+                assert_eq!(in_w, Some(854));
+                assert_eq!(in_h, Some(480));
+                assert_eq!(out_w, Some(854));
+                assert_eq!(out_h, Some(480));
+            }
+            other => panic!("variante inesperada: {:?}", other),
+        }
+
+        // El round-trip canónico preserva los detalles en re-encode.
+        let msg_reencode = GameMsg::VideoStageStats {
+            window_ms: 5_000,
+            stages: Vec::new(),
+            events: Vec::new(),
+            hw: Some(true),
+            in_w: Some(1_920),
+            in_h: Some(1_080),
+            out_w: Some(960),
+            out_h: Some(540),
+        };
+        let line = msg_reencode.encode().unwrap();
+        assert_eq!(GameMsg::decode(&line).unwrap(), msg_reencode);
+
+        // Par incompleto (in_w sin in_h): E4.
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"video_stage_stats\",\"window_ms\":5000,\"hw\":true,",
+                "\"in_w\":854,\"stages\":[],\"events\":[]}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Dimensión 0 o fuera del techo CR-030: E4.
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"video_stage_stats\",\"window_ms\":5000,",
+                "\"out_w\":0,\"out_h\":480,\"stages\":[],\"events\":[]}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"video_stage_stats\",\"window_ms\":5000,",
+                "\"in_w\":3841,\"in_h\":2160,\"stages\":[],\"events\":[]}"
+            )),
             Err(PairError::MalformedMessage)
         );
     }

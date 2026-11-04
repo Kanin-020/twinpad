@@ -70,6 +70,66 @@ class VideoStageStatsCodecTest {
 
     private fun String.normalizeSpaces(): String = replace('\u00A0', ' ')
 
+    // TEST-0153 — verifies CR-075: `video_stage_stats` optional details
+    // (hardware encoder, input/output resolutions) decode and HUD detail line.
+    @Test
+    fun decodes_hw_and_input_output_details_when_present() {
+        val line =
+            """{"type":"video_stage_stats","window_ms":5000,""" +
+                """"hw":true,"in_w":854,"in_h":480,""" +
+                """"out_w":1280,"out_h":720,""" +
+                """"stages":[],"events":[]}"""
+        val metrics = VideoStageStatsCodec.decode(line)
+        assertEquals(true, metrics?.hardwareEncoder)
+        assertEquals(854, metrics?.inputWidth)
+        assertEquals(480, metrics?.inputHeight)
+        assertEquals(1280, metrics?.outputWidth)
+        assertEquals(720, metrics?.outputHeight)
+    }
+
+    @Test
+    fun leaves_details_null_for_legacy_line_without_them() {
+        val metrics = VideoStageStatsCodec.decode(validLine)
+        assertEquals(null, metrics?.hardwareEncoder)
+        assertEquals(null, metrics?.inputWidth)
+        assertEquals(null, metrics?.inputHeight)
+        assertEquals(null, metrics?.outputWidth)
+        assertEquals(null, metrics?.outputHeight)
+    }
+
+    @Test
+    fun invalid_or_partial_details_do_not_kill_the_line() {
+        val base =
+            """{"type":"video_stage_stats","window_ms":5000,""" +
+                """"stages":[],"events":[]}"""
+        // hw no booleano, dims parciales y fuera de rango: se ignoran.
+        val extra =
+            """"window_ms":5000,"hw":1,"in_w":854,"out_h":999999,"""
+        val bad = base.replace(""""window_ms":5000,"""", extra)
+        val metrics = VideoStageStatsCodec.decode(bad)
+        assertEquals(null, metrics?.hardwareEncoder)
+        assertEquals(null, metrics?.inputWidth)
+        assertEquals(null, metrics?.outputWidth)
+    }
+
+    @Test
+    fun formats_details_line_with_only_known_data() {
+        val line =
+            """{"type":"video_stage_stats","window_ms":5000,""" +
+                """"hw":false,"in_w":854,"in_h":480,""" +
+                """"out_w":854,"out_h":480,""" +
+                """"stages":[],"events":[]}"""
+        val metrics = VideoStageStatsCodec.decode(line)!!
+        val fullDetails = VideoStageStatsCodec.formatDetails(metrics, "UDP")
+        assertEquals("HW: no · Trans: UDP · E: 854×480 · S: 854×480", fullDetails)
+        // Sin transporte decidido: omite el rótulo «Trans» (hw sí está).
+        val noTransport = VideoStageStatsCodec.formatDetails(metrics)
+        assertEquals("HW: no · E: 854×480 · S: 854×480", noTransport)
+        // Sin nada conocido: null (HUD oculta la línea).
+        val legacy = VideoStageStatsMessage(5000, emptyList(), emptyList())
+        assertNull(VideoStageStatsCodec.formatDetails(legacy))
+    }
+
     // 55 µs → «55 µs» según la unidad mínima del formateador.
     @Test
     fun formats_null_without_content() {

@@ -45,6 +45,7 @@ import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
 import com.twinpad.android.app.wire.ProtocolConstants
 import com.twinpad.android.app.wire.VideoStageStatsCodec
+import com.twinpad.android.app.wire.VideoStageStatsMessage
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -546,6 +547,28 @@ class PairingActivity : AppCompatActivity() {
             stageLine.text =
                 getString(R.string.hud_stage_title) + "\n" + formatted
             stageLine.isVisible = true
+        }
+        renderHudStageDetails(metrics)
+    }
+
+    /** CR-075: segunda línea del HUD («Métricas avanzadas») con SOLO lo
+     * conocido: backend del encoder (hw), transporte media (UDP/TCP) y las
+     * resoluciones de entrada/salida que reporta el Plugin en la ventana.
+     * Función-propiedad para mantener el recuento de funciones bajo el
+     * umbral de detekt. */
+    private val renderHudStageDetails = { metrics: VideoStageStatsMessage? ->
+        val details = findViewById<TextView>(R.id.hud_stage_details)
+        if (!advancedMetricsVisible) {
+            details.isVisible = false
+        } else {
+            val transport = viewModel.mediaTransport.value?.let { if (it) "UDP" else "TCP" }
+            val detailsText = metrics?.let { VideoStageStatsCodec.formatDetails(it, transport) }
+            if (detailsText == null) {
+                details.isVisible = false
+            } else {
+                details.text = detailsText
+                details.isVisible = true
+            }
         }
     }
 

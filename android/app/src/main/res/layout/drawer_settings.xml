@@ -113,26 +113,6 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_show_fps" />
 
-        <!-- CR-054: métricas por etapa del Plugin, opt-in, off por defecto. -->
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switch_advanced_metrics"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_show_advanced_metrics" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/settings_gyro"
-            android:textAppearance="?attr/textAppearanceLabelLarge" />
-
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switch_show_gyro_monitor"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_show_gyro_monitor" />
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -194,6 +174,34 @@
                 android:layout_height="wrap_content"
                 android:text="@string/settings_camera_back" />
         </RadioGroup>
+
+        <!-- CR-075: instrumentación de diagnóstico al final del drawer. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/settings_debug"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <!-- CR-054: métricas por etapa del Plugin, opt-in, off por defecto. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_advanced_metrics"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_show_advanced_metrics" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_gyro"
+            android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_show_gyro_monitor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_show_gyro_monitor" />
 
         <Button
             android:id="@+id/btn_close_drawer"

@@ -14,6 +14,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Cipher
 
+/** CR-075: eventos de la conexión media preferente (un solo callback). */
+internal sealed interface UdpPreferredEvent {
+    /** Transporte activo decidido a los 900 ms (true=UDP, false=TCP). */
+    data class TransportActive(val isUdp: Boolean) : UdpPreferredEvent
+
+    /** Canal muerto sin fallback viable (§8.5). */
+    data object Closed : UdpPreferredEvent
+}
+
 /**
  * CR-062 (SPEC-003 §4.4): cliente media UDP preferente con fallback TCP
  * (§8.5). Mantiene el `DatagramSocket` conectado al `media_port` (8425),
@@ -29,7 +38,8 @@ internal class UdpPreferredMediaClient(
     sessionKey: ByteArray,
     port: Int = MediaCrypto.PORT,
     onAccessUnit: (H264MediaClient.EncodedAccessUnit) -> Unit,
-    private val onClosed: () -> Unit,
+    /** CR-075: transporte activo y cierres, en un solo callback por detekt. */
+    private val onEvent: (UdpPreferredEvent) -> Unit,
 ) : MediaClient {
     private val fallbackStarted = AtomicBoolean(false)
     private val closedDelivered = AtomicBoolean(false)
@@ -85,7 +95,7 @@ internal class UdpPreferredMediaClient(
     }
 
     private fun deliverClosed() {
-        if (closedDelivered.compareAndSet(false, true)) onClosed()
+        if (closedDelivered.compareAndSet(false, true)) onEvent(UdpPreferredEvent.Closed)
     }
 
     private fun runFallbackWatch() {
@@ -96,12 +106,14 @@ internal class UdpPreferredMediaClient(
         }
         if (udp.receivedAnyDatagram()) {
             // UDP viable: el cliente TCP queda inactivo para esta conexión.
+            onEvent(UdpPreferredEvent.TransportActive(isUdp = true))
             return
         }
         // §8.5: sin UDP viable, el TCP toma el consumo de la AU corriente.
         fallbackStarted.set(true)
         udp.close()
         tcp.start()
+        onEvent(UdpPreferredEvent.TransportActive(isUdp = false))
     }
 
     private companion object {

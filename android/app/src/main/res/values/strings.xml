@@ -27,6 +27,8 @@
     <string name="game_compatible_one">Juego compatible: %1$s</string>
     <string name="game_compatible_many">Juegos compatibles: %1$s</string>
     <string name="game_select_title">Selecciona el juego</string>
+    <!-- CR-075: sección final del drawer con instrumentación de diagnóstico. -->
+    <string name="settings_debug">Debug</string>
     <string name="settings_title">Ajustes de transmisión</string>
     <string name="settings_resolution">Resolución</string>
     <string name="settings_gyro">Giroscopio</string>

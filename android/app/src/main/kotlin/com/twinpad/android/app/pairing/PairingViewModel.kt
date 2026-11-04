@@ -117,6 +117,12 @@ class PairingViewModel(
     private val _streamState =
         MutableStateFlow(com.twinpad.android.app.stream.StreamUiState())
     val streamState: StateFlow<com.twinpad.android.app.stream.StreamUiState> = _streamState
+
+    /** CR-075: transporte media vigente de la conexión (true=UDP, false=TCP).
+     * `null`: sin decisión o sesión cerrada (el HUD de métricas lo oculta). */
+    private val _mediaTransport = MutableStateFlow<Boolean?>(null)
+    val mediaTransport: StateFlow<Boolean?> = _mediaTransport
+
     private val mediaSession =
         PairingMediaSession(
             PairingMediaDependencies(
@@ -126,10 +132,10 @@ class PairingViewModel(
                 streamMachine,
                 streamStats,
             ),
-            { _streamState.value },
-        ) { state ->
-            _streamState.value = state
-        }
+            currentStreamState = { _streamState.value },
+            setStreamState = { state -> _streamState.value = state },
+            setMediaTransport = { isUdp -> _mediaTransport.value = isUdp },
+        )
 
     /** Juegos compatibles vivos (SPEC-006 §5): lista publicada por el server. */
     private val _availableGames =
@@ -276,6 +282,7 @@ class PairingViewModel(
         rumblePlayer.play(RumbleMessage(ByteArray(0)))
         _keyboardRequested.value = null
         _videoStageStats.value = null
+        _mediaTransport.value = null
     }
 
     private fun handleAudioLine(line: String) {
@@ -370,6 +377,7 @@ class PairingViewModel(
         _cameraRequested.value = false
         _micRequested.value = false
         _keyboardRequested.value = null
+        _mediaTransport.value = null
     }
 
     private fun resetAudioSession() {

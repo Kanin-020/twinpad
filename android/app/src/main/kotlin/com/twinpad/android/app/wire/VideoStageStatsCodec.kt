@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -63,11 +64,22 @@ data class VideoStageStatsMessage(
     val windowMs: Int,
     val stages: List<VideoStageStatMessage>,
     val events: List<VideoStageEventMessage>,
+    /** CR-075: backend del encoder activo en el Plugin (opcional; null sin clave). */
+    val hardwareEncoder: Boolean? = null,
+    /** CR-075: resolución de entrada (fuente del juego, pre-escala) o null. */
+    val inputWidth: Int? = null,
+    val inputHeight: Int? = null,
+    /** CR-075: resolución de salida (post-escala, lo que viaja al stream). */
+    val outputWidth: Int? = null,
+    val outputHeight: Int? = null,
 )
 
 /** Ventana declarada del mensaje, entre 10 y 10000 ms (CR-053). */
 private const val VIDEO_WINDOW_MIN_MS = 10
 private const val VIDEO_WINDOW_MAX_MS = 10_000
+
+/** Dimensión de video válida del mensaje CR-075: 1…8192 px. */
+private const val VIDEO_DIM_MAX = 8192
 
 /** `count` válido de etapa o evento: entero en 1…100000 (CR-053). */
 private const val VIDEO_COUNT_MAX = 100_000
@@ -110,6 +122,30 @@ object VideoStageStatsCodec {
     private fun usText(us: Int): String {
         return if (us >= US_PER_MS) "%.1f ms".format(us / US_PER_MS.toDouble()) else "$us µs"
     }
+
+    /** CR-075: línea de detalles del HUD con solo lo conocido: `Acel. HW: sí ·
+     * Trans: UDP · E: 854×480 · S: 960×540`; null sin ningún dato. `transport`
+     * ya llega rotulada por el llamante (UDP/TCP o null sin decisión). */
+    fun formatDetails(
+        metrics: VideoStageStatsMessage,
+        transport: String? = null,
+    ): String? {
+        val parts =
+            buildList {
+                metrics.hardwareEncoder?.let { add("HW: ${if (it) "sí" else "no"}") }
+                transport?.let { add("Trans: $it") }
+                dimsText(metrics.inputWidth, metrics.inputHeight)?.let { add("E: $it") }
+                dimsText(metrics.outputWidth, metrics.outputHeight)?.let { add("S: $it") }
+            }
+        return parts.joinToString(" · ").takeIf { it.isNotEmpty() }
+    }
+
+    private fun dimsText(
+        width: Int?,
+        height: Int?,
+    ): String? {
+        return if (width != null && height != null) "$width×$height" else null
+    }
 }
 
 /** Cuerpo del mensaje: ventana, etapas y eventos; null si algo falla (CR-053). */
@@ -119,23 +155,74 @@ private fun decodeBody(obj: JsonObject): VideoStageStatsMessage? =
         ?.let { windowMs ->
             obj["stages"]?.jsonArray?.mapAll(::decodeStage)?.let { stages ->
                 obj["events"]?.jsonArray?.mapAll(::decodeEvent)?.let { events ->
-                    assembledStats(windowMs, stages, events)
+                    decodeDetails(obj, windowMs, stages, events)
                 }
             }
         }
 
-/** Une ventana, etapas y eventos solo si están dentro del catálogo y sin repetidos. */
+/** Une catálogo (CR-053) y detalles opcionales CR-075 sin repetidos. */
 private fun assembledStats(
     windowMs: Int,
     stages: List<VideoStageStatMessage>,
     events: List<VideoStageEventMessage>,
+    details: StatsDetails,
 ): VideoStageStatsMessage? {
     val inCatalog =
         stages.size <= VIDEO_STAGE_WIRE_NAMES.size && events.size <= VIDEO_EVENT_WIRE_NAMES.size
     val unique =
         stages.distinctBy { it.stage }.size == stages.size &&
             events.distinctBy { it.event }.size == events.size
-    return if (inCatalog && unique) VideoStageStatsMessage(windowMs, stages, events) else null
+    return if (inCatalog && unique) {
+        VideoStageStatsMessage(
+            windowMs = windowMs,
+            stages = stages,
+            events = events,
+            hardwareEncoder = details.hardware,
+            inputWidth = details.input?.first,
+            inputHeight = details.input?.second,
+            outputWidth = details.output?.first,
+            outputHeight = details.output?.second,
+        )
+    } else {
+        null
+    }
+}
+
+/** Detalles opcionales CR-075 del mensaje. */
+private data class StatsDetails(
+    val hardware: Boolean?,
+    val input: Pair<Int, Int>?,
+    val output: Pair<Int, Int>?,
+)
+
+/** Lee hw/in/out del objeto; valor inválido o parcial → null (no invalida). */
+private fun decodeDetails(
+    obj: JsonObject,
+    windowMs: Int,
+    stages: List<VideoStageStatMessage>,
+    events: List<VideoStageEventMessage>,
+): VideoStageStatsMessage? {
+    val details =
+        StatsDetails(
+            hardware = obj["hw"]?.jsonPrimitive?.booleanOrNull,
+            input = readDims(obj, "in_w", "in_h"),
+            output = readDims(obj, "out_w", "out_h"),
+        )
+    return assembledStats(windowMs, stages, events, details)
+}
+
+/** Par (w,h) del mensaje si ambas claves son válidas; si no, null. */
+private fun readDims(
+    obj: JsonObject,
+    widthKey: String,
+    heightKey: String,
+): Pair<Int, Int>? {
+    val width = obj[widthKey]?.jsonPrimitive?.intOrNull
+    val height = obj[heightKey]?.jsonPrimitive?.intOrNull
+    if (width == null || height == null) return null
+    val dimsValid =
+        width >= 1 && width <= VIDEO_DIM_MAX && height >= 1 && height <= VIDEO_DIM_MAX
+    return if (dimsValid) width to height else null
 }
 
 /** Decodifica el array entero con [decode] o falla (un elemento malo → null). */
