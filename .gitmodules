@@ -1,3 +1,6 @@
 [submodule "integrations/cemu"]
 	path = integrations/cemu
 	url = https://github.com/Kanin-020/Cemu.git
+[submodule "integrations/dusklight"]
+	path = integrations/dusklight
+	url = https://github.com/Kanin-020/dusklight.git
