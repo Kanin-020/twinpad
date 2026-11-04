@@ -83,6 +83,43 @@ impl<R: RandomBytes, C: Clock> TokenStore<R, C> {
         issued
     }
 
+    /// ROTACIÓN A DEMANDA del operador («Regenerar QR», CR-073 0.2.0):
+    /// invalida el token no consumido y vigente (§8.3 — los reintentos con
+    /// ese URI reciben E2/E3 por `lookup`) y emite uno nuevo DE INMEDIATO;
+    /// sin QR vigente, simplemente emite. La rotación automática al
+    /// vencer sigue siendo R7 (`ensure_fresh_qr`): solo el botón fuerza.
+    pub fn rotate_qr(&self) -> (IssuedToken, u64) {
+        let now = self.clock.now_ms();
+        let stale_tokens: Vec<Token> = {
+            let map = lock_or_reset(&self.inner);
+            map.values()
+                .filter(|t| !t.record.consumed && !crypto::is_expired(t.record.issued_at_ms, now))
+                .map(|t| t.record.token)
+                .collect()
+        };
+        for token in stale_tokens {
+            lock_or_reset(&self.inner).remove(&token); // el vigente ya no se reutiliza
+        }
+        self.ensure_fresh_qr_with_ttl()
+    }
+
+    /// Igual que `ensure_fresh_qr`, pero también devuelve los ms restantes
+    /// de validez del QR vigente (página local: contador y regeneración
+    /// sin recargar, CR-073 W9). Sin QR vigente, el restante es el de un
+    /// recién emitido: 0 < ms ≤ QR_VALIDITY_MS (R3: frontera exacta 300 s,
+    /// saturación: reloj atrás no expira ni resta del total).
+    pub fn ensure_fresh_qr_with_ttl(&self) -> (IssuedToken, u64) {
+        let issued = self.ensure_fresh_qr();
+        let now = self.clock.now_ms();
+        let remaining_ms = issued
+            .record
+            .issued_at_ms
+            .saturating_add(crypto::QR_VALIDITY_MS)
+            .saturating_sub(now)
+            .min(crypto::QR_VALIDITY_MS);
+        (issued, remaining_ms)
+    }
+
     /// R7: si el QR vigente expiró sin consumirse, lo reemplaza por uno
     /// nuevo automáticamente. Devuelve el QR vigente tras la operación.
     pub fn ensure_fresh_qr(&self) -> IssuedToken {
@@ -222,6 +259,32 @@ mod tests {
         // La máquina de `core` rechaza un registro consumido con E3.
         store.revoke(&issued.record.token);
         assert!(store.lookup(&issued.record.token).is_none());
+    }
+
+    // TEST-0148 (CR-073 0.2.0) — verifies SPEC-010 (W9 manual: «Regenerar
+    // QR» rota el QR: invalida el token vigente no consumido y emite uno
+    // nuevo de inmediato; el URI anterior queda fuera (E2/E3 via lookup).
+    #[test]
+    fn rotate_qr_invalidates_current_consuming_token_and_issues_new() {
+        let clock = AdvancingClock(std::cell::Cell::new(1_000));
+        let store = TokenStore::new(
+            IncrementingRng(std::cell::Cell::new(5)),
+            &clock,
+            "192.168.1.50".into(),
+            8420,
+        );
+        let current = store.ensure_fresh_qr();
+        let (rotated, ttl) = store.rotate_qr();
+        assert_ne!(rotated.record.token, current.record.token);
+        assert_ne!(rotated.qr_uri, current.qr_uri);
+        assert!(!rotated.record.consumed);
+        // TTL del nuevo token: 0 < ttl ≤ QR_VALIDITY_MS (recién emitido).
+        assert!(ttl > 0 && ttl <= twinpad_core::crypto::QR_VALIDITY_MS);
+        // El QR anterior ya no sirve: lookup sin registro → E3 en el wire.
+        assert!(store.lookup(&current.record.token).is_none());
+        // Sin QR vigente, rotar también emite (idempotencia operativa).
+        let (again, _) = store.rotate_qr();
+        assert_ne!(again.record.token, rotated.record.token);
     }
 
     #[test]

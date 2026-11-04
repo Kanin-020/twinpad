@@ -1,46 +1,163 @@
 <!doctype html>
-<!-- Interfaz local del Servidor PC (SPEC-010 W2/W4/W8, CR-061).
-     Plantilla estática: los tokens __*__ los sustituye `webui::render_page`
-     con los datos vivos de la consulta (W8: un solo ciclo `ensure_fresh_qr`
-     por petición). El CSS (server/ui/styles.css) se inyecta compilado. -->
+<!--
+  Interfaz local del Servidor PC (SPEC-010 W2/W4/W8/W9, CR-061/CR-073).
+  Plantilla estática: los tokens __*__ los sustituye `webui::render_page`
+  con los datos vivos de la consulta (W8: un solo ciclo `ensure_fresh_qr`
+  por petición).  El estilo (DESIGN.md «Featurebase») vive separado en
+  server/ui/styles.css y se inyecta compilado en <style> (CR-063 0.3.1,
+  sin rutas HTTP nuevas para la HOJA; la ruta GET /qr nueva es del
+  vencimiento del QR, W9).
+  Presentación anclada por TEST-0135 (`<textarea readonly`, «Sesiones
+  activas: N», QR SVG, `/stop`) y TEST-0146 (GET /qr intacto).
+-->
 <html lang="es">
   <head>
     <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
     <title>Twinpad Servidor PC</title>
     <style>__PAGE_STYLE__</style>
   </head>
-  <body>
-    <section>
-      <h1>Twinpad Servidor PC — activo</h1>
-      <h2>QR de vinculación vigente</h2>
-      __QR_SVG__
-      <h2>URI de vinculación (copiar/pegar)</h2>
-      <textarea readonly rows="3" style="width:100%">__URI__</textarea>
-      <p>
-        <button
-          onclick="navigator.clipboard.writeText(document.querySelector('textarea').value)"
-        >
-          Copiar URI
-        </button>
-      </p>
-    </section>
-    <section>
-      <h2>Estado</h2>
-      <p>Sesiones activas: __SESSIONS__</p>
-      <p>Juegos compatibles:</p>
-      <ul>__GAMES__</ul>
-      <p>
-        Video del Plugin: __WIDTH__×__HEIGHT__ a __BITRATE__ kbps
-        (CR-058: el degradador nunca supera este target).
-      </p>
-    </section>
-    <section>
-      <h2>Control</h2>
-      <p><button onclick="location.href='/stop'">Detener servidor</button></p>
-      <p>
-        La parada termina el proceso; las sesiones activas observan el fin
-        por su canal de control (SPEC-001 §4.3 HB6).
-      </p>
-    </section>
+  <body class="page">
+    <main class="page__content">
+      <header class="page-header">
+        <h1 class="page-header__title">Twinpad Servidor PC — activo</h1>
+        <p class="page-header__hint">
+          Panel de vinculación y estado, servido solo en 127.0.0.1
+          (SPEC-010 §5 W6).
+        </p>
+      </header>
+
+      <div class="dashboard">
+        <section class="panel panel--qr">
+          <h2 class="panel__title">QR de vinculación vigente</h2>
+          <div class="panel__qr" id="qr-body">__QR_SVG__</div>
+          <p class="panel__count">
+            Se renueva en
+            <span class="panel__count-time" id="qr-time">__TTL_CLOCK__</span>
+          </p>
+          <button class="btn btn--primary btn--block" type="button" id="qr-regen">
+            Regenerar QR
+          </button>
+          <p class="panel__note">
+            «Regenerar» emite un token nuevo al instante y sustituye QR y
+            URI juntos; si falla, se conserva el vigente.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel__title">URI de vinculación (copiar/pegar)</h2>
+          <textarea
+            readonly
+            rows="4"
+            class="field"
+            id="uri-field"
+            aria-label="URI de vinculación vigente"
+          >__URI__</textarea>
+          <button class="btn btn--primary btn--block" type="button" id="copy-uri">
+            Copiar URI
+          </button>
+        </section>
+
+        <div class="dashboard__column">
+          <section class="panel">
+            <h2 class="panel__title">Estado</h2>
+            <p class="panel__row">Sesiones activas: __SESSIONS__</p>
+            <p class="panel__row">Juegos compatibles:</p>
+            <ul class="panel__list">__GAMES__</ul>
+            <p class="panel__row">
+              Video del Plugin: __WIDTH__×__HEIGHT__ a __BITRATE__ kbps
+            </p>
+            <p class="panel__note">(CR-058: el degradador nunca supera este target).</p>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__title">Control</h2>
+            <a class="btn btn--ghost" href="/stop">Detener servidor</a>
+            <p class="panel__note">
+              La parada termina el proceso; las sesiones activas observan el fin
+              por su canal de control (SPEC-001 §4.3 HB6).
+            </p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // Continuidad del QR sin recargar (SPEC-010 W9, CR-073 0.2.0): el
+      // contador muestra los ms restantes (init server-side, token
+      // __TTL_MS__); al vencer consulta /qr (frescura por consulta, W8) y
+      // «Regenerar QR» consulta /qr/rotate: ROTA el token (invalida el
+      // vigente y emite uno nuevo) SIN recargar. En ambos casos sustituye
+      // QR y URI JUNTOS (mismo token, W8). Fail-soft (W7): sin respuesta
+      // válida se conserva lo vigente y se reintenta con cadencia fija.
+      (function () {
+        var qrBody = document.getElementById("qr-body");
+        var uriField = document.getElementById("uri-field");
+        var qrTime = document.getElementById("qr-time");
+        var deadline = Date.now() + __TTL_MS__;
+        var inFlight = false;
+        var RETRY_MS = 15000;
+
+        function paintTtl(ms) {
+          var seconds = Math.max(0, Math.ceil(ms / 1000));
+          var minutes = Math.floor(seconds / 60);
+          seconds = seconds % 60;
+          qrTime.textContent =
+            String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+        }
+
+        async function refreshQr(endpoint) {
+          if (inFlight) {
+            return;
+          }
+          inFlight = true;
+          try {
+            var response = await fetch(endpoint);
+            if (!response.ok) {
+              throw new Error("sin QR fresco (" + response.status + ")");
+            }
+            var data = await response.json();
+            if (
+              typeof data.uri !== "string" ||
+              typeof data.svg !== "string" ||
+              typeof data.ttl_ms !== "number"
+            ) {
+              throw new Error("vencimiento incompleto");
+            }
+            qrBody.innerHTML = data.svg;
+            uriField.value = data.uri;
+            deadline = Date.now() + data.ttl_ms;
+            paintTtl(data.ttl_ms);
+          } catch (error) {
+            deadline = Date.now() + RETRY_MS;
+            paintTtl(RETRY_MS);
+          } finally {
+            inFlight = false;
+          }
+        }
+
+        document
+          .getElementById("qr-regen")
+          .addEventListener("click", function () {
+            // W9 manual: rotación forzada de token (no una mera reconsulta).
+            refreshQr("/qr/rotate");
+          });
+
+        // Copia del URI vigente (W2b: casilla copiable). Acción 100 % local.
+        document.getElementById("copy-uri").addEventListener("click", function () {
+          navigator.clipboard.writeText(uriField.value);
+        });
+
+        setInterval(function () {
+          var remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            qrTime.textContent = "00:00";
+            refreshQr("/qr");
+            return;
+          }
+          paintTtl(remaining);
+        }, 500);
+      })();
+    </script>
   </body>
 </html>

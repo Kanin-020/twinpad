@@ -1,17 +1,447 @@
 /*
  * Hoja de estilos de la interfaz local del Servidor PC (SPEC-010, CR-061).
- * Se inyecta en tiempo de compilación dentro del <style> de la página
- * (DES-005 §12: sin dependencias de render nuevas; una sola ruta GET /).
+ *
+ * Diseño: DESIGN.md «Featurebase — Style Reference» — escenario casi negro
+ * plano (Void Canvas), superficies de carbón/acero separadas por hairlines
+ * Slate Edge, tipografía Inter con pesos contenidos (500 para headings y
+ * labels, 600 solo títulos compactos) y Violeta Señal reservado a acentos,
+ * estados seleccionados y la iluminación del panel del QR.
+ *
+ * Convenciones:
+ *   - Tokens de diseño en :root; los componentes solo consumen tokens
+ *     (DRY: ningún color/valor mágico repetido en reglas de componentes).
+ *   - Clases BEM (bloque__elemento--modificador); sin estilos inline.
+ *   - Se inyecta compilado dentro del <style> de la página (CR-063 0.3.1:
+ *     sin dependencias de render nuevas; una sola ruta GET /).
  */
 
-body {
-  font-family: sans-serif;
-  max-width: 640px;
-  margin: 2rem auto;
-  padding: 0 1rem;
+/* ---------------------------------------------------------------
+ * 1. Design tokens (fuente única: DESIGN.md «Featurebase»)
+ * --------------------------------------------------------------- */
+:root {
+  /* Colors — superficies (elevación 0–4 del sistema Featurebase) */
+  --color-void-canvas: #050608;
+  --color-ink-surface: #0a0b0f;
+  --color-charcoal-panel: #0f1219;
+  --color-steel-panel: #151822;
+  --color-slate-edge: #1f1e2a;
+
+  /* Colors — texto */
+  --color-cloud-white: #ffffff;
+  --color-frost-text: #dee1ea;
+  --color-misted-slate: #b2b8cd;
+  --color-quiet-slate: #8f94a6;
+
+  /* Colors — acento (una sola voz cromática: violeta señal, uso acotado) */
+  --color-signal-violet: #7064f2;
+  /* Derivados con alfa; sin `color-mix` por compatibilidad con el
+     webview del sistema (CR-063 0.3.0). */
+  --color-cta-white: rgba(255, 255, 255, 0.92);
+  --glow-violet: rgba(112, 100, 242, 0.32);
+
+  /* Gradients — solo iluminación de bordes/lavados decorativos */
+  --gradient-violet-atmosphere:
+    linear-gradient(
+      to right,
+      rgba(145, 130, 248, 0.1),
+      rgba(192, 132, 252, 0.1),
+      rgba(145, 130, 248, 0.1)
+    );
+
+  /* Typography — familia única (sustitutos según DESIGN.md) */
+  --font-inter:
+    "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+
+  /* Typography — pesos (600 reservado a títulos compactos) */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Type scale (escala Featurebase) */
+  --text-caption: 13px;
+  --leading-caption: 1.5;
+  --text-nav: 14px;
+  --leading-nav: 1.43;
+  --text-body: 16px;
+  --leading-body: 1.5;
+  --text-feature-heading: 18px;
+  --leading-feature-heading: 1.56;
+  --text-lead: 23px;
+  --leading-lead: 1.5;
+  --text-section-heading: 36px;
+  --leading-section-heading: 1.11;
+  --tracking-section-heading: -0.72px;
+  --text-display: 48px;
+  --leading-display: 1.38;
+  --tracking-display: -0.96px;
+  /* 20px del catálogo de tamaños del diseño: énfasis legible de un
+     vistazo (contador del QR). */
+  --text-count: 20px;
+  --leading-count: 1.3;
+
+  /* Spacing (base 8px, densidad comfortable) */
+  --spacing-8: 8px;
+  --spacing-16: 16px;
+  --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-48: 48px;
+  --spacing-64: 64px;
+
+  /* Border radius (conjunto del sistema: 12/16/9999; sin radios < 12) */
+  --radius-buttons: 12px;
+  --radius-inputs: 12px;
+  --radius-cards: 16px;
+  --radius-full: 9999px;
+
+  /* Shadows — stacks negros del sistema (solo paneles flotantes y
+     controles elevados; sin sombras brillantes). */
+  --shadow-inset-card:
+    0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-floating-panel:
+    0 0 0 1px rgba(0, 0, 0, 0.4), 0 20px 25px -5px rgba(0, 0, 0, 0.3),
+    0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  --shadow-raised-control:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  /* Layout (medida de lectura propia de esta consola de estado:
+     documento estrecho, no layout de marketing) */
+  --page-measure: 1040px;
+
+  /* Motion */
+  --transition: 160ms ease;
 }
 
-code,
-textarea {
-  font-family: monospace;
+/* ---------------------------------------------------------------
+ * 2. Base — lienzo void plano y silencioso (sin star field)
+ * --------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: var(--spacing-48) var(--spacing-24) var(--spacing-64);
+  background-color: var(--color-void-canvas);
+  font-family: var(--font-inter);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-regular);
+  color: var(--color-misted-slate);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-signal-violet);
+  color: var(--color-cloud-white);
+}
+
+/* ---------------------------------------------------------------
+ * 3. Page layout
+ *    Dashboard de dos columnas (sin pestaña lateral): la QR queda a
+ *    la izquierda, grande y centrada; la columna derecha apila el
+ *    URI copiable, el estado y el control.
+ * --------------------------------------------------------------- */
+.page__content {
+  max-width: var(--page-measure);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--spacing-24);
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: var(--spacing-24);
+  align-items: start;
+}
+
+.dashboard__column {
+  display: grid;
+  gap: var(--spacing-24);
+  min-width: 0;
+}
+
+.page-header {
+  border-bottom: 1px solid var(--color-slate-edge);
+  padding-bottom: var(--spacing-24);
+}
+
+.page-header__title {
+  margin: 0 0 var(--spacing-8);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-section-heading);
+  line-height: var(--leading-section-heading);
+  letter-spacing: var(--tracking-section-heading);
+  color: var(--color-cloud-white);
+}
+
+.page-header__hint {
+  margin: 0;
+  font-size: var(--text-nav);
+  line-height: var(--leading-nav);
+  font-weight: var(--weight-medium);
+  color: var(--color-misted-slate);
+}
+
+/* ---------------------------------------------------------------
+ * 4. Panel (Charcoal sobre el lienzo void, hairlines Slate Edge;
+ *    padding de tarjeta 16 y gap de elemento 16, según DESIGN.md)
+ * --------------------------------------------------------------- */
+.panel {
+  display: grid;
+  gap: var(--spacing-16);
+  justify-items: start;
+  margin: 0;
+  padding: var(--spacing-16);
+  background-color: var(--color-charcoal-panel);
+  border: 1px solid var(--color-slate-edge);
+  border-radius: var(--radius-cards);
+  box-shadow: var(--shadow-inset-card);
+}
+
+/* QR: el SVG llega con fondo blanco desde `webui::qr_svg`; se enmarca
+   con radio de tarjeta y el glow violeta restringido del «Product
+   Workspace Frame». Grande y centrado (dashboard): el scan es el gesto
+   principal de la página. */
+.panel__qr svg {
+  display: block;
+  width: 300px;
+  height: auto;
+  max-width: 100%;
+  border-radius: var(--radius-cards);
+}
+
+.panel__title {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-feature-heading);
+  line-height: var(--leading-feature-heading);
+  color: var(--color-cloud-white);
+}
+
+.panel__row {
+  margin: 0;
+  color: var(--color-misted-slate);
+}
+
+.panel__note {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  color: var(--color-quiet-slate);
+}
+
+.panel__list {
+  display: grid;
+  gap: var(--spacing-8);
+  margin: 0;
+  padding: 0 0 0 var(--spacing-16);
+  font-size: var(--text-nav);
+  line-height: var(--leading-nav);
+  color: var(--color-misted-slate);
+}
+
+.panel__list li::marker {
+  color: var(--color-quiet-slate);
+}
+
+/* Panel del QR: contenido centrado; el borde se ilumina con la atmósfera
+   violeta (Violet Atmosphere + glow restringido) y flota con la sombra
+   de panel flotante — la única luminiscencia de la página. */
+.panel--qr {
+  justify-items: center;
+  text-align: center;
+  border-color: var(--color-slate-edge);
+  box-shadow:
+    var(--shadow-floating-panel),
+    var(--shadow-raised-control);
+  position: relative;
+}
+
+.panel--qr::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-cards);
+  background-image: var(--gradient-violet-atmosphere);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.panel--qr > * {
+  position: relative;
+}
+
+/* Contador del QR como píldora («announcement pill» del sistema):
+   superficie Ink + hairline, texto muted y cifra destacada — el dato
+   que se consulta de un vistazo, en el centro del panel del QR. */
+.panel__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-8);
+  margin: 0;
+  padding: var(--spacing-8) var(--spacing-16);
+  background-color: var(--color-ink-surface);
+  border: 1px solid var(--color-slate-edge);
+  border-radius: var(--radius-full);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  color: var(--color-misted-slate);
+}
+
+.panel__count-time {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-count);
+  line-height: var(--leading-count);
+  font-weight: var(--weight-medium);
+  color: var(--color-cloud-white);
+}
+
+/* ---------------------------------------------------------------
+ * 5. Form controls — casilla del URI sobre Ink Surface delimitada
+ *    por hairline Slate Edge (radio 12 según el sistema).
+ * --------------------------------------------------------------- */
+.field {
+  width: 100%;
+  margin: 0;
+  padding: var(--spacing-16);
+  background-color: var(--color-ink-surface);
+  color: var(--color-frost-text);
+  font-family: var(--font-inter);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-nav);
+  line-height: var(--leading-nav);
+  border: 1px solid var(--color-slate-edge);
+  border-radius: var(--radius-inputs);
+  resize: vertical;
+  transition: border-color var(--transition);
+}
+
+.field:hover {
+  border-color: var(--color-quiet-slate);
+}
+
+.field:focus-visible {
+  border-color: var(--color-signal-violet);
+  outline: 2px solid var(--color-signal-violet);
+  outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------
+ * 6. Buttons
+ *    «White Conversion Button»: relleno blanco 92 %, texto Charcoal
+ *    Panel, Inter 14px (acción de alta énfasis; el violeta NUNCA
+ *    rellena botones), radio 12px, padding 8×16.
+ *    «Outlined Dark Button»: transparente, etiqueta Frost Text 500,
+ *    borde 1px Slate Edge, radio 12px, padding 12×16.
+ * --------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-8);
+  font-family: var(--font-inter);
+  font-size: var(--text-nav);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-nav);
+  border: 1px solid transparent;
+  border-radius: var(--radius-buttons);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--transition),
+    border-color var(--transition),
+    color var(--transition);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-signal-violet);
+  outline-offset: 2px;
+}
+
+.btn--primary {
+  background-color: var(--color-cta-white);
+  color: var(--color-charcoal-panel);
+  padding: var(--spacing-8) var(--spacing-16);
+}
+
+.btn--primary:hover {
+  background-color: var(--color-cloud-white);
+}
+
+/* Acciones principales a todo el ancho del panel (ergonomía: destino
+   táctil grande y predecible bajo su contenido). */
+.btn--block {
+  width: 100%;
+  padding: 12px var(--spacing-16);
+}
+
+/* Se usa como control elevado sobre hairlines oscuras (p. ej. dentro de
+   la tarjeta), por lo que recibe la sombra de control elevado del sistema. */
+.btn--primary {
+  box-shadow: var(--shadow-raised-control);
+}
+
+.btn--ghost {
+  background-color: transparent;
+  color: var(--color-frost-text);
+  border-color: var(--color-slate-edge);
+  padding: 12px var(--spacing-16); /* especificación del componente */
+}
+
+.btn--ghost:hover {
+  color: var(--color-cloud-white);
+}
+
+/* ---------------------------------------------------------------
+ * 7. Ventanas angostas: columna única, densidad, sin nuevos estilos
+ * --------------------------------------------------------------- */
+/* Dos columnas intermedias: Estado/Control pasan un escalon abajo, en
+   su propia fila de a dos, bajo el QR y el URI. */
+@media (max-width: 1024px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .dashboard__column {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard,
+  .dashboard__column {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel__qr svg {
+    width: 220px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    padding: var(--spacing-24) var(--spacing-16) var(--spacing-48);
+  }
+
+  .page-header__title {
+    font-size: 28px; /* escala a la mitad del tramo display para móvil */
+    line-height: 1.25;
+    letter-spacing: -0.4px;
+  }
+
+  .panel__qr svg {
+    width: 180px;
+  }
 }

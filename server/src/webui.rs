@@ -30,9 +30,15 @@ const PAGE_STYLE: &str = include_str!("../ui/styles.css");
 
 /// Inyección de estado para la página (los efectos viven en `main.rs`).
 pub struct UiDeps {
-    /// URI de vinculación VIGENTE al momento de la consulta (W8: fuerza la
-    /// regeneración R7 si el token de 300 s venció).
-    pub current_uri: Box<dyn Fn() -> String + Send + Sync>,
+    /// URI de vinculación VIGENTE al momento de la consulta con los ms
+    /// restantes de validez del token (W8/W9: `current_uri` se consulta
+    /// UNA sola vez por petición de página, y una por `GET /qr`; CR-073
+    /// reutiliza el ciclo R7: regeneración si el token de 300 s venció).
+    pub current_uri: Box<dyn Fn() -> (String, u64) + Send + Sync>,
+    /// Rotación a demanda del operador («Regenerar QR», CR-073 0.2.0):
+    /// INVALIDA el token vigente y emite uno nuevo (tokens::rotate_qr);
+    /// cada llamada es una rotación (el botón consume la primera).
+    pub rotate_uri: Box<dyn Fn() -> (String, u64) + Send + Sync>,
     /// Número de sesiones activas (W2: estado del servidor).
     pub session_count: Box<dyn Fn() -> usize + Send + Sync>,
     /// Catálogo de juegos compatibles, en orden (W2).
@@ -98,6 +104,46 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
             respond(stream, "200 OK", "text/html; charset=utf-8", &page);
             RequestOutcome::Served
         }
+        "/qr" => {
+            // W9 (CR-073): vencimiento del QR vigente para el contador y
+            // la regeneración sin recargar; misma frescura por consulta
+            // que la página (W8). Sin SVG renderizable → 503 fail-soft.
+            let (uri, ttl_ms) = (deps.current_uri)();
+            match qr_payload(&uri, ttl_ms) {
+                Some(body) => {
+                    respond(stream, "200 OK", "application/json; charset=utf-8", &body);
+                }
+                None => {
+                    respond(
+                        stream,
+                        "503 Service Unavailable",
+                        "text/plain; charset=utf-8",
+                        "QR no renderizable; se conserva el vigente en pantalla.",
+                    );
+                }
+            }
+            RequestOutcome::Served
+        }
+        "/qr/rotate" => {
+            // W9 manual (CR-073 0.2.0): «Regenerar QR» ROTA el token —
+            // invalida el vigente no consumido y emite uno nuevo de
+            // inmediato (tokens::rotate_qr); el UI lo muestra SIN recargar.
+            let (uri, ttl_ms) = (deps.rotate_uri)();
+            match qr_payload(&uri, ttl_ms) {
+                Some(body) => {
+                    respond(stream, "200 OK", "application/json; charset=utf-8", &body);
+                }
+                None => {
+                    respond(
+                        stream,
+                        "503 Service Unavailable",
+                        "text/plain; charset=utf-8",
+                        "QR no renderizable; se conserva el vigente en pantalla.",
+                    );
+                }
+            }
+            RequestOutcome::Served
+        }
         "/stop" => {
             // W4: el flag compartido se activa en el propio handler (única
             // vía de parada: página, tray y tests comparten el mismo flag).
@@ -129,9 +175,10 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str)
 
 /// Compone la página (W2): QR SVG + URI copiable + estado + configs +
 /// acción de parada. El QR y el URI provienen del MISMO token de la
-/// respuesta (W8: `current_uri` se consulta UNA sola vez aquí).
+/// respuesta (W8: `current_uri` se consulta UNA sola vez aquí). El
+/// contador inicial (W9) se calcula server-side para renderizar sin JS.
 pub fn render_page(deps: &UiDeps) -> String {
-    let uri = (deps.current_uri)();
+    let (uri, ttl_ms) = (deps.current_uri)();
     let sessions = (deps.session_count)();
     let games = (deps.games)();
     let (width, height, bitrate) = (deps.video_config)();
@@ -146,11 +193,55 @@ pub fn render_page(deps: &UiDeps) -> String {
         .replace("__PAGE_STYLE__", PAGE_STYLE)
         .replace("__QR_SVG__", &qr_svg)
         .replace("__URI__", &uri)
+        .replace("__TTL_CLOCK__", &mmss(ttl_ms))
+        .replace("__TTL_MS__", &ttl_ms.to_string())
         .replace("__SESSIONS__", &sessions.to_string())
         .replace("__GAMES__", &games_list)
         .replace("__WIDTH__", &width.to_string())
         .replace("__HEIGHT__", &height.to_string())
         .replace("__BITRATE__", &bitrate.to_string())
+}
+
+/// Carga del vencimiento (CR-073 W9): JSON con el URI vigente, los ms
+/// restantes y el SVG del MISMO token (W8); el cliente sustituye QR y
+/// casilla juntos, nunca desincronizados. `None` si el SVG no es
+/// renderizable (→ 503 en la ruta).
+fn qr_payload(uri: &str, ttl_ms: u64) -> Option<String> {
+    let svg = qr_svg(uri)?;
+    Some(format!(
+        "{{\"uri\":{uri_json},\"ttl_ms\":{ttl_ms},\"svg\":{svg_json}}}",
+        uri_json = json_string(uri),
+        svg_json = json_string(&svg),
+    ))
+}
+
+/// Escape JSON mínimo (ENG §6: sin dependencias nuevas): el SVG contiene
+/// comillas y el URI puede contener caracteres reservados de JSON.
+fn json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if (ch as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", ch as u32));
+            }
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Contador inicial en mm:ss (techo de segundos; `0…59999 ms` → «01:00»:
+/// el siguiente tick de 500 ms del cliente muestra el restante real).
+fn mmss(ms: u64) -> String {
+    let seconds = ms.div_ceil(1000);
+    format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }
 
 /// QR de `uri` como `<svg>` (DES-005 §10: reutiliza la matriz de
@@ -225,14 +316,35 @@ pub(crate) fn response_of(listener: &TcpListener, deps: &UiDeps, request: &str) 
     }
     response
 }
-
 #[cfg(test)]
 pub(crate) fn test_deps(shutdown: Arc<AtomicBool>) -> UiDeps {
     UiDeps {
-        current_uri: Box::new(|| "twinpad://v1#s=127.0.0.1&p=8420&t=eW8tMTE1YQ".to_string()),
+        current_uri: Box::new(|| {
+            // TTL fijo alto: el vencimiento real lo ejercita TokenStore
+            // (TEST-009); aquí se ancla que viaja intacto por el wire.
+            (
+                "twinpad://v1#s=127.0.0.1&p=8420&t=eW8tMTE1YQ".to_string(),
+                300_000,
+            )
+        }),
         session_count: Box::new(|| 2),
         games: Box::new(|| vec!["cemu".to_string()]),
         video_config: Box::new(|| (1920, 1080, 30000)),
+        // Rotación simulada: cada llamada emite un token DISTINTO (la
+        // semántica real de invalidación la ejercita TEST-0148).
+        rotate_uri: Box::new({
+            let calls = std::sync::atomic::AtomicU8::new(0);
+            move || {
+                let n = calls.fetch_add(1, Ordering::Relaxed);
+                (
+                    format!(
+                        "twinpad://v1#s=127.0.0.1&p=8420&t=eW8tMTE1Y{}Q",
+                        (b'A' + n) as char
+                    ),
+                    300_000,
+                )
+            }
+        }),
         shutdown,
     }
 }
@@ -290,5 +402,48 @@ mod tests {
         );
         assert!(response.starts_with("HTTP/1.1 200 OK"));
         assert!(shutdown.load(Ordering::Acquire));
+    }
+
+    /// TEST-0146 (CR-073, SPEC-010 W8/W9): `GET /qr` en loopback responde
+    /// 200 application/json con el URI vigente, ttl_ms del token y el SVG
+    /// del MISMO token (W8: desincronizar QR y casilla es imposible —
+    /// misma respuesta, una sola consulta).
+    #[test]
+    fn qr_renewal_endpoint_serves_fresh_uri_ttl_and_same_token_svg() {
+        let listener = loopback_listener();
+        let deps = test_deps(Arc::new(AtomicBool::new(false)));
+        let response = response_of(
+            &listener,
+            &deps,
+            "GET /qr HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+        );
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("application/json"));
+        // W8: el MISMO token vigente en URI y SVG (mecanizado como JSON).
+        assert!(response.contains("eW8tMTE1YQ"));
+        // W9: ttl_ms del token en el rango R3 (0 < ttl ≤ 300_000, aquí el
+        // fixture fijo) y el SVG válido de qr_svg (el escape JSON no
+        // independiza los fragmentos anclados).
+        assert!(response.contains("\"ttl_ms\":300000"));
+        assert!(response.contains("viewBox"));
+    }
+
+    /// TEST-0147 (CR-073 0.2.0, SPEC-010 W9 manual): `GET /qr/rotate` en
+    /// loopback responde 200 con el token ROTADO (distinto por llamada);
+    /// el swap sin recarga y la invalidación real son TEST-0146 (ruta) y
+    /// TEST-0148 (semántica `rotate_qr`).
+    #[test]
+    fn qr_rotate_endpoint_serves_a_new_token_per_call() {
+        let listener = loopback_listener();
+        let deps = test_deps(Arc::new(AtomicBool::new(false)));
+        let response_of = |request: &str| response_of(&listener, &deps, request);
+        let first = response_of("GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        let second = response_of("GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        assert!(first.starts_with("HTTP/1.1 200 OK"));
+        assert!(second.starts_with("HTTP/1.1 200 OK"));
+        // Cada llamada rota: tokens distintos en el JSON (W9 manual).
+        assert!(first.contains("eW8tMTE1YAQ"));
+        assert!(second.contains("eW8tMTE1YBQ"));
+        assert_ne!(first, second);
     }
 }

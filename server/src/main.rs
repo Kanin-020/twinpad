@@ -326,12 +326,22 @@ fn main() {
     {
         // Página de gestión SOLO en loopback (W6): QR copiable + estado.
         let ui_store = Arc::clone(&store);
+        let ui_rotate_store = Arc::clone(&store);
         let ui_registry = Arc::clone(&registry);
         let ui_games = Arc::clone(&game_registry);
         let ui_plugin_cfg = Arc::clone(&plugin_video_config);
         let webui_deps = twinpad_server::webui::UiDeps {
-            // W8: consultar UNA vez por petición fuerza el ciclo R7.
-            current_uri: Box::new(move || ui_store.ensure_fresh_qr().qr_uri),
+            // W8: consultar UNA vez por petición fuerza el ciclo R7; el
+            // TTL restante viaja para el contador (W9, CR-073).
+            current_uri: Box::new(move || {
+                let (issued, remaining_ms) = ui_store.ensure_fresh_qr_with_ttl();
+                (issued.qr_uri, remaining_ms)
+            }),
+            // W9 manual (CR-073 0.2.0): «Regenerar QR» rota el token.
+            rotate_uri: Box::new(move || {
+                let (issued, remaining_ms) = ui_rotate_store.rotate_qr();
+                (issued.qr_uri, remaining_ms)
+            }),
             session_count: Box::new(move || ui_registry.len()),
             games: Box::new(move || ui_games.list().into_iter().map(|g| g.game_id).collect()),
             video_config: Box::new(move || {
