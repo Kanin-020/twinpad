@@ -56,6 +56,12 @@ private const val HUD_TICK_MS: Long = 1_000L
 /** Conversión kbps → Mbps. */
 private const val KBPS_PER_MBPS: Int = 1_000
 
+/** CR-076: todos los gauges usan una escala de 0..100 en el arco. */
+private const val GAUGE_MAX_PERCENT = 100f
+
+/** CR-076: refresco por defecto si el display no reporta (fallback). */
+private const val DEFAULT_REFRESH_RATE_FPS = 60.0
+
 /** CR-038: valor inicial de [PairingActivity.loadedProfileId] — ningún juego
  * cargado aún, así la primera emisión del estado combinado (antes `null`)
  * dispara la carga del perfil vacío como en CR-034. */
@@ -79,6 +85,12 @@ class PairingActivity : AppCompatActivity() {
 
     /** CR-054: bloque «Métricas avanzadas» del HUD vigente (drawer). */
     private var advancedMetricsVisible = false
+
+    /** CR-076: gauges del dispositivo en la ventana de espera (snapshot
+     * previo de /proc/stat para el delta de CPU y monitor de FPS). */
+    private var cpuPrevious: DeviceMetricsSampler.CpuSnapshot? = null
+    private var deviceGaugesInitialized = false
+    private val fpsMonitor = DeviceMetricsSampler.FpsMonitor()
 
     /** CR-032: distribución Nintendo vigente; la superficie lo aplica
      * al adjuntarse (onCreate restauración → attach posterior). */
@@ -506,6 +518,8 @@ class PairingActivity : AppCompatActivity() {
             while (true) {
                 kotlinx.coroutines.delay(HUD_TICK_MS)
                 renderHudChip()
+                // CR-076: gauges del dispositivo SOLO en la ventana de espera.
+                renderDeviceGauges()
             }
         }
         drawer.bind()
@@ -569,6 +583,100 @@ class PairingActivity : AppCompatActivity() {
                 details.text = detailsText
                 details.isVisible = true
             }
+        }
+    }
+
+    /** CR-076: gauges de consumo del teléfono (CPU/GPU/RAM/FPS) en la
+     * ventana de espera (Linked + stream INACTIVE). Cada tick de 1 s lee
+     * /proc/stat, los sysfs de GPU, la RAM y la ventana de FPS; lo aún
+     * desconocido se muestra como «—» (sin datos inventados). Función-
+     * propiedad para el umbral de funciones de detekt. */
+    private val renderDeviceGauges: () -> Unit = {
+        val panel = findViewById<View>(R.id.metrics_panel)
+        val waiting =
+            viewModel.uiState.value is PairingUiState.Linked &&
+                viewModel.streamState.value.state == StreamState.INACTIVE
+        if (!waiting) {
+            panel.isVisible = false
+            fpsMonitor.stop()
+        } else {
+            if (!deviceGaugesInitialized) {
+                deviceGaugesInitialized = true
+                mapOf(
+                    R.id.gauge_cpu to R.string.metrics_cpu,
+                    R.id.gauge_gpu to R.string.metrics_gpu,
+                    R.id.gauge_ram to R.string.metrics_ram,
+                    R.id.gauge_fps to R.string.metrics_fps,
+                ).forEach { (id, label) ->
+                    findViewById<GaugeView>(id).label = getString(label)
+                }
+            }
+            fpsMonitor.start()
+            renderCpuGauge()
+            renderGpuGauge()
+            renderRamGauge()
+            renderFpsGauge()
+            panel.isVisible = true
+        }
+    }
+
+    /** CPU: delta de /proc/stat entre ticks; el primer tick solo muestrea.
+     * Función-propiedad para el umbral de funciones de detekt. */
+    private val renderCpuGauge: () -> Unit = {
+        val gauge = findViewById<GaugeView>(R.id.gauge_cpu)
+        val snapshot = DeviceMetricsSampler.readCpuSnapshot()
+        val percent =
+            snapshot?.let { current ->
+                cpuPrevious?.let { prev -> DeviceMetricsSampler.cpuUsagePercent(prev, current) }
+            }
+        cpuPrevious = snapshot ?: cpuPrevious
+        if (percent == null) {
+            gauge.hasValue = false
+            gauge.valueText = "—"
+        } else {
+            gauge.hasValue = true
+            gauge.progress = percent / GAUGE_MAX_PERCENT
+            gauge.valueText = "$percent%"
+        }
+    }
+
+    /** GPU: busy del driver si el SoC lo expone; si no, gauge sin dato. */
+    private val renderGpuGauge: () -> Unit = {
+        val gauge = findViewById<GaugeView>(R.id.gauge_gpu)
+        val busy = DeviceMetricsSampler.readGpuBusyPercent()
+        if (busy == null) {
+            gauge.hasValue = false
+            gauge.valueText = "—"
+        } else {
+            gauge.hasValue = true
+            gauge.progress = busy / GAUGE_MAX_PERCENT
+            gauge.valueText = "$busy%"
+        }
+    }
+
+    /** RAM: uso/total del ActivityManager (GB con un decimal y % del arco). */
+    private val renderRamGauge: () -> Unit = {
+        val gauge = findViewById<GaugeView>(R.id.gauge_ram)
+        val reading = DeviceMetricsSampler.readRamReading(this)
+        gauge.hasValue = true
+        gauge.progress = reading.usedPercent / GAUGE_MAX_PERCENT
+        gauge.valueText = reading.usedGbText
+    }
+
+    /** FPS: ventana deslizante del Choreographer contra el refresco real
+     * del display (el arco apunta al máximo del propio panel). Función-
+     * propiedad para el umbral de funciones de detekt. */
+    private val renderFpsGauge: () -> Unit = {
+        val gauge = findViewById<GaugeView>(R.id.gauge_fps)
+        val refreshRate: Double = display?.refreshRate?.toDouble() ?: DEFAULT_REFRESH_RATE_FPS
+        val fps = fpsMonitor.fps()
+        if (fps <= 0.0) {
+            gauge.hasValue = false
+            gauge.valueText = "—"
+        } else {
+            gauge.hasValue = true
+            gauge.progress = (fps / refreshRate).toFloat()
+            gauge.valueText = "%.0f".format(fps)
         }
     }
 

@@ -212,6 +212,43 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
 
+            <!-- CR-076: gauges del dispositivo (CPU/GPU/RAM/FPS) para la
+                 ventana de espera; visible solo con Linked + INACTIVE. -->
+            <LinearLayout
+                android:id="@+id/metrics_panel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/bg_hud_chip"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:padding="8dp"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent">
+
+                <com.twinpad.android.app.ui.GaugeView
+                    android:id="@+id/gauge_cpu"
+                    android:layout_width="68dp"
+                    android:layout_height="68dp" />
+
+                <com.twinpad.android.app.ui.GaugeView
+                    android:id="@+id/gauge_gpu"
+                    android:layout_width="68dp"
+                    android:layout_height="68dp" />
+
+                <com.twinpad.android.app.ui.GaugeView
+                    android:id="@+id/gauge_ram"
+                    android:layout_width="68dp"
+                    android:layout_height="68dp" />
+
+                <com.twinpad.android.app.ui.GaugeView
+                    android:id="@+id/gauge_fps"
+                    android:layout_width="68dp"
+                    android:layout_height="68dp" />
+            </LinearLayout>
+
             <!-- CR-044: overlay del teclado del juego; el IME del teléfono
                  reemplaza al teclado de Cemu (dicho overlay no se dibuja
                  mientras Twinpad esté conectado). -->

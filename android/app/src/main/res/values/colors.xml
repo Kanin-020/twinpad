@@ -3,4 +3,6 @@
      teclado del juego (90 % negro). -->
 <resources>
     <color name="keyboard_overlay_background">#E6121212</color>
+    <!-- CR-076: acento del arco de los gauges (ventana de espera). -->
+    <color name="metrics_accent">#7EC9B4</color>
 </resources>

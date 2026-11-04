@@ -29,6 +29,11 @@
     <string name="game_select_title">Selecciona el juego</string>
     <!-- CR-075: sección final del drawer con instrumentación de diagnóstico. -->
     <string name="settings_debug">Debug</string>
+    <!-- CR-076: etiquetas de los gauges del dispositivo (ventana de espera). -->
+    <string name="metrics_cpu">CPU</string>
+    <string name="metrics_gpu">GPU</string>
+    <string name="metrics_ram">RAM</string>
+    <string name="metrics_fps">FPS</string>
     <string name="settings_title">Ajustes de transmisión</string>
     <string name="settings_resolution">Resolución</string>
     <string name="settings_gyro">Giroscopio</string>
