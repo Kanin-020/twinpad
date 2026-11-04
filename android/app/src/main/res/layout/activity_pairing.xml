@@ -125,25 +125,73 @@
                 </FrameLayout>
             </FrameLayout>
 
-            <TextView
-                android:id="@+id/txt_session_message"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
+            <!-- CR-076 v2: VISTA COMPLETA de espera (no un overlay): cubre
+                 el Framebuffer residual (drc_content queda debajo) y muestra
+                 el estado + juegos + gauges de consumo de la PC (host_metrics
+                 del server). El toggle vive en PairingActivity (StreamState). -->
+            <FrameLayout
+                android:id="@+id/waiting_view"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toTopOf="parent">
 
-            <TextView
-                android:id="@+id/txt_games"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/txt_session_message" />
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/txt_session_message"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                    <TextView
+                        android:id="@+id/txt_games"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <LinearLayout
+                        android:id="@+id/metrics_panel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="24dp"
+                        android:background="@drawable/bg_hud_chip"
+                        android:gravity="center"
+                        android:orientation="horizontal"
+                        android:padding="12dp">
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_cpu"
+                            android:layout_width="80dp"
+                            android:layout_height="80dp" />
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_gpu"
+                            android:layout_width="80dp"
+                            android:layout_height="80dp" />
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_ram"
+                            android:layout_width="80dp"
+                            android:layout_height="80dp" />
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_fps"
+                            android:layout_width="80dp"
+                            android:layout_height="80dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </FrameLayout>
 
             <FrameLayout
                 android:id="@+id/surface_container"
@@ -211,43 +259,6 @@
                 android:tint="#4D4D4D"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
-
-            <!-- CR-076: gauges del dispositivo (CPU/GPU/RAM/FPS) para la
-                 ventana de espera; visible solo con Linked + INACTIVE. -->
-            <LinearLayout
-                android:id="@+id/metrics_panel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:background="@drawable/bg_hud_chip"
-                android:gravity="center"
-                android:orientation="horizontal"
-                android:padding="8dp"
-                android:visibility="gone"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent">
-
-                <com.twinpad.android.app.ui.GaugeView
-                    android:id="@+id/gauge_cpu"
-                    android:layout_width="68dp"
-                    android:layout_height="68dp" />
-
-                <com.twinpad.android.app.ui.GaugeView
-                    android:id="@+id/gauge_gpu"
-                    android:layout_width="68dp"
-                    android:layout_height="68dp" />
-
-                <com.twinpad.android.app.ui.GaugeView
-                    android:id="@+id/gauge_ram"
-                    android:layout_width="68dp"
-                    android:layout_height="68dp" />
-
-                <com.twinpad.android.app.ui.GaugeView
-                    android:id="@+id/gauge_fps"
-                    android:layout_width="68dp"
-                    android:layout_height="68dp" />
-            </LinearLayout>
 
             <!-- CR-044: overlay del teclado del juego; el IME del teléfono
                  reemplaza al teclado de Cemu (dicho overlay no se dibuja

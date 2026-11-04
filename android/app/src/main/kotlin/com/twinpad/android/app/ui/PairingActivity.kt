@@ -59,8 +59,11 @@ private const val KBPS_PER_MBPS: Int = 1_000
 /** CR-076: todos los gauges usan una escala de 0..100 en el arco. */
 private const val GAUGE_MAX_PERCENT = 100f
 
-/** CR-076: refresco por defecto si el display no reporta (fallback). */
-private const val DEFAULT_REFRESH_RATE_FPS = 60.0
+/** CR-076 v2: techo del arco del gauge FPS (tasa de publicación del juego). */
+private const val GAUGE_MAX_FPS = 60f
+
+/** CR-076 v2: MB en un GB (formateo de la RAM del host). */
+private const val MB_PER_GB = 1024.0
 
 /** CR-038: valor inicial de [PairingActivity.loadedProfileId] — ningún juego
  * cargado aún, así la primera emisión del estado combinado (antes `null`)
@@ -86,11 +89,8 @@ class PairingActivity : AppCompatActivity() {
     /** CR-054: bloque «Métricas avanzadas» del HUD vigente (drawer). */
     private var advancedMetricsVisible = false
 
-    /** CR-076: gauges del dispositivo en la ventana de espera (snapshot
-     * previo de /proc/stat para el delta de CPU y monitor de FPS). */
-    private var cpuPrevious: DeviceMetricsSampler.CpuSnapshot? = null
-    private var deviceGaugesInitialized = false
-    private val fpsMonitor = DeviceMetricsSampler.FpsMonitor()
+    /** CR-076 v2: etiquetas de los gauges ya escritas (una sola vez). */
+    private var gaugeLabelsInitialized = false
 
     /** CR-032: distribución Nintendo vigente; la superficie lo aplica
      * al adjuntarse (onCreate restauración → attach posterior). */
@@ -464,37 +464,12 @@ class PairingActivity : AppCompatActivity() {
     private fun observeStates() {
         lifecycleScope.launch {
             viewModel.uiState.collectLatest { state ->
-                renderState(state)
-                if (state is PairingUiState.Linked && !sessionConfigSent) {
-                    viewModel.onStreamSettingsChanged(drawer.load())
-                    sessionConfigSent = true
-                } else if (state !is PairingUiState.Linked) {
-                    sessionConfigSent = false
-                }
+                applyLinkedState(state)
             }
         }
         lifecycleScope.launch {
-            viewModel.streamState.collectLatest { s ->
-                // CR-074: el marco (contener/estirar) sigue al frame REAL;
-                // se re-aplica solo cuando cambia la dimensión presentada.
-                if (lastStreamFrame.first != s.width || lastStreamFrame.second != s.height) {
-                    lastStreamFrame = s.width to s.height
-                    applyVideoScale(drawer.load())
-                }
-                // CR-026: durante la transmisión (STREAMING/INTERRUPTED) la
-                // pantalla queda limpia: sin texto de estado ni de juegos
-                // compatibles. Los textos solo se muestran sin imagen viva.
-                val sessionMessage = findViewById<TextView>(R.id.txt_session_message)
-                val games = findViewById<TextView>(R.id.txt_games)
-                if (s.state == StreamState.STREAMING || s.state == StreamState.INTERRUPTED) {
-                    sessionMessage.isVisible = false
-                    games.isVisible = false
-                } else {
-                    sessionMessage.isVisible = true
-                    sessionMessage.text = getString(R.string.second_screen_inactive)
-                    games.isVisible = true
-                }
-                keepDisplayAwake(s.state)
+            viewModel.streamState.collectLatest { state ->
+                applyStreamState(state)
             }
         }
         lifecycleScope.launch {
@@ -518,12 +493,60 @@ class PairingActivity : AppCompatActivity() {
             while (true) {
                 kotlinx.coroutines.delay(HUD_TICK_MS)
                 renderHudChip()
-                // CR-076: gauges del dispositivo SOLO en la ventana de espera.
-                renderDeviceGauges()
+                // CR-076 v2: gauges del host SOLO en la vista de espera.
+                if (viewModel.uiState.value is PairingUiState.Linked &&
+                    viewModel.streamState.value.state != StreamState.STREAMING
+                ) {
+                    if (!gaugeLabelsInitialized) {
+                        initializeGaugeLabels()
+                        gaugeLabelsInitialized = true
+                    }
+                    renderHostGauges()
+                }
             }
         }
         drawer.bind()
         attachProfileSurface()
+    }
+
+    /** U4/Linked: config de stream una vez por sesión (CR-074). Función-
+     * propiedad para el umbral de funciones de detekt. */
+    private val applyLinkedState: (PairingUiState) -> Unit = { state ->
+        renderState(state)
+        if (state is PairingUiState.Linked && !sessionConfigSent) {
+            viewModel.onStreamSettingsChanged(drawer.load())
+            sessionConfigSent = true
+        } else if (state !is PairingUiState.Linked) {
+            sessionConfigSent = false
+        }
+    }
+
+    /** Tick del stream: escala al frame real y la VISTA COMPLETA de espera
+     * (CR-026/CR-076 v2): sin stream (INACTIVE) o sin conexión (INTERRUPTED)
+     * NO queda el último frame renderizado — la vista de espera cubre el
+     * Framebuffer residual con los textos y los gauges del HOST. Función-
+     * propiedad para LongMethod/umbral de funciones de detekt. */
+    private val applyStreamState: (com.twinpad.android.app.stream.StreamUiState) -> Unit = { state ->
+        // CR-074: el marco (contener/estirar) sigue al frame REAL;
+        // se re-aplica solo cuando cambia la dimensión presentada.
+        if (lastStreamFrame.first != state.width || lastStreamFrame.second != state.height) {
+            lastStreamFrame = state.width to state.height
+            applyVideoScale(drawer.load())
+        }
+        val waiting = state.state != StreamState.STREAMING
+        findViewById<View>(R.id.waiting_view).isVisible = waiting
+        findViewById<View>(R.id.drc_content).isVisible = !waiting
+        val sessionMessage = findViewById<TextView>(R.id.txt_session_message)
+        val games = findViewById<TextView>(R.id.txt_games)
+        if (state.state == StreamState.INACTIVE) {
+            sessionMessage.text = getString(R.string.second_screen_inactive)
+            sessionMessage.isVisible = true
+            games.isVisible = true
+        } else {
+            sessionMessage.isVisible = false
+            games.isVisible = false
+        }
+        keepDisplayAwake(state.state)
     }
 
     private fun gamesText(games: List<com.twinpad.android.app.wire.GameInfo>): String =
@@ -586,50 +609,38 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** CR-076: gauges de consumo del teléfono (CPU/GPU/RAM/FPS) en la
-     * ventana de espera (Linked + stream INACTIVE). Cada tick de 1 s lee
-     * /proc/stat, los sysfs de GPU, la RAM y la ventana de FPS; lo aún
-     * desconocido se muestra como «—» (sin datos inventados). Función-
-     * propiedad para el umbral de funciones de detekt. */
-    private val renderDeviceGauges: () -> Unit = {
-        val panel = findViewById<View>(R.id.metrics_panel)
-        val waiting =
-            viewModel.uiState.value is PairingUiState.Linked &&
-                viewModel.streamState.value.state == StreamState.INACTIVE
-        if (!waiting) {
-            panel.isVisible = false
-            fpsMonitor.stop()
-        } else {
-            if (!deviceGaugesInitialized) {
-                deviceGaugesInitialized = true
-                mapOf(
-                    R.id.gauge_cpu to R.string.metrics_cpu,
-                    R.id.gauge_gpu to R.string.metrics_gpu,
-                    R.id.gauge_ram to R.string.metrics_ram,
-                    R.id.gauge_fps to R.string.metrics_fps,
-                ).forEach { (id, label) ->
-                    findViewById<GaugeView>(id).label = getString(label)
-                }
-            }
-            fpsMonitor.start()
-            renderCpuGauge()
-            renderGpuGauge()
-            renderRamGauge()
-            renderFpsGauge()
-            panel.isVisible = true
+    /** CR-076 v2: etiquetas de los gauges una sola vez (los valores se
+     * reescriben cada tick sin tocar la etiqueta). Función-propiedad para
+     * el umbral de funciones de detekt. */
+    private val initializeGaugeLabels: () -> Unit = {
+        mapOf(
+            R.id.gauge_cpu to R.string.metrics_cpu,
+            R.id.gauge_gpu to R.string.metrics_gpu,
+            R.id.gauge_ram to R.string.metrics_ram,
+            R.id.gauge_fps to R.string.metrics_fps,
+        ).forEach { (id, label) ->
+            findViewById<GaugeView>(id).label = getString(label)
         }
     }
 
-    /** CPU: delta de /proc/stat entre ticks; el primer tick solo muestrea.
+    /** CR-076 v2: gauges del HOST (CPU/GPU/RAM/FPS del juego) en la vista
+     * de espera completa, alimentados por `host_metrics` del server cada
+     * 2 s; lo aún desconocido se muestra como «—» (sin datos inventados).
      * Función-propiedad para el umbral de funciones de detekt. */
-    private val renderCpuGauge: () -> Unit = {
-        val gauge = findViewById<GaugeView>(R.id.gauge_cpu)
-        val snapshot = DeviceMetricsSampler.readCpuSnapshot()
-        val percent =
-            snapshot?.let { current ->
-                cpuPrevious?.let { prev -> DeviceMetricsSampler.cpuUsagePercent(prev, current) }
-            }
-        cpuPrevious = snapshot ?: cpuPrevious
+    private val renderHostGauges: () -> Unit = {
+        val metrics = viewModel.hostMetrics.value
+        renderHostPercentGauge(R.id.gauge_cpu, metrics?.cpuPercent)
+        renderHostPercentGauge(R.id.gauge_gpu, metrics?.gpuPercent)
+        renderHostRamGauge(metrics)
+        renderHostFpsGauge(metrics?.gameFps)
+    }
+
+    /** Gauge de % (CPU/GPU): «—» sin muestra del host. */
+    private val renderHostPercentGauge: (
+        Int,
+        Int?,
+    ) -> Unit = { id, percent ->
+        val gauge = findViewById<GaugeView>(id)
         if (percent == null) {
             gauge.hasValue = false
             gauge.valueText = "—"
@@ -640,42 +651,30 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** GPU: busy del driver si el SoC lo expone; si no, gauge sin dato. */
-    private val renderGpuGauge: () -> Unit = {
-        val gauge = findViewById<GaugeView>(R.id.gauge_gpu)
-        val busy = DeviceMetricsSampler.readGpuBusyPercent()
-        if (busy == null) {
-            gauge.hasValue = false
-            gauge.valueText = "—"
-        } else {
-            gauge.hasValue = true
-            gauge.progress = busy / GAUGE_MAX_PERCENT
-            gauge.valueText = "$busy%"
+    /** RAM del host: GB con un decimal y arco de % usado (≤ total). */
+    private val renderHostRamGauge: (com.twinpad.android.app.wire.HostMetrics?) -> Unit =
+        { metrics ->
+            val gauge = findViewById<GaugeView>(R.id.gauge_ram)
+            if (metrics == null || metrics.ramTotalMb < 1L) {
+                gauge.hasValue = false
+                gauge.valueText = "—"
+            } else {
+                val usedGb = metrics.ramUsedMb.toDouble() / MB_PER_GB
+                gauge.hasValue = true
+                gauge.progress = metrics.ramUsedMb.toFloat() / metrics.ramTotalMb
+                gauge.valueText = "%.1f GB".format(usedGb)
+            }
         }
-    }
 
-    /** RAM: uso/total del ActivityManager (GB con un decimal y % del arco). */
-    private val renderRamGauge: () -> Unit = {
-        val gauge = findViewById<GaugeView>(R.id.gauge_ram)
-        val reading = DeviceMetricsSampler.readRamReading(this)
-        gauge.hasValue = true
-        gauge.progress = reading.usedPercent / GAUGE_MAX_PERCENT
-        gauge.valueText = reading.usedGbText
-    }
-
-    /** FPS: ventana deslizante del Choreographer contra el refresco real
-     * del display (el arco apunta al máximo del propio panel). Función-
-     * propiedad para el umbral de funciones de detekt. */
-    private val renderFpsGauge: () -> Unit = {
+    /** FPS del juego del host: arco contra el techo de tasa. */
+    private val renderHostFpsGauge: (Float?) -> Unit = { fps ->
         val gauge = findViewById<GaugeView>(R.id.gauge_fps)
-        val refreshRate: Double = display?.refreshRate?.toDouble() ?: DEFAULT_REFRESH_RATE_FPS
-        val fps = fpsMonitor.fps()
-        if (fps <= 0.0) {
+        if (fps == null) {
             gauge.hasValue = false
             gauge.valueText = "—"
         } else {
             gauge.hasValue = true
-            gauge.progress = (fps / refreshRate).toFloat()
+            gauge.progress = (fps / GAUGE_MAX_FPS).coerceAtMost(1f)
             gauge.valueText = "%.0f".format(fps)
         }
     }

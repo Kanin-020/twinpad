@@ -252,6 +252,28 @@ pub enum GameMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         out_h: Option<u16>,
     },
+    /// server → Android (CR-076 v2): consumo del HOST (la PC que corre el
+    /// server) para los gauges de la ventana de espera del teléfono. La
+    /// CPU/RAM vienen de `/proc`; la GPU del driver si el host la expone
+    /// (`None` si no); `game_fps` es la tasa de publicación del juego
+    /// seleccionado (gfn/segundo del Plugin vivo; `None` sin juego o sin
+    /// frames frescos). Emisión periódica (2 s), no persistida.
+    #[serde(rename = "host_metrics")]
+    HostMetrics {
+        /// % de uso total de CPU del host (0–100).
+        cpu_percent: u8,
+        /// % de busy del driver de GPU (0–100); ausente si no se conoce.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gpu_percent: Option<u8>,
+        /// RAM usada del host en MB (≤ `ram_total_mb`).
+        ram_used_mb: u32,
+        /// RAM total del host en MB (≥1).
+        ram_total_mb: u32,
+        /// FPS de publicación del juego seleccionado (≥0); ausente si no
+        /// hay juego vivo seleccionado o frames frescos.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        game_fps: Option<f32>,
+    },
 }
 
 /// CR-053: métrica agregada de una etapa del pipeline de video del Plugin.
@@ -288,6 +310,9 @@ pub enum KeyboardAction {
     /// Descartar el teclado sin aceptar.
     Cancel,
 }
+
+/// Techo de porcentaje de `host_metrics` (CR-076 v2): CPU y GPU son 0–100.
+pub const HOST_METRICS_PERCENT_MAX: u8 = 100;
 
 /// Geometría fija de la cámara del teléfono enviada a Cemu (CR-034).
 pub const CAMERA_WIDTH: u16 = 320;
@@ -408,6 +433,25 @@ impl GameMsg {
                     {
                         return Err(PairError::MalformedMessage);
                     }
+                }
+                Ok(())
+            }
+            // CR-076 v2: consumo del HOST para los gauges de la ventana de
+            // espera; porcentajes 0–100, RAM coherente y fps no negativo.
+            GameMsg::HostMetrics {
+                cpu_percent,
+                gpu_percent,
+                ram_used_mb,
+                ram_total_mb,
+                game_fps,
+            } => {
+                if *cpu_percent > HOST_METRICS_PERCENT_MAX
+                    || gpu_percent.is_some_and(|percent| percent > HOST_METRICS_PERCENT_MAX)
+                    || *ram_total_mb == 0
+                    || *ram_used_mb > *ram_total_mb
+                    || game_fps.is_some_and(|fps| fps < 0.0)
+                {
+                    return Err(PairError::MalformedMessage);
                 }
                 Ok(())
             }
@@ -1169,6 +1213,80 @@ mod tests {
             GameMsg::decode(concat!(
                 "{\"type\":\"video_stage_stats\",\"window_ms\":5000,",
                 "\"in_w\":3841,\"in_h\":2160,\"stages\":[],\"events\":[]}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-0157 — verifies SPEC-006 (CR-076 v2): `host_metrics` round-trip,
+    // campo gpu/fps omitibles y rechazos estrictos (porcentaje sobre 100,
+    // RAM incoherente, fps negativo, campo desconocido).
+    #[test]
+    fn host_metrics_round_trips_and_rejects_bad_fields() {
+        // Canónico completo: CPU/GPU/RAM y fps del juego del host.
+        let msg = GameMsg::HostMetrics {
+            cpu_percent: 37,
+            gpu_percent: Some(41),
+            ram_used_mb: 10_737,
+            ram_total_mb: 15_729,
+            game_fps: Some(59.8),
+        };
+        let line = msg.encode().unwrap();
+        assert_eq!(GameMsg::decode(&line).unwrap(), msg);
+
+        // Sin gpu y sin fps (host sin datos): válidos (campos omitidos).
+        let msg = GameMsg::HostMetrics {
+            cpu_percent: 0,
+            gpu_percent: None,
+            ram_used_mb: 0,
+            ram_total_mb: 1,
+            game_fps: None,
+        };
+        assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
+
+        // CPU/GPU sobre 100: E4.
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":101,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":1}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,\"gpu_percent\":137,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":1}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // RAM usada sobre total / total 0: E4.
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,",
+                "\"ram_used_mb\":2,\"ram_total_mb\":1}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":0}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // FPS negativo: E4.
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":1,\"game_fps\":-1.0}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Campo desconocido: E4 (deny_unknown_fields).
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,\"cores\":8,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":1}"
             )),
             Err(PairError::MalformedMessage)
         );

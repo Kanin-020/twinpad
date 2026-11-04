@@ -13,6 +13,7 @@ pub mod autostart;
 pub mod game_media;
 pub mod games;
 pub mod heartbeat;
+pub mod host_metrics;
 pub mod mdns;
 pub mod media;
 pub mod media_udp;

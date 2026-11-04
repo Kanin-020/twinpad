@@ -3,79 +3,86 @@
 | | |
 |---|---|
 | ID | CR-076 |
-| Title | Ventana de espera del teléfono: gauges de CPU/GPU/RAM/FPS del dispositivo (referencia visual AYN Thor) |
+| Title | Ventana de espera: gauges de CPU/GPU/RAM/FPS del HOST (PC) como vista completa (referencia visual AYN Thor) |
 | Type | `Feature` |
 | Status | `Applied` |
 | Author | Buffy (agente) + Product owner |
 | Created | 2026-11-04 |
-| Decided | 2026-11-04 |
-| Decided by | Product owner (petición: «en la ventana de espera, mostrar gráficas de consumo de CPU, GPU, RAM y FPS; la referencia está en references») |
+| Decided | 2026-11-04 (rev v2 el mismo día) |
+| Decided by | Product owner |
 
 ## 1. Target
 
 | Field | Value |
 |---|---|
-| Document(s) changed | DES-002 (nota), `testing/traceability.md`, layout `activity_pairing.xml` |
-| Sections | Pantalla de sesión (Linked, SPEC-002 §6), vista「sin segunda pantalla」(AC-3 de SPEC-003) |
-| Current version → new version | DES-002 `… → +1 minor`, sin wire ni protocolo nuevo |
+| Document(s) changed | SPEC-006 §4 (1.24.0), DES-002 (nota), `testing/traceability.md`, `core/src/game.rs`, `server/src/{lib.rs,main.rs,host_metrics.rs}`, Android (layout/activity, ViewModel/Activity, codec) |
+| Sections | Pantalla de sesión (Linked, SPEC-002 §6); canal de sesión de SPEC-001 §4.2 |
+| Current version → new version | SPEC-006 1.23.0 → 1.24.0; DES-002 nota update pendiente |
 
-## 2. Requested change
+## 2. Requested change (v2 — corrección del owner)
 
-**Current:**
+**Current (v1, supersedida):**
 
 ```text
-- En Linked sin stream (AC-3: INACTIVE), session_view solo muestra el
-  mensaje «sin segunda pantalla activa» y la lista de juegos compatibles:
-  la pantalla de espera está vacía de contenido útil.
-- No hay medición de consumo del dispositivo (CPU/GPU/RAM) ni de FPS
-  de render visibles en ninguna parte de la app.
+- Gauges medían el TELÉFONO (CPU /proc/stat/kgsl, RAM ActivityManager,
+  FPS pelo Choreographer) en un panel-overlay abajo del session_view.
 ```
 
-**Proposed:**
+**Proposed (v2, aplicada):**
 
 ```text
-- Panel de 4 gauges circulares (referencia: reference/AYN-Thor-18.jpg):
-  CPU (% de uso), GPU (% de busy del driver, si el SoC lo expone),
-  RAM (GB usados / total) y FPS (render de la app, medido con
-  Choreographer contra la tasa de refresco del display).
-- Ubicación: abajo-centro de session_view; SOLO en la ventana de espera
-  (Linked con StreamState.INACTIVE); al empezar el stream el panel se
-  oculta (el HUD del stream ya muestra FPS/kbps).
-- Muestreo a 1 Hz reutilizando el tick existente del HUD; lógica de
-  cómputo aislada en clases puras (/) para test unitario JVM.
-- Sin dependencias nuevas: los gauges son una View propia (Canvas).
+1. Los datos mostrados son los de la PC (HOST que corre twinpad-server),
+   NO los del teléfono: nuevo mensaje de sesión `host_metrics`
+   (Servidor→Android) con cpu_percent, gpu_percent opcional,
+   ram_used_mb/ram_total_mb y game_fps (tasa de publicación del Plugin
+   del juego seleccionado, Δgfn/Δs); emisión cada 2 s mientras la
+   sesión viva.
+2. Vista COMPLETA de espera (no overlay): un contenedor full-screen
+   (waiting_view) dentro de session_view, POR ENCIMA del Framebuffer
+   residual — cuando se pierde la conexión el último frame renderizado
+   NO queda visible; se muestra la vista de espera (mensaje, lista de
+   juegos y gauges) para INACTIVE (stream_stop) e INTERRUPTED (corte).
+   Al STREAMING la vista se retira y el video regresa inmediatamente.
+3. Sin datos inventados: GPU ausente en el host → «—»; fps sin juego o
+   sin frames frescos → «—». Los porcentajes fuera de 0..100 en el wire
+   rechazan la línea (E4) y el codec Android la descarta.
 ```
 
 ## 3. Motivation
 
-El owner pidió una ventana de espera informativa estilo handheld (AYN
-Thor): saber qué está consumiendo el teléfono mientras no hay juego.
-Las métricas son del DISPOSITIVO (no del stream): en espera no hay
-telemetría del plugin, y el FPS relevante para la referencia es el de
-render del teléfono. La GPU no tiene API estándar: se lee el busy del
-driver cuando el SoC lo expone (Adreno kgsl) y el gauge queda «—» (sin
-datos) en el resto; nunca inventa números.
+(v1) El owner pidió una ventana de espera informativa estilo handheld
+(referencia AYN Thor). (v2, corrección del owner): «Los datos que debe
+mostrar son los de la PC no los del teléfono» y «Debe ser una vista
+completa no un overlay; actualmente cuando se queda sin conexión muestra
+el último frame renderizado». El teléfono NO mide nada de sí mismo; el
+Servidor mide al host y lo publica por la sesión ya existente.
 
 ## 4. Acceptance
 
 | Requirement | Verification |
 |---|---|
-| CPU % se calcula por delta de `/proc/stat` (busy/total entre muestras) | TEST-0156 (`CpuSample` puro) |
-| FPS se estima con ventana deslizante de ticks de frame | TEST-0156 (`FpsWindow` puro) |
-| RAM % y GB desde totales/uso del ProcessInfo | TEST-0156 (`RamReading` puro) |
-| GPU: solo porcentaje del driver si existe; null → gauge sin dato | TEST-0156 (`GpuBusy` parsing kgsl) |
-| Panel de gauges solo en Linked + INACTIVE; oculto en STREAMING | verificación en banco físico |
-| Sin dependencias nuevas de gradle | build.gradle.kts sin diff de deps |
+| `host_metrics` round-trip y rechazos estrictos en core (deny_unknown_fields, cpu/gpu ≤ 100, RAM coherente, fps ≥ 0) | TEST-0157 (`host_metrics_round_trips_and_rejects_bad_fields`, core) |
+| Parsers del HOST puros: /proc/stat (busy/total), /proc/meminfo (usada=total−available), GPU «37 %»/«37%», fps = Δgfn/Δs con techo | TEST-0157 (`cpu_stat_and_meminfo_parse_host_values`, `gpu_busy_and_fps_follow_the_wire_contract`, `sampler_needs_two_cpu_ticks...`, server) |
+| Codec Android estricto (gpu/fps omitibles, rechazo de porcentaje fuera de rango, RAM incoherente, fps negativo, tipo ajeno) | TEST-0157 (`HostMetricsCodecTest`, JVM) |
+| Vista completa de espera cubre el último frame (INACTIVE/INTERRUPTED: sin frame residual visible); vista de vuelta al STREAMING | verificación en banco físico |
+| Emisor del SERVER con sesión viva por sesión viva y parada con la bandera compartida (patrón del emisor de pings CR-055) | wiring revisado; emisión observable en banco (debuglog «host_metrics») |
 
 ## 8. Implementation
 
 ```text
-- android: ui/GaugeView.kt (View circular reutilizable: arco + valor +
-  etiqueta), ui/DeviceMetricsSampler.kt (lógica pura: CpuSample,
-  GpuBusy, RamReading, FpsWindow + adaptadores Android: /proc/stat,
-  kgsl sysfs, ActivityManager.MemoryInfo, Choreographer),
-  PairingActivity.kt (panel visible en local + INACTIVE, tick 1 Hz),
-  activity_pairing.xml (metrics_panel Linear horizontal con 4 GaugeView),
-  strings.xml (labels CPU/GPU/RAM/FPS).
-- tests: TEST-0156 (DeviceMetricsSamplerTest, JVM).
+- core: `GameMsg::HostMetrics` (wire `host_metrics`) + validación
+  (HOST_METRICS_PERCENT_MAX, ram_total ≥ 1, used ≤ total, fps ≥ 0).
+- server: módulo `host_metrics` (HostMetricsSampler, parse CPU/RAM/GPU
+  puros, fps_from_gfn, spawn_host_metrics_sender a 2 s por sesión con
+  el lock de línea compartido y la bandera session_running), cable
+  en main.rs (spawn + join), sin persistencia.
+- Android: `wire/HostMetricsCodec.kt` (estricto), ViewModel patrón
+  hostMetrics (StateFlow) ruta `host_metrics`, layout: waits
+  (waiting_view full-screen sobre drc_content con mensaje + lista de
+  juegos + panel de 4 GaugeView), PairingActivity: visibilidad de la
+  vista por StreamState (no-STREAMING) y tick de 1 Hz rellenando los
+  gauges del host («—» sin dato).
+- Eliminado (v1): DeviceMetricsSampler.kt del teléfono y su test
+  (TEST-0156 supersedeí); el layout ya no tiene panel-overlay.
+- tests: TEST-0157 (core round-trip + server parsers + app codec).
 ```

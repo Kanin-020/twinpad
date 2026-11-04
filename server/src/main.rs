@@ -615,6 +615,21 @@ fn main() {
                                 twinpad_server::heartbeat::production_ping_interval(),
                             );
 
+                        // CR-076 v2: emisor del consumo del HOST (CPU/GPU/
+                        // RAM/FPS del juego) para los gauges de la ventana
+                        // de espera del teléfono; el mismo lock de línea de
+                        // la sesión garantiza la unidad atómica NDJSON.
+                        let host_metrics_thread =
+                            twinpad_server::host_metrics::spawn_host_metrics_sender(
+                                session_alive,
+                                stream.try_clone().ok(),
+                                write_lock.0.clone(),
+                                Arc::clone(&session_running),
+                                Arc::clone(&games_ref),
+                                Arc::clone(&selected_game),
+                                twinpad_server::host_metrics::production_metrics_interval(),
+                            );
+
                         // SPEC-005 §3/§5: no audio is sent until the SDK
                         // provides a real PCM source. Never synthesize a tone
                         // when the game has no captured audio.
@@ -870,6 +885,9 @@ fn main() {
                         session_running.store(false, std::sync::atomic::Ordering::Release);
                         release_input_owner(&input_owner_ref, session_id);
                         if let Some(handle) = ping_thread {
+                            let _ = handle.join();
+                        }
+                        if let Some(handle) = host_metrics_thread {
                             let _ = handle.join();
                         }
                         if let Some(handle) = video_thread {

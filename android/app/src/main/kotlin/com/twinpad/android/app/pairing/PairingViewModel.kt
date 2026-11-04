@@ -18,6 +18,7 @@ import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
 import com.twinpad.android.app.wire.CameraRequestCodec
 import com.twinpad.android.app.wire.GameListCodec
+import com.twinpad.android.app.wire.HostMetricsCodec
 import com.twinpad.android.app.wire.KeyboardRequestCodec
 import com.twinpad.android.app.wire.KeyboardRequestMessage
 import com.twinpad.android.app.wire.MicRequestCodec
@@ -170,6 +171,12 @@ class PairingViewModel(
     private val _videoStageStats = MutableStateFlow<VideoStageStatsMessage?>(null)
     val videoStageStats: StateFlow<VideoStageStatsMessage?> = _videoStageStats
 
+    /** CR-076 v2: consumo del HOST (CPU/GPU/RAM/FPS del juego) para los
+     * gauges de la ventana de espera (`host_metrics` emite el server cada
+     * 2 s). `null`: sin muestra recibida o sesión cerrada. */
+    private val _hostMetrics = MutableStateFlow<com.twinpad.android.app.wire.HostMetrics?>(null)
+    val hostMetrics: StateFlow<com.twinpad.android.app.wire.HostMetrics?> = _hostMetrics
+
     private val _selectionRequest =
         MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
     val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
@@ -239,7 +246,7 @@ class PairingViewModel(
             "stream_start", "stream_stop" -> handleStreamControlLine(line)
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
-            "camera_request", "mic_request", "keyboard_request", "video_stage_stats" ->
+            "camera_request", "mic_request", "keyboard_request", "video_stage_stats", "host_metrics" ->
                 handleRequestLine(line)
             else -> Unit
         }
@@ -254,6 +261,9 @@ class PairingViewModel(
             "keyboard_request" -> handleKeyboardRequest(line)
             "video_stage_stats" ->
                 VideoStageStatsCodec.decode(line)?.let { _videoStageStats.value = it }
+            // CR-076 v2: consumo del HOST para la ventana de espera.
+            "host_metrics" ->
+                HostMetricsCodec.decode(line)?.let { _hostMetrics.value = it }
         }
     }
 

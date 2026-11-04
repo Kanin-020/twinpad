@@ -10,10 +10,11 @@ import androidx.core.content.ContextCompat
 import com.twinpad.android.app.R
 
 /**
- * CR-076: gauge circular estilo handheld (referencia `reference/AYN-Thor-18.jpg`):
- * anillo de progreso con el valor al centro y la etiqueta debajo. La lógica de
- * medición vive en `DeviceMetricsSampler`; esta View solo pinta progreso 0..1,
- * texto y etiqueta. Cambios de contenido invalidan el dibujo directamente.
+ * CR-076 v2: gauge circular estilo handheld (referencia `reference/AYN-Thor-18.jpg`):
+ * anillo de progreso con el valor al centro y la etiqueta debajo. La medición
+ * del HOST llega por `host_metrics` del server (CR-076 v2); esta View solo
+ * pinta progreso 0..1, texto y etiqueta. Cambios de contenido invalidan el
+ * dibujo directamente.
  */
 class GaugeView
     @JvmOverloads

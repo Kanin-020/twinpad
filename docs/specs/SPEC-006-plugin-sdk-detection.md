@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.23.0 |
+| Version | 1.24.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
 | Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017, Draft; adaptador Cemu) |
 | Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079, TEST-092, TEST-093, TEST-094, TEST-095, TEST-096, TEST-097, TEST-098, TEST-099, TEST-0100, TEST-0101, TEST-0102, TEST-0103, TEST-0104, TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-11-04 |
 
 ## 1. Purpose
 
@@ -47,6 +47,7 @@ Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `
 | `keyboard_request` | mensaje Cemu→Servidor→Android de sesión (CR-044) | `type:"keyboard_request"`, `on:boolean`; con `on` true además `text` (texto vigente del form en base64url UTF-8, vacío permitido pero no ausente) y `max_length` (1–4096); con `on` false exactamente sin `text` ni `max_length` | al aparecer el teclado HLE (`SwkbdAppearInputForm`/`SwkbdAppearKeyboard`), en cada cambio del texto del form y al desaparecer (`SwkbdDisappearInputForm`/`SwkbdDisappearKeyboard`; vigente al anunciar o re-seleccionar); no persistido; encola FIFO con drop-old 8 en el Servidor (idem `camera_request`) y re-encola el último estado a la sesión Android vigente/reconectada; Android solo muestra el IME con juego «cemu» seleccionado Y demanda vigente |
 | `keyboard_input` | mensaje Android→Servidor→Cemu de sesión (CR-044) | `type:"keyboard_input"`, `action` en `update`/`confirm`/`cancel`, `text` base64url UTF-8 del texto COMPLETO del form (≤ 2048 bytes; vacío permitido con `update` para borrar todo el texto; `confirm`/`cancel` exactamente vacíos) | por cada edición del campo del IME Android (`update`), al aceptar con el botón del teclado (acción Done) o «Aceptar» (`confirm`) y al descartar con «Cancelar» (`cancel`); no persistido; solo llega al Plugin Cemu vivo seleccionado y Cemu lo aplica al formString del HLE `swkbd` (changeString visible para el juego); `confirm` cierra el form aceptando (decide OK) y `cancel` lo cierra SIN decidir — retrocede sin validar el texto (CR-044) |
 | Input Plugin→SDK | mensaje NDJSON por IPC primary | `InputMsg::InputReport` de SPEC-004 §4 | cuando existe snapshot retenido para el Plugin seleccionado |
+| `host_metrics` | mensaje Servidor→Android de sesión | `type:"host_metrics"`, `cpu_percent:u8` en [0, 100], `gpu_percent:u8` opcional en [0, 100], `ram_used_mb:uint32` con 0 ≤ used ≤ total, `ram_total_mb:uint32` ≥ 1, `game_fps:f32` opcional ≥ 0 | por muestra del Servidor a 2 s durante la sesión (reemplaza la muestra previa; NO persistido). CPU/RAM de `/proc` del host; `gpu_percent` solo si el driver lo expone por sysfs (ausente = «sin dato»); `game_fps` = tasa de publicación (Δgfn/Δs) del Plugin vivo seleccionado, omitido sin juego/frames frescos; los gauges de la ventana de espera Android muestran «—» sin dato (CR-076) |
 
 Los mensajes de selección de §12 viajan en la conexión autenticada de sesión Android y el SDK consulta el último `input_report` recibido por su conexión primaria. Canal Plugin→Servidor: TCP localhost NDJSON. `game_announce`, `game_frame` e inputs encaminados por el Servidor usan la conexión primaria SDK al listener `127.0.0.1:8421` (ADR-008). Un `game_frame` H.264 añade obligatoriamente `ts_capture_us:u64` (monotónico desde el inicio del encoder) e `idr:boolean` (true si la AU contiene un IDR), según CR-015; otros formatos no incluyen estos campos. `gfn` sigue siendo el contador del Plugin, independiente del contador de presentación del stream SPEC-003. CR-036: si el Plugin Cemu está conectado y no llega un frame nuevo del DRC en 100 ms, Cemu vuelve a codificar y publicar el último frame ya escalado (RGB8) al mismo ritmo de repetición; el contrato del `game_frame` no cambia. CR-036: el readback del DRC acepta los formatos RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K y ningún descarte es silencioso (se registra el motivo en el log de Cemu, una vez por sesión). La fuente PCM abre una segunda conexión a `127.0.0.1:8422`, independiente de los frames, que envía `game_audio_start`, `game_audio_chunk` y `game_audio_stop`, con `game_id` y PCM decodificado máximo 16 KiB por chunk. Solo se acepta audio de un `game_id` vivo anunciado y con capability `audio`; una segunda conexión de audio del mismo juego o juego desconocido se cierra. El SDK consume la fuente callback en hilo dedicado y usa una cola acotada de 8 chunks: al llenarse descarta el chunk más antiguo, sin bloquear `push_frame`.
 
