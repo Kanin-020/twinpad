@@ -8,7 +8,7 @@
 | Status | `Applied` |
 | Author | Buffy (agente) + Product owner |
 | Created | 2026-11-04 |
-| Decided | 2026-11-04 (rev v2 el mismo día) |
+| Decided | 2026-11-04 (rev v2 y v3 el mismo día) |
 | Decided by | Product owner |
 
 ## 1. Target
@@ -26,6 +26,21 @@
 ```text
 - Gauges medían el TELÉFONO (CPU /proc/stat/kgsl, RAM ActivityManager,
   FPS pelo Choreographer) en un panel-overlay abajo del session_view.
+```
+
+**Proposed (v3, refinamiento del banco, aplicada):**
+
+```text
+4. El monitor de espera es FULL-SCREEN de verdad: retícula 2×2 de
+   GaugeView que ocupa toda la pantalla (cada gauge 1/4 del área,
+   altura autoscala por celda). Se elimina el texto centrado «Sin
+   segunda pantalla activa» (txt_session_message fuera del layout y
+   del Activity): el único texto es la lista de juegos, al pie.
+5. Hallazgo del banco: el server en ejecución era un binario anterior
+   (inode distinto al build 17:06) → el teléfono no recibía
+   host_metrics. El server release vigente corre como unidad de
+   usuario (systemd-run --user twinpad-bench) con el env del script
+   (TWINPAD_VIDEO_BITRATE_KBPS=10000).
 ```
 
 **Proposed (v2, aplicada):**
@@ -77,11 +92,11 @@ Servidor mide al host y lo publica por la sesión ya existente.
   el lock de línea compartido y la bandera session_running), cable
   en main.rs (spawn + join), sin persistencia.
 - Android: `wire/HostMetricsCodec.kt` (estricto), ViewModel patrón
-  hostMetrics (StateFlow) ruta `host_metrics`, layout: waits
-  (waiting_view full-screen sobre drc_content con mensaje + lista de
-  juegos + panel de 4 GaugeView), PairingActivity: visibilidad de la
-  vista por StreamState (no-STREAMING) y tick de 1 Hz rellenando los
-  gauges del host («—» sin dato).
+  hostMetrics (StateFlow) ruta `host_metrics`, layout: waiting_view
+  (v3: retícula 2×2 full-screen sobre drc_content con los 4 GaugeView
+  + lista de juegos al pie, sin mensaje centrado), PairingActivity:
+  visibilidad de la vista por StreamState (no-STREAMING) y tick de
+  1 Hz rellenando los gauges del host («—» sin dato).
 - Eliminado (v1): DeviceMetricsSampler.kt del teléfono y su test
   (TEST-0156 supersedeí); el layout ya no tiene panel-overlay.
 - tests: TEST-0157 (core round-trip + server parsers + app codec).

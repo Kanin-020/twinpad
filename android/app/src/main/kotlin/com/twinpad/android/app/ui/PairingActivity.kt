@@ -521,11 +521,12 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** Tick del stream: escala al frame real y la VISTA COMPLETA de espera
-     * (CR-026/CR-076 v2): sin stream (INACTIVE) o sin conexión (INTERRUPTED)
-     * NO queda el último frame renderizado — la vista de espera cubre el
-     * Framebuffer residual con los textos y los gauges del HOST. Función-
-     * propiedad para LongMethod/umbral de funciones de detekt. */
+    /** Tick del stream: escala al frame real y el MONITOR FULL-SCREEN de
+     * espera (CR-076 v3): sin stream (INACTIVE) o sin conexión (INTERRUPTED)
+     * NO queda el último frame renderizado — la retícula 2×2 de gauges
+     * del HOST cubre el Framebuffer residual; la lista de juegos solo se
+     * muestra en INACTIVE (CR-026). Función-propiedad para LongMethod/
+     * umbral del detekt. */
     private val applyStreamState: (com.twinpad.android.app.stream.StreamUiState) -> Unit = { state ->
         // CR-074: el marco (contener/estirar) sigue al frame REAL;
         // se re-aplica solo cuando cambia la dimensión presentada.
@@ -536,16 +537,8 @@ class PairingActivity : AppCompatActivity() {
         val waiting = state.state != StreamState.STREAMING
         findViewById<View>(R.id.waiting_view).isVisible = waiting
         findViewById<View>(R.id.drc_content).isVisible = !waiting
-        val sessionMessage = findViewById<TextView>(R.id.txt_session_message)
-        val games = findViewById<TextView>(R.id.txt_games)
-        if (state.state == StreamState.INACTIVE) {
-            sessionMessage.text = getString(R.string.second_screen_inactive)
-            sessionMessage.isVisible = true
-            games.isVisible = true
-        } else {
-            sessionMessage.isVisible = false
-            games.isVisible = false
-        }
+        findViewById<TextView>(R.id.txt_games).isVisible =
+            state.state == StreamState.INACTIVE
         keepDisplayAwake(state.state)
     }
 
