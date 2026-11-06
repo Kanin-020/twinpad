@@ -100,6 +100,11 @@ class PairingActivity : AppCompatActivity() {
     private var cameraStreamEnabled = false
     private var cameraStreamLens = CameraLens.FRONT
 
+    /** CR-090: último ajuste notificado por el drawer; permite distinguir un
+     * cambio de la tupla de video (reenvía `video_config`) de uno que solo
+     * afecta al micrófono (no toca el encoder del server). */
+    private var lastStreamSettingsApplied: AndroidSettings? = null
+
     /** CR-038: el estado combinado emite en cada cambio de demanda; el perfil
      * del juego solo se recarga cuando el juego seleccionado cambia. */
     private var loadedProfileId: String? = PROFILE_UNLOADED
@@ -226,8 +231,17 @@ class PairingActivity : AppCompatActivity() {
                 this@PairingActivity.applyVideoScale(settings)
             }
 
+            /** CR-090: el interruptor del micrófono aplica al momento (sin
+             * esperar a un nuevo `mic_request`); `video_config` solo se
+             * reenvía cuando cambió la tupla de video, para no reiniciar el
+             * encoder por silenciar el micrófono. */
             override fun onStreamSettingsChanged(settings: AndroidSettings) {
-                viewModel.onStreamSettingsChanged(settings)
+                applyMicDemand()
+                val previous = lastStreamSettingsApplied
+                lastStreamSettingsApplied = settings
+                if (previous == null || previous.videoConfigLine() != settings.videoConfigLine()) {
+                    viewModel.onStreamSettingsChanged(settings)
+                }
             }
 
             override fun updateAudioVolume(volume: Float) {
@@ -426,35 +440,33 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** CR-035: activa la captura del micrófono solo con el juego «cemu»
-     * seleccionado y demanda `mic_request` vigente (el juego abrió el
-     * micrófono del GamePad en Cemu). Sin demanda, sin permiso y sin
-     * captura (bajo demanda, igual que la cámara en CR-038). */
+    /** CR-035 + CR-090: la demanda del micrófono se reevalúa en cada cambio
+     * del juego seleccionado, de `mic_request` o del interruptor del drawer. */
     private fun observeMicDemand() {
         lifecycleScope.launch {
             kotlinx.coroutines.flow.combine(
                 viewModel.selectedGameId,
                 viewModel.micRequested,
-            ) { gameId, micRequested -> gameId to micRequested }
-                .collectLatest { (gameId, micRequested) ->
-                    if (gameId == "cemu" && micRequested) {
-                        applyMicDemand()
-                    } else {
-                        micController.stop()
-                    }
-                }
+            ) { _, _ -> Unit }
+                .collectLatest { applyMicDemand() }
         }
     }
 
-    /** CR-035: arranque real de la captura; si falta el permiso
-     * RECORD_AUDIO lo solicita una vez y el lanzador reevalúa la
-     * demanda al concederlo. Función-propiedad para mantener el
-     * recuento de funciones bajo el umbral de detekt. */
+    /** CR-035 + CR-090: captura solo con el juego seleccionado, la demanda
+     * `mic_request` vigente Y el interruptor «Enviar micrófono al GamePad»
+     * activado (preferencia persistida que lee el drawer). Si falta el
+     * permiso RECORD_AUDIO se solicita y el lanzador reevalúa la demanda al
+     * concederlo; sin gate completo se para la captura. Función-propiedad
+     * para mantener el recuento de funciones bajo el umbral de detekt. */
     private val applyMicDemand: () -> Unit = {
-        if (micController.hasPermission()) {
-            micController.start()
-        } else {
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        val demandActive =
+            viewModel.selectedGameId.value == "cemu" &&
+                viewModel.micRequested.value &&
+                drawer.load().microphoneStream
+        when {
+            !demandActive -> micController.stop()
+            micController.hasPermission() -> micController.start()
+            else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 

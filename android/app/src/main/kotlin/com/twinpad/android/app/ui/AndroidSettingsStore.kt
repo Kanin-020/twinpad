@@ -23,7 +23,12 @@ data class AndroidSettings(
     val scaleMode: VideoScaleMode = VideoScaleMode.CONTAIN,
     /** CR-032: distribución de los botones de cara; true = Nintendo. */
     val nintendoDistribution: Boolean = false,
-    /** CR-034: envío del video de cámara a Cemu (opt-in del drawer). */
+    /** CR-090: envío del micrófono del teléfono al GamePad (CR-035). Nace
+     * activado: CR-035 ya lo gobierna por demanda (`mic_request` + juego
+     * seleccionado) y añadir un opt-in apagado por defecto habría dejado sin
+     * micrófono a los juegos que ya lo usan; desmarcado silencia la captura. */
+    val microphoneStream: Boolean = true,
+    /** CR-034: envío del video de cámara (opt-in del drawer). */
     val cameraStream: Boolean = false,
     /** CR-034: lente usada cuando [cameraStream] está activada. */
     val cameraLens: CameraLens = CameraLens.FRONT,
@@ -93,6 +98,7 @@ internal class AndroidSettingsStore(context: Context) {
                     VideoScaleMode.CONTAIN
                 },
             nintendoDistribution = preferences.getBoolean(KEY_NINTENDO_DISTRIBUTION, false),
+            microphoneStream = preferences.getBoolean(KEY_MICROPHONE_STREAM, true),
             cameraStream = preferences.getBoolean(KEY_CAMERA_STREAM, false),
             cameraLens =
                 if (preferences.getString(KEY_CAMERA_LENS, null) == CameraLens.BACK.name) {
@@ -130,6 +136,7 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_CONTROLS, settings.showControls)
             .putString(KEY_SCALE_MODE, settings.scaleMode.name)
             .putBoolean(KEY_NINTENDO_DISTRIBUTION, settings.nintendoDistribution)
+            .putBoolean(KEY_MICROPHONE_STREAM, settings.microphoneStream)
             .putBoolean(KEY_CAMERA_STREAM, settings.cameraStream)
             .putString(KEY_CAMERA_LENS, settings.cameraLens.name)
             .putBoolean(KEY_ADVANCED_METRICS, settings.showAdvancedMetrics)
@@ -148,6 +155,7 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_CONTROLS = "show_controls"
         const val KEY_SCALE_MODE = "video_scale_mode"
         const val KEY_NINTENDO_DISTRIBUTION = "nintendo_distribution"
+        const val KEY_MICROPHONE_STREAM = "microphone_stream"
         const val KEY_CAMERA_STREAM = "camera_stream"
         const val KEY_CAMERA_LENS = "camera_lens"
         const val KEY_ADVANCED_METRICS = "show_advanced_metrics"

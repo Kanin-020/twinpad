@@ -388,7 +388,7 @@
                 app:layout_constraintTop_toTopOf="parent" />
 
             <!-- CR-044: overlay del teclado del juego; el IME del teléfono
-                 reemplaza al teclado de Cemu (dicho overlay no se dibuja
+                 reemplaza al teclado del juego (ese overlay no se dibuja
                  mientras Twinpad esté conectado). -->
             <LinearLayout
                 android:id="@+id/keyboard_overlay"

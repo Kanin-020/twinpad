@@ -5,7 +5,8 @@ import org.junit.Test
 
 /** TEST-069/TEST-089 — local drawer settings preserve stream configuration
  * values and wire output (CR-027 bitrate; CR-029 sin fps; CR-032 la
- * distribución Nintendo arranca apagada y no altera el wire). */
+ * distribución Nintendo arranca apagada y no altera el wire; CR-090 el
+ * micrófono arranca enviándose y su interruptor tampoco toca el wire). */
 class AndroidSettingsStoreTest {
     @Test
     fun stream_settings_encode_all_adjustable_values_together() {
@@ -40,6 +41,11 @@ class AndroidSettingsStoreTest {
         val sliderHidden = settings.copy(metricsSliderOverStream = false)
         assertEquals(false, sliderHidden.metricsSliderOverStream)
         assertEquals(settings.videoConfigLine(), sliderHidden.videoConfigLine())
+        // CR-090: el interruptor del micrófono es local y deja el mismo
+        // `video_config` (la captura viaja en `mic_chunk`, CR-035).
+        val micMuted = settings.copy(microphoneStream = false)
+        assertEquals(false, micMuted.microphoneStream)
+        assertEquals(settings.videoConfigLine(), micMuted.videoConfigLine())
     }
 
     @Test
@@ -63,6 +69,11 @@ class AndroidSettingsStoreTest {
         // CR-079 (TEST-0160): el slider nace activo (hoja abierta al entrar
         // en sesión, decisión del owner).
         assertEquals(true, defaults.metricsSliderOverStream)
+        // CR-090: el micrófono nace enviándose; CR-035 ya lo gobierna por
+        // demanda, así que un opt-in apagado habría roto juegos que lo usan.
+        assertEquals(true, defaults.microphoneStream)
+        // CR-034: la cámara sigue siendo opt-in (apagada por defecto).
+        assertEquals(false, defaults.cameraStream)
     }
 
     @Test

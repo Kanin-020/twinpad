@@ -98,6 +98,11 @@ internal class SettingsDrawerController(
         // CR-079: el switch gobierna el slider de gauges en sesión.
         activity.findViewById<SwitchMaterial>(R.id.switch_metrics_slider).isChecked =
             settings.metricsSliderOverStream
+        // CR-090: el interruptor del micrófono se marca aquí; el host lee la
+        // preferencia persistida al evaluar la demanda (CR-079: sin función
+        // nueva en la interfaz del drawer, detekt TooManyFunctions).
+        activity.findViewById<SwitchMaterial>(R.id.switch_microphone_stream).isChecked =
+            settings.microphoneStream
         activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream).isChecked = settings.cameraStream
         val lensCheckedId =
             if (settings.cameraLens == CameraLens.FRONT) R.id.camera_lens_front else R.id.camera_lens_back
@@ -119,7 +124,18 @@ internal class SettingsDrawerController(
         bindScaleButtons()
         bindAudioVolumeSeek()
         bindVisibilitySwitches()
+        bindMicrophoneStreamControl()
         bindCameraStreamControls()
+    }
+
+    /** CR-090: el interruptor del micrófono persiste y notifica al host por la
+     * ruta de ajustes existente; el host reevalúa la demanda con el valor
+     * guardado y no reenvía `video_config` si la tupla de video no cambió. */
+    private fun bindMicrophoneStreamControl() {
+        activity.findViewById<SwitchMaterial>(R.id.switch_microphone_stream)
+            .setOnCheckedChangeListener { _, checked ->
+                updateStreamSettings { it.copy(microphoneStream = checked) }
+            }
     }
 
     private fun bindResolutionButtons() {
