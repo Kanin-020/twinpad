@@ -75,11 +75,31 @@ class MetricsSliderTouchGateTest {
         return container
     }
 
-    private fun down(x: Float, y: Float): MotionEvent =
-        MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, x, y, 0)
+    private fun down(
+        x: Float,
+        y: Float,
+    ): MotionEvent =
+        MotionEvent.obtain(
+            0L,
+            0L,
+            MotionEvent.ACTION_DOWN,
+            x,
+            y,
+            0,
+        )
 
-    private fun move(x: Float, y: Float): MotionEvent =
-        MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_MOVE, x, y, 0)
+    private fun move(
+        x: Float,
+        y: Float,
+    ): MotionEvent =
+        MotionEvent.obtain(
+            0L,
+            0L,
+            MotionEvent.ACTION_MOVE,
+            x,
+            y,
+            0,
+        )
 
     @Test
     fun down_sobre_el_juego_con_panel_plegado_no_se_consume() {
