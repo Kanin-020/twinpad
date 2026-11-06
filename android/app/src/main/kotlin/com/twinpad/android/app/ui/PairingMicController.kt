@@ -35,15 +35,21 @@ class PairingMicController(
             MicChunkCodec.SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(
-                AudioRecord.getMinBufferSize(
-                    MicChunkCodec.SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                ).takeIf { it > 0 } ?: Int.MAX_VALUE,
-                chunkSamples * BUFFER_MULTIPLE,
-            ),
+            maxOf(minimumBufferBytes(), chunkSamples * BUFFER_MULTIPLE),
         )
+
+    /**
+     * Mínimo del SO en bytes para la captura. `getMinBufferSize` devuelve un
+     * código de error si la combinación no está soportada; en ese caso se usa
+     * un respaldo acotado (no `Int.MAX_VALUE`, que impediría construir el
+     * `AudioRecord` y dejaría el micrófono sin capturar).
+     */
+    private fun minimumBufferBytes(): Int =
+        AudioRecord.getMinBufferSize(
+            MicChunkCodec.SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        ).takeIf { it > 0 } ?: chunkSamples * BUFFER_FALLBACK_MULTIPLE
 
     /** Fragmentos de captura: 15 ms a 32 kHz (480 muestras). */
     private val chunkSamples = MicChunkCodec.SAMPLE_RATE * 15 / 1000
@@ -84,7 +90,10 @@ class PairingMicController(
             try {
                 makeAudioRecord()
             } catch (e: Exception) {
+                // Sin esto el flag quedaba activado y un `start()` posterior no
+                // volvía a intentar la captura (el micrófono moría en silencio).
                 android.util.Log.w(TAG, "AudioRecord no disponible", e)
+                running.set(false)
                 return
             }
         if (record.state != AudioRecord.STATE_INITIALIZED) {
@@ -116,5 +125,8 @@ class PairingMicController(
 
         /** Margen sobre el mínimo del SO para no subalimentar la captura. */
         const val BUFFER_MULTIPLE = 4
+
+        /** Respaldo acotado cuando el SO no da un mínimo válido. */
+        const val BUFFER_FALLBACK_MULTIPLE = 40
     }
 }
