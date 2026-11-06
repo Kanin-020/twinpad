@@ -265,6 +265,15 @@
   luego gate completo (`testDebugUnitTest` + ktlint + detekt +
   `assembleDebug` BUILD SUCCESSFUL, exit 0) y APK reinstalada. La
   verificación visual del suavizado en banco vuelve al owner.
+- v13 (2026-11-06, CR-089): el ajuste automático deja de ser abrupto y su
+  corte pasa de 30 % a 49 %/51 % (`FRACCION_AJUSTE_PANEL = 0.49`). Durante
+  el arrastre el panel sigue al dedo 1:1 y el ajuste se decide una sola vez
+  al soltar (`objetivoAlSoltar`): pasado el medio termina de abrirse, por
+  debajo termina de plegarse; la animación es única, proporcional al
+  recorrido real (140–280 ms) y con `DecelerateInterpolator` (antes 150 ms
+  fijos y relanzados en cada MOVE), igual que el plegado inicial. La regla
+  v6 se mantiene en la franja del medio; TEST-0184 y TEST-0173/TEST-0174
+  al corte nuevo.
 
 ## 6. SPEC impact
 

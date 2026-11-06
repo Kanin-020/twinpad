@@ -6,23 +6,26 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import com.twinpad.android.app.R
+import kotlin.math.abs
 
 /** CR-079 (v5): elevación de la hoja sobre el stream (sobre
  * surface_container; sin esto la superficie táctil del juego roba el drag). */
 private const val SHEET_ELEVATION_DP = 8f
 
-/** CR-079 (v9, prueba del owner; v11 sube el umbral de 10 % a 30 %):
- * cuando le queda al panel 30 % del tope de plegado o menos (recorrido
- * ≥ 70 %), se ajusta SOLO al 100 % y la franja del asa deja de ser
- * transparente. */
-internal const val FRACCION_AJUSTE_PANEL = 0.3f
+/** CR-079 (v9, prueba del owner; v11 sube el umbral de 10 % a 30 % y
+ * CR-089 al 49 % con el ajuste AL SOLTAR): cuando le queda al panel 49 %
+ * del tope de plegado o menos (recorrido ≥ 51 %, el panel ya pasó del
+ * medio), al soltar el dedo se ajusta SOLO al 100 % y la franja del asa
+ * deja de ser transparente. */
+internal const val FRACCION_AJUSTE_PANEL = 0.49f
 
-/** CR-079 (v9, umbral de v11): traslación ajustada del panel — con resto
- * ≤ 30 % del tope de plegado el ajuste automático lo lleva al 100 %
+/** CR-079 (v9, umbral de v11 y CR-089): traslación ajustada del panel — con
+ * resto ≤ 49 % del tope de plegado el ajuste automático lo lleva al 100 %
  * (traslación 0); como el slider lateral (v6), debajo queda donde
  * lo sueltas. */
 internal fun ajusteAutomaticoAlFinal(
@@ -30,20 +33,45 @@ internal fun ajusteAutomaticoAlFinal(
     topePlegado: Float,
 ): Float = if (target <= topePlegado * FRACCION_AJUSTE_PANEL) 0f else target
 
-/** CR-079 (v10, prueba del owner; v11 sube el umbral de 10 % a 30 %):
- * espejo del ajuste de apertura — al cerrar (drag hacia abajo), cuando
- * al panel le queda 30 % del recorrido de plegado o menos (traslación
- * ≥ 70 % del tope) se ajusta SOLO a la posición inicial (plegado
- * completo, solo el asa); por encima sigue la regla v6 (queda donde lo
- * sueltas). */
+/** CR-079 (v10, prueba del owner; v11 sube el umbral de 10 % a 30 % y
+ * CR-089 al 51 % del tope): espejo del ajuste de apertura — al cerrar
+ * (drag hacia abajo), cuando al panel le queda 49 % del recorrido de
+ * plegado o menos (traslación ≥ 51 % del tope) se ajusta SOLO a la
+ * posición inicial (plegado completo, solo el asa); por encima sigue la
+ * regla v6 (queda donde lo sueltas). */
 internal fun pliegueAutomaticoAlFinal(
     target: Float,
     topePlegado: Float,
 ): Float = if (target >= topePlegado * (1f - FRACCION_AJUSTE_PANEL)) topePlegado else target
 
-/** CR-079 (v12, prueba del owner): duración de la animación suave del panel
- * (snap del ajuste automático y plegado inicial al medir). */
-internal const val ANIMACION_PANEL_MS = 150L
+/** CR-089: duración del snap y del plegado inicial — proporcional al
+ * recorrido que falta (un salto del 30 % del tope no se anima igual que el
+ * plegado completo) y siempre con desaceleración al llegar. */
+internal const val ANIMACION_PANEL_MIN_MS = 140L
+internal const val ANIMACION_PANEL_MAX_MS = 280L
+
+/** CR-089 (v2): objetivo del panel al soltar el dedo — el ajuste automático
+ * ya NO se aplica durante el arrastre (con el corte en el medio, clavarlo
+ * mientras el dedo sigue dejaba el panel soldado y sin poder invertir el
+ * gesto). Al soltar, el corte del medio decide de una vez: pasado el medio
+ * termina de abrirse (0), por debajo termina de plegarse ([tope]) y en la
+ * franja intermedia se queda donde lo sueltas (v6). */
+internal fun objetivoAlSoltar(
+    posicion: Float,
+    topePlegado: Float,
+): Float = pliegueAutomaticoAlFinal(ajusteAutomaticoAlFinal(posicion, topePlegado), topePlegado)
+
+/** CR-089: duración del snap según el recorrido pendiente (0…tope) →
+ * 140…280 ms; `tope` inválido usa el mínimo. */
+internal fun duracionAnimacionPanel(
+    distancia: Float,
+    tope: Float,
+): Long {
+    if (tope <= 0f) return ANIMACION_PANEL_MIN_MS
+    val fraccion = (abs(distancia) / tope).coerceIn(0f, 1f)
+    val extra = (ANIMACION_PANEL_MAX_MS - ANIMACION_PANEL_MIN_MS) * fraccion
+    return (ANIMACION_PANEL_MIN_MS + extra).toLong()
+}
 
 /** CR-079 (v12): SOLO el snap del ajuste automático se anima suave — el
  * drag a mano sigue pegado al dedo sin retardo (regla v6 intacta) y solo
@@ -70,10 +98,12 @@ internal fun franjaDelAsaConFondo(
  * SIGUE AL DEDO en los dos extremos del barrido: arrastrando desde la parte
  * baja hasta la parte superior de la pantalla queda en PANTALLA COMPLETA, y
  * arrastrando desde la parte superior hacia la inferior se quita (queda
- * plegado con solo el asa visible pegada al borde inferior). Al soltar el
- * panel QUEDA EN DONDE LO SUELTAS (comportamiento del slider lateral que
+ * plegado con solo el asa visible pegada al borde inferior). Mientras se
+ * arrastra el panel sigue al dedo (comportamiento del slider lateral que
  * el owner pidió: «en resumen debe funcionar como el slider lateral pero
- * en la parte inferior de arriba a abajo»), sin decisión por umbral. Nace
+ * en la parte inferior de arriba a abajo»); al soltar, si el dedo no pasó
+ * del medio queda donde lo sueltas y si lo pasó una sola animación termina
+ * de abrirlo o plegarlo (CR-089, corte 49 %/51 %). Nace
  * PLEGADO (solo el asa, decisión derivada del ciclo de gestos que el
  * owner describió: el slider se pone en pantalla completa ARRASTRANDO, no
  * de entrada). Con el
@@ -93,7 +123,7 @@ internal class MetricsSliderController(
         activity.findViewById(R.id.metrics_slider)
     private val sheet: ViewGroup = activity.findViewById(R.id.metrics_sheet)
 
-    /** CR-079 v8: región con fondo Charcoal (retícula + txt_games); la
+    /** CR-079 v8: región con fondo Charcoal (la retícula); la
      * franja del asa se queda sin fondo para ver solo el drag. */
     private val content: ViewGroup = activity.findViewById(R.id.metrics_content)
     private val handle: View = activity.findViewById(R.id.metrics_handle)
@@ -102,6 +132,8 @@ internal class MetricsSliderController(
     private var downRawY = 0f
     private var translationAtDown = 0f
     private var plegadoPendiente = false
+
+    private val desaceleracion = DecelerateInterpolator()
 
     /** `true` si el DOWN ya capturó el estado del gesto (del asa, la hoja
      * o el intercept del contenedor). */
@@ -192,9 +224,12 @@ internal class MetricsSliderController(
                 // CR-079 v12: el plegado inicial ANIMA en vez de saltar —
                 // la hoja nace en 0 y desliza suave hasta el asa.
                 val tope = peekTranslation().toFloat()
+                // CR-089: el plegado inicial dura según el recorrido y llega
+                // desacelerando (antes: 150 ms fijos con aceleración inicial).
                 sheet.animate()
                     .translationY(tope)
-                    .setDuration(ANIMACION_PANEL_MS)
+                    .setDuration(duracionAnimacionPanel(tope, tope))
+                    .setInterpolator(desaceleracion)
                     .start()
                 aplicarFondoFranja(tope)
                 plegadoPendiente = false
@@ -205,9 +240,9 @@ internal class MetricsSliderController(
     }
 
     /** CR-079 v12: traslación del panel — el drag a mano queda pegado al
-     * dedo (sin animación) y SOLO el snap del ajuste automático desliza
-     * suave el corto plazo; si el dedo sigue moviéndose la siguiente MOVE
-     * cancela la animación (el dedo manda, v6). */
+     * dedo (sin animación) y SOLO el ajuste desliza suave. CR-089 (v2): ese
+     * ajuste se lanza una sola vez, al soltar el dedo, así que el arrastre
+     * completo es 1:1 y la animación no se relanza nunca a mitad de gesto. */
     private fun aplicarTraslacion(
         bruto: Float,
         target: Float,
@@ -218,14 +253,18 @@ internal class MetricsSliderController(
             sheet.translationY = target
             return
         }
+        // CR-089: la duración mide el recorrido REAL que le queda al panel
+        // (posición viva, no el bruto del dedo) — un snap corto cerca del
+        // umbral dura ~140 ms y el plegado completo ~280 ms.
         animator
             .translationY(target)
-            .setDuration(ANIMACION_PANEL_MS)
+            .setDuration(duracionAnimacionPanel(target - sheet.translationY, peekTranslation().toFloat()))
+            .setInterpolator(desaceleracion)
             .start()
     }
 
     /** CR-079 v9: la franja del asa deja de ser transparente cuando el
-     * panel queda cerca del 100 % (recorrido ≥ 70 %, umbral v11); con la
+     * panel queda cerca del 100 % (recorrido ≥ 51 %, umbral CR-089); con la
      * franja pintada la hoja se ve completa. */
     private fun aplicarFondoFranja(traslacion: Float) {
         sheet.background =
@@ -266,24 +305,30 @@ internal class MetricsSliderController(
                 }
                 val dy = event.rawY - downRawY
                 val tope = peekTranslation().toFloat()
-                // CR-079 v9 (umbral v11): con resto ≤ 30 % del plegado
-                // (recorrido ≥ 70 %) el panel se ajusta SOLO al 100 %
-                // (traslación 0) y la franja del asa deja de ser transparente.
-                // CR-079 v10 (umbral v11): en el sentido inverso (cierre),
-                // cuando el panel lleva recorrido ≥ 70 % del plegado se
-                // ajusta SOLO a la posición inicial (plegado completo).
+                // CR-089 (v2): durante el arrastre el panel sigue al dedo 1:1,
+                // sin ajustes ni animaciones — el salto al cruzar el umbral era
+                // la brusquedad que reportó el owner, y con el corte en el
+                // medio cualquier MOVE ya caía en un tramo de ajuste (el panel
+                // se quedaba soldado y no se podía invertir el gesto). El
+                // ajuste se decide UNA vez, al soltar ([objetivoAlSoltar]).
                 val bruto = (translationAtDown + dy).coerceIn(0f, tope)
-                val target =
-                    pliegueAutomaticoAlFinal(ajusteAutomaticoAlFinal(bruto, tope), tope)
-                aplicarTraslacion(bruto, target)
-                aplicarFondoFranja(target)
-                Log.d(TAG_LOG, "drag dy=$dy -> t=$target (tope=$tope)")
+                aplicarTraslacion(bruto, bruto)
+                aplicarFondoFranja(bruto)
+                Log.d(TAG_LOG, "drag dy=$dy -> t=$bruto (tope=$tope)")
             }
-            // v6: sin decisión al soltar (slider lateral): el panel queda
-            // en la traslación exacta del soltar; el dedo manda.
+            // CR-089 (v2) sobre la regla v6: al soltar sin cruzar el medio el
+            // panel queda en la traslación exacta del soltar; cruzado el
+            // medio, una sola animación termina de abrirlo o plegarlo.
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 downCapturado = false
-                Log.d(TAG_LOG, "drag soltado t=${sheet.translationY} (queda ahi)")
+                val tope = peekTranslation().toFloat()
+                val soltado = sheet.translationY.coerceIn(0f, tope)
+                val objetivo = objetivoAlSoltar(soltado, tope)
+                if (objetivo != soltado) {
+                    aplicarTraslacion(soltado, objetivo)
+                    aplicarFondoFranja(objetivo)
+                }
+                Log.d(TAG_LOG, "drag soltado t=$soltado -> objetivo=$objetivo (tope=$tope)")
             }
         }
         return true
