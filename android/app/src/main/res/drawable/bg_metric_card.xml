@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- CR-085: tarjeta de las stats del medidor en T (FPS grande y las
-     columnas CPU/GPU temp · FAN): panel de nivel 1 de DESIGN.md con
-     esquina de la retícula de la referencia AYN Thor. -->
+<!-- CR-086: tarjeta del FPS grande y de las columnas de temperatura
+     (CPU/GPU): panel de nivel 1 de DESIGN.md con esquina de la retícula
+     de la referencia AYN Thor. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <solid android:color="@color/design_steel_panel" />
     <corners android:radius="12dp" />

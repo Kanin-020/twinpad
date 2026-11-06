@@ -13,8 +13,8 @@ import kotlinx.serialization.json.long
  * driver (el gauge muestra «—») y `gameFps` es la tasa de publicación del
  * juego seleccionado (Δgfn/Δs del Plugin vivo; null sin juego/frames).
  * CR-085: `cpuTempC`/`gpuTempC` (°C del hwmon, null sin sensor) y
- * `fanPercent` (% pwm del GPU, null con driver sin ventilador) quedan
- * null con el mismo patrón de «sin dato». */
+ * CR-086: VRAM usada/total (MiB, ambas null sin par DRM válido) conservan
+ * el mismo patrón de «sin dato». */
 data class HostMetrics(
     val cpuPercent: Int,
     val gpuPercent: Int?,
@@ -23,7 +23,8 @@ data class HostMetrics(
     val gameFps: Float?,
     val cpuTempC: Int? = null,
     val gpuTempC: Int? = null,
-    val fanPercent: Int? = null,
+    val vramUsedMb: Long? = null,
+    val vramTotalMb: Long? = null,
 )
 
 /**
@@ -38,9 +39,6 @@ object HostMetricsCodec {
     /** Techo de °C del u8 del wire (CR-085: temps del hwmon). */
     private const val TEMP_MAX_C = 255
 
-    /** Techo de porcentaje de la tarjeta FAN (CR-085). */
-    private const val FAN_MAX = 100
-
     /** RAM total en MB mínima del contrato (≥1; `0` = línea inválida). */
     private const val RAM_TOTAL_MIN_MB = 1L
 
@@ -53,20 +51,21 @@ object HostMetricsCodec {
         val fps: Double?,
         val cpuTemp: Int?,
         val gpuTemp: Int?,
-        val fan: Int?,
+        val vramUsed: Long?,
+        val vramTotal: Long?,
     )
 
     /** Decodifica la línea; null si no es un `host_metrics` válido. */
     fun decode(line: String): HostMetrics? = messageOf(rawOf(line))
 
-    /** Guarda del sobre para los campos omitibles (gpu, temps y fan, CR-085):
-     * cuando están PRESENTES deben ser numéricos del rango; la ausencia NO
-     * rechaza (es «sin dato» del sampler). */
+    /** Guarda del sobre para campos omitibles (gpu, temps y VRAM): presentes
+     * deben ser numéricos y estar en rango; la ausencia es «sin dato». */
     private fun optionalsPresentAndValid(obj: JsonObject): Boolean =
         (!obj.containsKey("gpu_percent") || intValue(obj, "gpu_percent") != null) &&
             (!obj.containsKey("cpu_temp_c") || u8Value(obj, "cpu_temp_c") != null) &&
             (!obj.containsKey("gpu_temp_c") || u8Value(obj, "gpu_temp_c") != null) &&
-            (!obj.containsKey("fan_percent") || fanValue(obj, "fan_percent") != null)
+            (!obj.containsKey("vram_used_mb") || longValue(obj, "vram_used_mb") != null) &&
+            (!obj.containsKey("vram_total_mb") || longValue(obj, "vram_total_mb") != null)
 
     /** Parse crudo con las guardas del sobre: `type` válido y los campos
      * omitibles presentes en rango (la ausencia es «sin dato»). */
@@ -84,7 +83,8 @@ object HostMetricsCodec {
                     fps = obj["game_fps"]?.let { _ -> doubleValue(obj, "game_fps") },
                     cpuTemp = obj["cpu_temp_c"]?.let { _ -> u8Value(obj, "cpu_temp_c") },
                     gpuTemp = obj["gpu_temp_c"]?.let { _ -> u8Value(obj, "gpu_temp_c") },
-                    fan = obj["fan_percent"]?.let { _ -> fanValue(obj, "fan_percent") },
+                    vramUsed = obj["vram_used_mb"]?.let { _ -> longValue(obj, "vram_used_mb") },
+                    vramTotal = obj["vram_total_mb"]?.let { _ -> longValue(obj, "vram_total_mb") },
                 )
             }
 
@@ -98,7 +98,9 @@ object HostMetricsCodec {
                 parts.used != null && parts.used >= 0 &&
                     parts.total != null && parts.total >= RAM_TOTAL_MIN_MB &&
                     parts.used <= parts.total
-            }?.takeIf { parts -> parts.fps == null || parts.fps >= 0.0 }
+            }
+            ?.takeIf { parts -> parts.fps == null || parts.fps >= 0.0 }
+            ?.takeIf { parts -> vramPairIsValid(parts) }
             ?.let { parts ->
                 val cpu = parts.cpu
                 val used = parts.used
@@ -114,10 +116,25 @@ object HostMetricsCodec {
                         parts.fps?.toFloat(),
                         parts.cpuTemp,
                         parts.gpuTemp,
-                        parts.fan,
+                        parts.vramUsed,
+                        parts.vramTotal,
                     )
                 }
             }
+
+    /** Par VRAM (CR-086): ausente en ambos = «sin dato»; presente solo junto
+     * y con 0 ≤ usada ≤ total ≥ 1. Par parcial o incoherente invalida la línea. */
+    private fun vramPairIsValid(parts: Raw): Boolean {
+        val used = parts.vramUsed
+        val total = parts.vramTotal
+        if (used == null && total == null) {
+            return true
+        }
+        if (used == null || total == null) {
+            return false
+        }
+        return used >= 0L && total > 0L && used <= total
+    }
 
     private fun intValue(
         obj: JsonObject,
@@ -129,7 +146,9 @@ object HostMetricsCodec {
     private fun longValue(
         obj: JsonObject,
         key: String,
-    ): Long? = obj[key]?.let { element -> runCatching { element.jsonPrimitive.long }.getOrNull() }
+    ): Long? =
+        obj[key]?.let { element -> runCatching { element.jsonPrimitive.long }.getOrNull() }
+            ?.takeIf { value -> value >= 0L }
 
     private fun doubleValue(
         obj: JsonObject,
@@ -137,19 +156,11 @@ object HostMetricsCodec {
     ): Double? = obj[key]?.let { element -> runCatching { element.jsonPrimitive.double }.getOrNull() }
 
     /** u8 del wire (CR-085: °C del hwmon 0..255; presencia promovida por
-     * el el gate del sobre). */
+     * el gate del sobre). */
     private fun u8Value(
         obj: JsonObject,
         key: String,
     ): Int? =
         obj[key]?.let { element -> runCatching { element.jsonPrimitive.int }.getOrNull() }
             ?.takeIf { temp -> temp in 0..TEMP_MAX_C }
-
-    /** % del FAN del GPU (CR-085, misma guarda del porcentaje). */
-    private fun fanValue(
-        obj: JsonObject,
-        key: String,
-    ): Int? =
-        obj[key]?.let { element -> runCatching { element.jsonPrimitive.int }.getOrNull() }
-            ?.takeIf { percent -> percent in 0..FAN_MAX }
 }

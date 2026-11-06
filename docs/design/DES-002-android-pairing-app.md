@@ -7,12 +7,12 @@
 |---|---|
 | ID | DES-002 |
 | Title | Realización de la app Android de Pairing (SPEC-002) |
-| Version | 0.4.0 |
+| Version | 0.6.0 |
 | Status | `Approved` |
 | Owner | Eng |
 | Realizes | SPEC-002 (full: lógica de vinculación + pantallas; el render de cámara en instrumentación requiere dispositivo — ver §14) |
 | Depends on | DES-001, ADR-001 (stack), ADR-002 (transporte), ADR-004 (QR + challenge) |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-06 |
 
 ## 1. Overview
 
@@ -60,6 +60,10 @@ erDiagram
 | `PairingViewModel` | une máquina + adaptador de red + cámara; expone `StateFlow<PairingUiState>` | único dueño del estado |
 | Sensores de movimiento → `input_report` | `TYPE_ACCELEROMETER` + `TYPE_GYROSCOPE` a `SENSOR_DELAY_GAME` → `motion.timestamp_us`, `motion.accel` m/s² y `motion.gyro` rad/s; cada evento publica las muestras más recientes de ambos sensores. Si falta una muestra, omite `motion` hasta que ambas estén disponibles. | Snapshot independiente del monitor local; el timestamp es el máximo timestamp monotónico de sensores, convertido de ns a μs (CR-021); el remapeo al marco AndroidDSU landscape con accel `(y, -z, x)` y gyro `(-y, -z, x)` es fijo y exclusivo de la orientación landscape de la app (CR-022, CR-037). |
 | Sensor de orientación → `GyroMonitorView` | `SensorManager.TYPE_ROTATION_VECTOR` → remapeo CR-011 → yaw/pitch/roll de pantalla | Solo diagnóstico local; la vista opt-in dibuja colores yaw verde, pitch rojo, roll azul y no alimenta el wire. |
+| `HostMetricsCodec.decode(line): HostMetrics?` | `host_metrics` de SPEC-006 §4: CPU requerida; GPU, fps, temps y par `vramUsedMb`/`vramTotalMb` opcionales (ausentes → `null` = «sin dato»); el par VRAM parcial o incoherente invalida la línea | puro, sin Android; el `HostMetrics` decodificado es el único insumo del panel |
+| `WaitingGaugePanel.renderHost(metrics)` | escribe etiquetas GPU · CPU · RAM · VRAM y pinta cada anillo: RAM y VRAM al centro la usada (GB) con arco `usado/total`; CPU/GPU `%`; «—» sin dato | un único dueño del pintado por origen (PC/teléfono) |
+| `GaugeView.animateProgressTo(progress)` / `progress` | transición del arco 0..1 en 700 ms con `AccelerateDecelerateInterpolator`; una llamada nueva cancela la anterior; `progress` fija el valor sin animar | `hasValue=false` dibuja el anillo atenuado sin arco; el ajuste del texto al anillo es local |
+| `GaugeView` brillo de carga (CR-086 v2) | `ValueAnimator` infinito (0..1, lineal, vuelta de 1800 ms) mueve la fase; `chargingHighlightSpan(fase, arcoLleno)` (función pura) recorta la ventana de 36° al arco lleno y `onDraw` dibuja el tramo con un trazo blanco al 35 % | arranca solo con `hasValue` y `isShown`; se detiene en `onDetachedFromWindow` y al ocultarse; sin dato no hay brillo |
 
 ## 5. Data model and persistence
 
@@ -153,6 +157,7 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | §11 R4 strings en recursos | `res/values/strings.xml` | revisión + TEST-013 (afirma resId/texto) |
 | CR-011: landscape inmersivo y marco gyro | Manifest + `PairingActivity` | TEST-059 (instrumentado en dispositivo Android) |
 | CR-016/CR-021: monitor Android opt-in local y captura/serialización de muestras inerciales | `PairingActivity`, `GyroMonitorView`, `ProfileGyroController`, `InputCodec` | TEST-060, TEST-078, TEST-083 |
+| §11 R22 (CR-085/CR-086): retícula de cuatro anillos con VRAM, FPS y temps, sin FAN; transición circular | `HostMetricsCodec`, `WaitingGaugePanel`, `GaugeView`, layout `activity_pairing.xml` | TEST-0177 (códec), TEST-0180 (wire core), TEST-0181 (sampler DRM del server), TEST-0182 (brillo de carga) |
 
 ## 13. Related decisions
 
@@ -188,3 +193,4 @@ No aplica (sin datos cacheados; la sesión no persiste).
 | 0.3.5 | 2026-10-29 | Product owner + Twinpad team (CR-038) | La cámara frontal se rige por demanda: `camera_request` de Cemu + juego «cemu» seleccionado canalizados como estado combinado del ViewModel; sin cambio wire de App→Servidor |
 | 0.4.0 | 2026-11-01 | Product owner + Twinpad team (CR-060) | Entrada manual del código de vinculación sin cámara: diálogo en `PairingActivity` + `QrScanned` en U1 con trim de borde; misma validación y handshake que el QR, sin efectos de cámara |
 | 0.5.0 | 2026-11-01 | Buffy (agente) | CR-056: estado `Reconnecting` (U6) en `PairingStateMachine` — corte de control en Linked entra a U6 y el `PairingViewModel` reintenta `pair_resume` cada 2 s mientras la ventana de retención viva (helper `HandshakeCrypto`/`HandshakeCodec` con `pair_resume`); CR-057: `ServerDiscovery` (NsdManager, `_twinpad._tcp`, timeout 5 s) resuelve `s` antes de cada `Effect.Connect` (U2→U3, reanudación U6 y reconexión media); TEST-0130/0134 |
+| 0.6.0 | 2026-11-06 | Buffy (agente) | CR-085/CR-086: `HostMetricsCodec` decodifica el par VRAM opcional; `WaitingGaugePanel` pinta cuatro anillos (GPU · CPU · RAM · VRAM) sin FAN y `GaugeView` transiciona el arco en 700 ms y le añade el brillo de carga continuo (v2); TEST-0177/0180/0181/0182 |

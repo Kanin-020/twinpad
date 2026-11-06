@@ -28,11 +28,11 @@ const FPS_MAX: f32 = 240.0;
 /// kB por MB al pasar de `/proc/meminfo` (valores en kB según Linux).
 const KIB_PER_MIB: f64 = 1024.0;
 
+/// Bytes por MiB para la lectura de VRAM DRM (CR-086).
+const BYTES_PER_MIB: u64 = 1024 * 1024;
+
 /// Temperaturas del hwmon en mºC (miligrados por grado, CR-085).
 const MILLI_C_PER_C: f64 = 1000.0;
-
-/// Techo PCI del pwm cuando el driver no publica `pwmN_max` (CR-085).
-const PWM_MAX: u8 = 255;
 
 /// Muestra de consumo del host ya validada (CR-076 v2).
 #[derive(Clone, PartialEq, Debug)]
@@ -46,17 +46,19 @@ pub struct HostMetrics {
     pub cpu_temp_c: Option<u8>,
     /// °C enteros del chip de GPU del hwmon (CR-085); `None` sin sensor.
     pub gpu_temp_c: Option<u8>,
-    /// % del ventilador del GPU (`pwm1/pwm1_max`, CR-085); `None` sin pwm.
-    pub fan_percent: Option<u8>,
+    /// VRAM usada/total del host en MiB; ambos `None` si DRM no expone
+    /// el par o si la lectura es incoherente (CR-086).
+    pub vram_used_mb: Option<u32>,
+    pub vram_total_mb: Option<u32>,
 }
 
-/// Clase de chip hwmon para clasificar temps y ventilador (CR-085).
+/// Clase de chip hwmon para clasificar temperaturas (CR-085).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HwmonChipClass {
     /// Chip de CPU (`k10temp`/`zenpower` AMD, `coretemp` Intel).
     Cpu,
     /// Chip de GPU (`amdgpu`, y por si el hardware cambia `nvidia`/
-    /// `nouveau`) — dueño de la temp de GPU y del pwm del ventilador.
+    /// `nouveau`) — dueño de la temperatura de GPU.
     Gpu,
 }
 
@@ -80,22 +82,24 @@ pub fn parse_temp_input(text: &str) -> Option<u8> {
         .then_some(celsius as u8)
 }
 
-/// % del ventilador desde `pwmN` y su `pwmN_max` (o 255, techo PCI cuando
-/// el driver no publica el máximo o el archivo vale ≤ 0); `None` con pwm
-/// fuera de 0..max o con ruido.
-pub fn parse_pwm_percent(pwm_text: &str, max_text: Option<&str>) -> Option<u8> {
-    let pwm = pwm_text.trim().parse::<f32>().ok()?;
-    let max = max_text
-        .and_then(|text| text.trim().parse::<f32>().ok())
-        .filter(|max| *max > 0.0)
-        .unwrap_or(PWM_MAX as f32);
-    if !(0.0..=max).contains(&pwm) {
+/// Convierte el par de contadores DRM de bytes a MiB redondeados; requiere
+/// total positivo y uso ≤ total. Un resultado por encima de u32 no se emite.
+fn parse_vram_bytes(used_text: &str, total_text: &str) -> Option<(u32, u32)> {
+    fn mib(text: &str) -> Option<u32> {
+        let bytes = text.trim().parse::<u64>().ok()?;
+        let whole = bytes / BYTES_PER_MIB;
+        let rounded = whole + u64::from(bytes % BYTES_PER_MIB >= BYTES_PER_MIB / 2);
+        u32::try_from(rounded).ok()
+    }
+
+    let used_bytes = used_text.trim().parse::<u64>().ok()?;
+    let total_bytes = total_text.trim().parse::<u64>().ok()?;
+    if total_bytes == 0 || used_bytes > total_bytes {
         return None;
     }
-    let percent = (pwm * f32::from(PERCENT_MAX) / max).round();
-    (0.0..=f32::from(PERCENT_MAX))
-        .contains(&percent)
-        .then_some(percent as u8)
+    let used_mb = mib(used_text)?;
+    let total_mb = mib(total_text)?;
+    (total_mb > 0 && used_mb <= total_mb).then_some((used_mb, total_mb))
 }
 
 /// Parseo de la primera línea de `/proc/stat` («cpu u n i iow …»):
@@ -137,14 +141,14 @@ pub fn parse_meminfo(text: &str) -> Option<(u32, u32)> {
     Some((used_mb, total_mb))
 }
 
-/// Parseo del busy del driver GPU; acepta «37 %» y «37%» al inicio de
-/// línea; `None` con ruido, negativos o porcentajes fuera de 0..100.
+/// Parseo del busy del driver GPU; acepta enteros nativos de sysfs DRM
+/// y formas «37 %»/«37%»; `None` con ruido, negativos o fuera de 0..100.
 pub fn parse_gpu_busy(line: &str) -> Option<u8> {
     let token = line.trim_start_matches([' ', '\t']);
     let digits: String = token.chars().take_while(|c| c.is_ascii_digit()).collect();
     let percent = digits.parse::<u8>().ok()?;
-    let after = &token[digits.len()..];
-    if percent > PERCENT_MAX || !after.trim_start().starts_with('%') {
+    let suffix = token[digits.len()..].trim();
+    if percent > PERCENT_MAX || !(suffix.is_empty() || suffix == "%") {
         return None;
     }
     Some(percent)
@@ -156,6 +160,40 @@ const GPU_BUSY_PATHS: [&str; 2] = [
     "/sys/class/drm/card0/device/gpu_busy_percent",
     "/sys/kernel/gpu/gpu_busy",
 ];
+
+/// Rutas del par de contadores VRAM DRM por tarjeta.
+fn scan_vram_paths(drm_root: &str) -> Option<Vec<(String, String)>> {
+    let cards = std::fs::read_dir(drm_root).ok()?;
+    let pairs: Vec<_> = cards
+        .flatten()
+        .filter(|card| card.file_name().to_string_lossy().starts_with("card"))
+        .filter_map(|card| {
+            let device = card.path().join("device");
+            let used = device.join("mem_info_vram_used");
+            let total = device.join("mem_info_vram_total");
+            (used.is_file() && total.is_file()).then(|| {
+                (
+                    used.to_string_lossy().to_string(),
+                    total.to_string_lossy().to_string(),
+                )
+            })
+        })
+        .collect();
+    (!pairs.is_empty()).then_some(pairs)
+}
+
+fn read_vram_from_paths(paths: &[(String, String)]) -> Option<(u32, u32)> {
+    paths.iter().find_map(|(used_path, total_path)| {
+        let used = std::fs::read_to_string(used_path).ok()?;
+        let total = std::fs::read_to_string(total_path).ok()?;
+        parse_vram_bytes(&used, &total)
+    })
+}
+
+fn read_vram() -> Option<(u32, u32)> {
+    let paths = scan_vram_paths("/sys/class/drm")?;
+    read_vram_from_paths(&paths)
+}
 
 fn read_cpu_stat() -> Option<(u64, u64)> {
     let stat = std::fs::read_to_string("/proc/stat").ok()?;
@@ -194,13 +232,10 @@ pub fn scan_gpu_busy_paths(drm_root: &str) -> Option<Vec<String>> {
     (!paths.is_empty()).then_some(paths)
 }
 
-fn read_gpu_busy() -> Option<u8> {
-    let scanned = scan_gpu_busy_paths("/sys/class/drm").unwrap_or_default();
-    GPU_BUSY_PATHS
-        .iter()
-        .copied()
-        .map(std::borrow::ToOwned::to_owned)
-        .chain(scanned)
+fn read_gpu_busy_from_paths(scanned: Vec<String>, fallback_paths: &[&str]) -> Option<u8> {
+    scanned
+        .into_iter()
+        .chain(fallback_paths.iter().map(|path| (*path).to_owned()))
         .find_map(|path| {
             std::fs::read_to_string(path)
                 .ok()
@@ -208,19 +243,21 @@ fn read_gpu_busy() -> Option<u8> {
         })
 }
 
+fn read_gpu_busy() -> Option<u8> {
+    let scanned = scan_gpu_busy_paths("/sys/class/drm").unwrap_or_default();
+    read_gpu_busy_from_paths(scanned, &GPU_BUSY_PATHS)
+}
+
 /// Lecturas del hwmon del host ya agregadas por chip (CR-085).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 struct HwmonReadings {
     cpu_temp_c: Option<u8>,
     gpu_temp_c: Option<u8>,
-    fan_percent: Option<u8>,
 }
 
-/// Lecturas del hwmon del host (CR-085): recorre `/sys/class/hwmon`,
-/// clasifica los chips conocidos y agrega el máx de sus `temp*_input`; el
-/// chip de GPU además alimenta el pwm del ventilador. Sin hwmon (host sin
-/// sensores) degrade a `Default` con los tres campos en `None` — sin
-/// datos inventados, mismo patrón del busy de GPU (CR-076 v2).
+/// Lecturas térmicas del hwmon del host (CR-085): recorre `/sys/class/hwmon`,
+/// clasifica los chips conocidos y agrega el máximo de sus `temp*_input`.
+/// Sin hwmon, las lecturas quedan en `None` (sin inventar valores).
 fn read_hwmon() -> HwmonReadings {
     let Ok(chips) = std::fs::read_dir(HWMON_ROOT) else {
         return HwmonReadings::default();
@@ -251,21 +288,8 @@ fn read_hwmon() -> HwmonReadings {
                 *slot = Some(slot.map_or(celsius, |prev| prev.max(celsius)));
             }
         }
-        if class == HwmonChipClass::Gpu {
-            if let Some(percent) = read_fan_percent(&chip.path()) {
-                readings.fan_percent = Some(percent);
-            }
-        }
     }
     readings
-}
-
-/// % del ventilador de un chip: `pwmN` sobre `pwmN_max` (o el techo PCI
-/// 255 cuando el driver no publica el máximo; CR-085).
-fn read_fan_percent(chip: &std::path::Path) -> Option<u8> {
-    let pwm = std::fs::read_to_string(chip.join("pwm1")).ok()?;
-    let max = std::fs::read_to_string(chip.join("pwm1_max")).ok();
-    parse_pwm_percent(&pwm, max.as_deref())
 }
 
 /// Raíz del hwmon del host (CR-085).
@@ -296,6 +320,7 @@ impl HostMetricsSampler {
         let (ram_used_mb, ram_total_mb) = parse_meminfo(&meminfo)?;
         cpu_percent.map(|cpu_percent| {
             let hwmon = read_hwmon();
+            let vram = read_vram();
             HostMetrics {
                 cpu_percent,
                 gpu_percent: read_gpu_busy(),
@@ -304,7 +329,8 @@ impl HostMetricsSampler {
                 game_fps: None, // el emisor rellena el fps del juego.
                 cpu_temp_c: hwmon.cpu_temp_c,
                 gpu_temp_c: hwmon.gpu_temp_c,
-                fan_percent: hwmon.fan_percent,
+                vram_used_mb: vram.map(|(used, _)| used),
+                vram_total_mb: vram.map(|(_, total)| total),
             }
         })
     }
@@ -359,7 +385,8 @@ pub fn host_metrics_line(sample: &HostMetrics) -> Option<String> {
         game_fps: sample.game_fps,
         cpu_temp_c: sample.cpu_temp_c,
         gpu_temp_c: sample.gpu_temp_c,
-        fan_percent: sample.fan_percent,
+        vram_used_mb: sample.vram_used_mb,
+        vram_total_mb: sample.vram_total_mb,
     }
     .encode()
     .ok()
@@ -448,6 +475,10 @@ mod tests {
     fn gpu_busy_and_fps_follow_the_wire_contract() {
         assert_eq!(parse_gpu_busy("37 %"), Some(37));
         assert_eq!(parse_gpu_busy("100%"), Some(100));
+        // gpu_busy_percent de DRM publica un entero sin sufijo.
+        assert_eq!(parse_gpu_busy("37\n"), Some(37));
+        assert_eq!(parse_gpu_busy("100"), Some(100));
+        assert_eq!(parse_gpu_busy("37 percent"), None);
         assert_eq!(parse_gpu_busy("-5 %"), None);
         assert_eq!(parse_gpu_busy("137 %"), None);
         assert_eq!(parse_gpu_busy("busy"), None);
@@ -477,8 +508,8 @@ mod tests {
         }
     }
 
-    // TEST-0175 (server, CR-085): clasificación de chips y parsers puros
-    // del hwmon — temps mºC→°C, pwm→% con techo PCI y clases de chip.
+    // TEST-0175 (server, CR-085): clasificación de chips y parser de
+    // temperaturas hwmon; TEST-0181 (CR-086) cubre la lectura VRAM.
     #[test]
     fn hwmon_chip_and_temperature_parsers_follow_the_wire_contract() {
         assert_eq!(hwmon_chip_class("amdgpu"), Some(HwmonChipClass::Gpu));
@@ -491,36 +522,25 @@ mod tests {
         assert_eq!(parse_temp_input("-1000"), None);
         assert_eq!(parse_temp_input("999999"), None);
         assert_eq!(parse_temp_input("ruido"), None);
-
-        assert_eq!(parse_pwm_percent("110", Some("255")), Some(43));
-        assert_eq!(parse_pwm_percent("0", Some("255")), Some(0));
-        assert_eq!(parse_pwm_percent("255", None), Some(100));
-        assert_eq!(parse_pwm_percent("64", None), Some(25));
-        assert_eq!(parse_pwm_percent("300", None), None);
-        assert_eq!(parse_pwm_percent("abc", None), None);
-        // `pwm1_max` inválido (0) también cae al techo PCI por diseño.
-        assert_eq!(parse_pwm_percent("100", Some("0")), Some(39));
-        assert_eq!(parse_pwm_percent("100", Some("basura")), Some(39));
     }
 
-    // TEST-0175 (CR-085): lectura REAL del hwmon del host, tolerante —
-    // el fan presente queda en 0..ù100 (clamp del parser); sin hwmon (host
-    // sin sensores o CI ajeno) los tres campos caen en `None` sin inventar
-    // nada. Las temps (u8 por contrato del wire) no necesitan un techo
-    // extra en el assert — `parse_temp_input` ya los acota a 0..ù255.
+    // TEST-0175 (CR-085): lectura térmica REAL del hwmon, tolerante — un
+    // host sin sensores cae en `None` sin entrar en pánico (las guardas de
+    // rango viven en `parse_temp_input`). TEST-0181 (CR-086) verifica el
+    // escaneo VRAM con un fixture DRM temporal.
     #[cfg(target_os = "linux")]
     #[test]
-    fn hwmon_readings_follow_the_gauge_ranges() {
-        let readings = read_hwmon();
-        if let Some(fan) = readings.fan_percent {
-            assert!(fan <= 100);
-        }
+    fn hwmon_readings_tolerate_hosts_without_sensors() {
+        // Solo verifica que el escaneo no entre en pánico; los valores son
+        // del host real y pueden ser `None` (CI sin hwmon).
+        let _readings = read_hwmon();
     }
 
     // TEST-0178 (server, CR-085 v2): busy de GPU en CUALQUIER tarjeta —
     // el escaneo del árbol drm encuentra las rutas legibles de
     // `gpu_busy_percent` de cada tarjeta (ágil con la GPU del stream que
-    // no siempre es card0) y cae a los fallbacks fijos en `read_gpu_busy`.
+    // no siempre es card0) y las prioriza sobre fallbacks fijos para no
+    // elegir una GPU distinta cuando card0 también expone busy.
     #[test]
     fn gpu_busy_scan_finds_busy_on_any_card() {
         let root =
@@ -529,7 +549,9 @@ mod tests {
         assert!(std::fs::create_dir_all(root.join("card1/device")).is_ok());
         assert!(std::fs::write(root.join("card0/device/otro"), "ruido").is_ok());
         assert!(std::fs::create_dir_all(root.join("cardN/device")).is_ok());
-        assert!(std::fs::write(root.join("cardN/device/gpu_busy_percent"), "37 %\n").is_ok());
+        // El sysfs DRM real devuelve el entero sin un sufijo de porcentaje.
+        assert!(std::fs::write(root.join("cardN/device/gpu_busy_percent"), "37\n").is_ok());
+        assert!(std::fs::write(root.join("fallback_busy"), "12 %\n").is_ok());
         let paths = scan_gpu_busy_paths(root.to_str().unwrap());
         assert_eq!(
             paths,
@@ -539,9 +561,43 @@ mod tests {
             )]))
         );
         assert_eq!(
-            parse_gpu_busy(&std::fs::read_to_string(&paths.unwrap()[0]).unwrap()),
+            parse_gpu_busy(&std::fs::read_to_string(&paths.as_ref().unwrap()[0]).unwrap()),
             Some(37)
         );
+        assert_eq!(
+            read_gpu_busy_from_paths(
+                paths.unwrap(),
+                &[root.join("fallback_busy").to_str().unwrap()],
+            ),
+            Some(37),
+            "la tarjeta DRM detectada tiene prioridad sobre el fallback genérico",
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    // TEST-0181 — CR-086: par VRAM DRM completo, lectura de cualquier tarjeta,
+    // conversión a MiB y ausencia cuando falta un contador.
+    #[test]
+    fn vram_scan_reads_and_validates_drm_counter_pair() {
+        let root = std::env::temp_dir().join(format!("twinpad_vram_test_{}", std::process::id()));
+        let device = root.join("card1/device");
+        assert!(std::fs::create_dir_all(&device).is_ok());
+        assert!(std::fs::write(device.join("mem_info_vram_used"), "487698432\n").is_ok());
+        assert!(std::fs::write(device.join("mem_info_vram_total"), "536870912\n").is_ok());
+
+        assert_eq!(
+            parse_vram_bytes("487698432\n", "536870912\n"),
+            Some((465, 512))
+        );
+        assert_eq!(parse_vram_bytes("536870913", "536870912"), None);
+        assert_eq!(parse_vram_bytes("0", "0"), None);
+        assert_eq!(parse_vram_bytes("invalid", "10"), None);
+
+        let paths = scan_vram_paths(root.to_str().unwrap()).unwrap();
+        assert_eq!(read_vram_from_paths(&paths), Some((465, 512)));
+
+        std::fs::remove_file(device.join("mem_info_vram_total")).ok();
+        assert!(scan_vram_paths(root.to_str().unwrap()).is_none());
         std::fs::remove_dir_all(&root).ok();
     }
 

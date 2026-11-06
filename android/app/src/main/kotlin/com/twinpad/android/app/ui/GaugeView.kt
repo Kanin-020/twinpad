@@ -1,5 +1,6 @@
 package com.twinpad.android.app.ui
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -7,18 +8,18 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
 import com.twinpad.android.app.R
 
 /**
  * CR-076 v2: gauge circular estilo handheld (referencia `reference/AYN-Thor-18.jpg`):
  * anillo de progreso con el valor al centro y la etiqueta debajo. La medición
- * del HOST llega por `host_metrics` del server (CR-076 v2); esta View solo
- * pinta progreso 0..1, texto y etiqueta. Cambios de contenido invalidan el
- * dibujo directamente. CR-085 v2: el anillo lleva COLOR POR GAUGE vía el
- * atributo XML `ringColor` (GPU azul, CPU magenta, RAM verde — los anillos
- * dejan de ser grises): la pista de fondo es el mismo color atenuado y el
- * dato ausente sigue en gris neutrinal con el valor «—».
+ * del HOST llega por `host_metrics` del server (CR-076 v2); esta View dibuja
+ * progreso 0..1, texto y etiqueta. CR-085 v2 asigna color por gauge y CR-086
+ * anima suavemente los cambios de progreso y recorre el arco con un brillo
+ * continuo de carga mientras el gauge esté visible y tenga dato.
  */
 class GaugeView
     @JvmOverloads
@@ -31,12 +32,47 @@ class GaugeView
          * viene del XML por gauge y por defecto es el acento violeta. */
         private var ringColor: Int = ContextCompat.getColor(context, R.color.metrics_accent)
 
+        /** Animator vigente, cancelado al llegar una muestra nueva. */
+        private var progressAnimator: ValueAnimator? = null
+
+        /** CR-086 v2: animator del brillo de carga (continuo, sin fin). */
+        private var chargingAnimator: ValueAnimator? = null
+
+        /** Fase 0..1 del brillo de carga sobre el arco lleno. */
+        private var chargingPhase: Float = 0f
+
+        private var currentProgress: Float = 0f
+
         /** Progreso del arco en 0..1 (valores fuera de rango quedan topeados). */
-        var progress: Float = 0f
+        var progress: Float
+            get() = currentProgress
             set(value) {
-                field = value.coerceIn(0f, 1f)
+                progressAnimator?.cancel()
+                progressAnimator = null
+                currentProgress = value.coerceIn(0f, 1f)
                 invalidate()
             }
+
+        /** Transiciona el arco hasta la nueva muestra en 700 ms. */
+        fun animateProgressTo(value: Float) {
+            val target = value.coerceIn(0f, 1f)
+            progressAnimator?.cancel()
+            if (target == progress) {
+                progressAnimator = null
+                return
+            }
+            progressAnimator =
+                ValueAnimator.ofFloat(progress, target).apply {
+                    duration = PROGRESS_ANIMATION_MS
+                    interpolator = AccelerateDecelerateInterpolator()
+                    addUpdateListener { animator ->
+                        currentProgress = (animator.animatedValue as Float).coerceIn(0f, 1f)
+                        invalidate()
+                        progressAnimator = animator.takeUnless { it.animatedFraction >= 1f }
+                    }
+                    start()
+                }
+        }
 
         /** Texto del valor (ya formateado por el caller: «37%», «4,2 GB», «60»). */
         var valueText: String = ""
@@ -56,6 +92,7 @@ class GaugeView
         var hasValue: Boolean = true
             set(value) {
                 field = value
+                updateChargingAnimation()
                 invalidate()
             }
 
@@ -69,6 +106,14 @@ class GaugeView
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 color = ringColor
+            }
+
+        /** CR-086 v2: brillo de carga que recorre el arco lleno. */
+        private val chargingHighlightPaint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                color = ContextCompat.getColor(context, R.color.design_cloud_white)
+                alpha = CHARGING_HIGHLIGHT_ALPHA
             }
 
         private val valuePaint =
@@ -115,6 +160,7 @@ class GaugeView
                     .coerceIn(STROKE_MIN_DP * density, STROKE_MAX_DP * density)
             ringBackgroundPaint.strokeWidth = stroke
             ringProgressPaint.strokeWidth = stroke
+            chargingHighlightPaint.strokeWidth = stroke
             valuePaint.textSize = w * VALUE_TEXT_RATIO
             labelPaint.textSize = density * LABEL_TEXT_DP
             // anillo exterior interno (recto menos el grosor del trazo).
@@ -142,7 +188,19 @@ class GaugeView
             ringProgressPaint.color = ringColor
             canvas.drawArc(arcBounds, 0f, SWEEP, false, ringBackgroundPaint)
             if (hasValue) {
-                canvas.drawArc(arcBounds, START_ANGLE, progress * SWEEP, false, ringProgressPaint)
+                val filledSweep = progress * SWEEP
+                canvas.drawArc(arcBounds, START_ANGLE, filledSweep, false, ringProgressPaint)
+                // CR-086 v2: brillo de carga continuo sobre lo ya lleno —
+                // señal visual de que la muestra no está congelada.
+                chargingHighlightSpan(chargingPhase, filledSweep)?.let { span ->
+                    canvas.drawArc(
+                        arcBounds,
+                        START_ANGLE + span.start,
+                        span.endInclusive - span.start,
+                        false,
+                        chargingHighlightPaint,
+                    )
+                }
             }
 
             // CR-086: el valor nunca sale del anillo — si la cadena no cabe
@@ -176,6 +234,69 @@ class GaugeView
                 textSize *= FIT_TEXT_DECAY_RATIO
             }
             valuePaint.textSize = textSize
+        }
+
+        /** CR-086 v2: el brillo de carga corre solo con dato y vista visible;
+         * así no gasta batería con la hoja oculta y «—» queda quieto. */
+        private fun updateChargingAnimation() {
+            val visible = isShown && windowVisibility == View.VISIBLE
+            if (hasValue && visible) {
+                startChargingAnimation()
+            } else {
+                stopChargingAnimation()
+            }
+        }
+
+        /** Arranca (idempotente) el barrido continuo del brillo. */
+        private fun startChargingAnimation() {
+            if (chargingAnimator != null) {
+                return
+            }
+            chargingAnimator =
+                ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = CHARGING_CYCLE_MS
+                    interpolator = LinearInterpolator()
+                    repeatCount = ValueAnimator.INFINITE
+                    repeatMode = ValueAnimator.RESTART
+                    addUpdateListener { animator ->
+                        chargingPhase = animator.animatedValue as Float
+                        invalidate()
+                    }
+                    start()
+                }
+        }
+
+        /** Detiene el brillo y lo deja fuera del arco (fase 0). */
+        private fun stopChargingAnimation() {
+            chargingAnimator?.cancel()
+            chargingAnimator = null
+            chargingPhase = 0f
+            invalidate()
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            updateChargingAnimation()
+        }
+
+        override fun onDetachedFromWindow() {
+            stopChargingAnimation()
+            super.onDetachedFromWindow()
+        }
+
+        override fun onVisibilityChanged(
+            changedView: View,
+            visibility: Int,
+        ) {
+            super.onVisibilityChanged(changedView, visibility)
+            updateChargingAnimation()
+        }
+
+        /** CR-086 v2: al ocultarse la ventana (app en segundo plano) el brillo
+         * se detiene; al volver se reanuda si sigue habiendo dato. */
+        override fun onWindowVisibilityChanged(visibility: Int) {
+            super.onWindowVisibilityChanged(visibility)
+            updateChargingAnimation()
         }
 
         /** CR-085 v2: color del gauge atenuado para la pista del anillo. */
@@ -213,6 +334,15 @@ class GaugeView
             const val VALUE_BASELINE_RATIO = 0.35f
             const val LABEL_BASELINE_RATIO = 0.3f
 
+            /** Duración de la transición circular (CR-086). */
+            const val PROGRESS_ANIMATION_MS = 700L
+
+            /** CR-086 v2: una vuelta del brillo de carga (batería). */
+            const val CHARGING_CYCLE_MS = 1800L
+
+            /** CR-086 v2: alpha del brillo (35 % del blanco). */
+            const val CHARGING_HIGHLIGHT_ALPHA = 0x59
+
             /** CR-086: ratio de captura del anillo (el texto cabe si cabe en
              * éste). */
             const val FIT_TEXT_CAPTURE_RATIO = 0.9f
@@ -224,3 +354,26 @@ class GaugeView
             const val FIT_TEXT_DECAY_RATIO = 0.8f
         }
     }
+
+/** Ancho del brillo de carga (CR-086 v2), en grados. */
+private const val CHARGING_HIGHLIGHT_SWEEP = 36f
+
+/** Una vuelta completa del arco, en grados. */
+private const val FULL_SWEEP_DEGREES = 360f
+
+/**
+ * CR-086 v2: tramo visible del brillo de carga, en grados relativos al
+ * arranque del arco. La ventana de [CHARGING_HIGHLIGHT_SWEEP] avanza de 0 a
+ * 360 según [phase] (0..1) y solo se dibuja la parte que cae dentro del arco
+ * lleno ([filledSweep]); sin solape devuelve `null`. Función pura: la misma
+ * entrada produce siempre el mismo tramo.
+ */
+internal fun chargingHighlightSpan(
+    phase: Float,
+    filledSweep: Float,
+): ClosedFloatingPointRange<Float>? {
+    val head = phase.coerceIn(0f, 1f) * FULL_SWEEP_DEGREES
+    val start = (head - CHARGING_HIGHLIGHT_SWEEP).coerceAtLeast(0f)
+    val end = minOf(head, filledSweep.coerceIn(0f, FULL_SWEEP_DEGREES))
+    return if (end > start) start..end else null
+}

@@ -282,10 +282,14 @@ pub enum GameMsg {
         /// otro hwmon gráfico); ausente si el host no lo expone (CR-085).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gpu_temp_c: Option<u8>,
-        /// % del ventilador del chip de GPU del host (`pwm1/pwm1_max`,
-        /// 0–100); ausente si el GPU no expone pwm (CR-085).
+        /// VRAM usada del host en MiB; ausente junto con total si DRM no
+        /// expone el par o la lectura es incoherente (CR-086).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        fan_percent: Option<u8>,
+        vram_used_mb: Option<u32>,
+        /// VRAM total del host en MiB; presente solo junto con usada y ≥1
+        /// (CR-086).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vram_total_mb: Option<u32>,
     },
 }
 
@@ -451,7 +455,7 @@ impl GameMsg {
             }
             // CR-076 v2: consumo del HOST para los gauges de la ventana de
             // espera; porcentajes 0–100, RAM coherente y fps no negativo.
-            // CR-085: fan del GPU 0–100 (temps son u8, sin techo extra).
+            // CR-086: VRAM usada/total son un par opcional coherente.
             GameMsg::HostMetrics {
                 cpu_percent,
                 gpu_percent,
@@ -460,14 +464,20 @@ impl GameMsg {
                 game_fps,
                 cpu_temp_c: _,
                 gpu_temp_c: _,
-                fan_percent,
+                vram_used_mb,
+                vram_total_mb,
             } => {
+                let vram_valid = match (vram_used_mb, vram_total_mb) {
+                    (None, None) => true,
+                    (Some(used), Some(total)) => *total > 0 && *used <= *total,
+                    _ => false,
+                };
                 if *cpu_percent > HOST_METRICS_PERCENT_MAX
                     || gpu_percent.is_some_and(|percent| percent > HOST_METRICS_PERCENT_MAX)
                     || *ram_total_mb == 0
                     || *ram_used_mb > *ram_total_mb
                     || game_fps.is_some_and(|fps| fps < 0.0)
-                    || fan_percent.is_some_and(|percent| percent > HOST_METRICS_PERCENT_MAX)
+                    || !vram_valid
                 {
                     return Err(PairError::MalformedMessage);
                 }
@@ -1241,7 +1251,7 @@ mod tests {
     // RAM incoherente, fps negativo, campo desconocido).
     #[test]
     fn host_metrics_round_trips_and_rejects_bad_fields() {
-        // Canónico completo: CPU/GPU/RAM y fps del juego del host.
+        // Canónico completo: CPU/GPU/RAM, VRAM y fps del juego del host.
         let msg = GameMsg::HostMetrics {
             cpu_percent: 37,
             gpu_percent: Some(41),
@@ -1250,7 +1260,8 @@ mod tests {
             game_fps: Some(59.8),
             cpu_temp_c: Some(58),
             gpu_temp_c: Some(64),
-            fan_percent: Some(37),
+            vram_used_mb: Some(465),
+            vram_total_mb: Some(512),
         };
         let line = msg.encode().unwrap();
         assert_eq!(GameMsg::decode(&line).unwrap(), msg);
@@ -1264,7 +1275,8 @@ mod tests {
             game_fps: None,
             cpu_temp_c: None,
             gpu_temp_c: None,
-            fan_percent: None,
+            vram_used_mb: None,
+            vram_total_mb: None,
         };
         assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
 
@@ -1316,10 +1328,10 @@ mod tests {
         );
     }
 
-    // TEST-0176 — CR-085: temps CPU/GPU y fan del GPU vendor omitibles;
-    // fan sobre 100 rechazado (E4) y sin campos el wire sigue idéntico.
+    // TEST-0180 — CR-086: temps y el par VRAM omitibles; pares
+    // incompletos/incoherentes rechazados y líneas legacy siguen válidas.
     #[test]
-    fn host_metrics_temp_and_fan_follow_the_wire_contract() {
+    fn host_metrics_vram_pair_follows_the_wire_contract() {
         let msg = GameMsg::HostMetrics {
             cpu_percent: 12,
             gpu_percent: None,
@@ -1328,20 +1340,21 @@ mod tests {
             game_fps: None,
             cpu_temp_c: Some(58),
             gpu_temp_c: Some(64),
-            fan_percent: Some(37),
+            vram_used_mb: Some(465),
+            vram_total_mb: Some(512),
         };
         let line = msg.encode().unwrap();
-        assert!(line.contains("cpu_temp_c") && line.contains("fan_percent"));
+        assert!(line.contains("cpu_temp_c") && line.contains("vram_used_mb"));
         assert_eq!(GameMsg::decode(&line).unwrap(), msg);
 
-        // fan sobre 100: E4.
-        assert_eq!(
-            GameMsg::decode(concat!(
-                "{\"type\":\"host_metrics\",\"cpu_percent\":5,",
-                "\"ram_used_mb\":0,\"ram_total_mb\":1,\"fan_percent\":101}"
-            )),
-            Err(PairError::MalformedMessage)
-        );
+        // Par VRAM parcial, total 0 y uso mayor al total: E4.
+        for invalid in [
+            r#"{"type":"host_metrics","cpu_percent":5,"ram_used_mb":0,"ram_total_mb":1,"vram_used_mb":10}"#,
+            r#"{"type":"host_metrics","cpu_percent":5,"ram_used_mb":0,"ram_total_mb":1,"vram_used_mb":10,"vram_total_mb":0}"#,
+            r#"{"type":"host_metrics","cpu_percent":5,"ram_used_mb":0,"ram_total_mb":1,"vram_used_mb":11,"vram_total_mb":10}"#,
+        ] {
+            assert_eq!(GameMsg::decode(invalid), Err(PairError::MalformedMessage));
+        }
 
         // Sin los campos nuevos (host de la v1): el decode sigue válido
         // (compatibilidad con el CR-076 v2).
@@ -1359,7 +1372,8 @@ mod tests {
                 game_fps: None,
                 cpu_temp_c: None,
                 gpu_temp_c: None,
-                fan_percent: None,
+                vram_used_mb: None,
+                vram_total_mb: None,
             }
         );
     }

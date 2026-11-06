@@ -18,9 +18,6 @@ private const val GB_TEXT_FORMAT = "%.1f GB"
 /** CR-085: sufijo del número de temperatura de las cards (°C). */
 private const val TEMP_SUFFIX = "°C"
 
-/** CR-085: sufijo del porcentaje del ventilador en la card FAN. */
-private const val FAN_SUFFIX = "%"
-
 /** FPS con una forma entera para el texto del gauge. */
 private const val FPS_TEXT_FORMAT = "%.0f"
 
@@ -54,13 +51,14 @@ internal class WaitingGaugePanel(
         val fps: Double,
     )
 
-    /** Etiquetas CPU/GPU/RAM/FPS con los recursos canónicos (R4). */
+    /** Etiquetas de los cuatro gauges con los recursos canónicos (R4). */
     private val ensureLabels: () -> Unit = {
         if (!labelsInitialized) {
             mapOf(
                 R.id.gauge_gpu to R.string.metrics_gpu,
                 R.id.gauge_cpu to R.string.metrics_cpu,
                 R.id.gauge_ram to R.string.metrics_ram,
+                R.id.gauge_vram to R.string.metrics_vram,
             ).forEach { (id, label) ->
                 gaugeOf(activity, id).label = activity.getString(label)
             }
@@ -69,25 +67,25 @@ internal class WaitingGaugePanel(
     }
 
     /** CR-076 v2: gauges del HOST — CPU/GPU %, RAM GB con arco % y FPS
-     * del juego seleccionado; lo desconocido queda «—» (sin inventos). */
+     * del juego seleccionado y VRAM usada/total; lo desconocido queda «—». */
     fun renderHost(metrics: HostMetrics?) {
         ensureLabels()
         renderPercent(R.id.gauge_cpu, metrics?.cpuPercent)
         renderPercent(R.id.gauge_gpu, metrics?.gpuPercent)
+        renderVram(metrics?.vramUsedMb, metrics?.vramTotalMb)
         val ramGauge = gaugeOf(activity, R.id.gauge_ram)
         if (metrics == null || metrics.ramTotalMb < 1L) {
             ramGauge.hasValue = false
             ramGauge.valueText = NO_DATA_TEXT
         } else {
             ramGauge.hasValue = true
-            ramGauge.progress = metrics.ramUsedMb.toFloat() / metrics.ramTotalMb
+            ramGauge.animateProgressTo(metrics.ramUsedMb.toFloat() / metrics.ramTotalMb)
             ramGauge.valueText = GB_TEXT_FORMAT.format(metrics.ramUsedMb.toDouble() / MB_PER_GB)
         }
         renderFps(metrics?.gameFps)
         // CR-085: tarjetas de stats — solo el origen PC trae hwmon.
         renderStat(R.id.txt_cpu_temp, metrics?.cpuTempC, TEMP_SUFFIX)
         renderStat(R.id.txt_gpu_temp, metrics?.gpuTempC, TEMP_SUFFIX)
-        renderStat(R.id.txt_fan, metrics?.fanPercent, FAN_SUFFIX)
     }
 
     /** CR-077: gauges del teléfono Gamepad — las lecturas pesadas van
@@ -100,15 +98,15 @@ internal class WaitingGaugePanel(
             val snapshot = withContext(Dispatchers.Default) { sampleDevice() }
             renderPercent(R.id.gauge_cpu, snapshot.cpuPercent)
             renderPercent(R.id.gauge_gpu, snapshot.gpuPercent)
+            renderVram(null, null)
             val ramGauge = gaugeOf(activity, R.id.gauge_ram)
             ramGauge.hasValue = true
-            ramGauge.progress = snapshot.ram.usedPercent / GAUGE_MAX_PERCENT
+            ramGauge.animateProgressTo(snapshot.ram.usedPercent / GAUGE_MAX_PERCENT)
             ramGauge.valueText = snapshot.ram.usedGbText
             renderFps(snapshot.fps.takeIf { it > 0.0 }?.toFloat())
             // CR-085: el teléfono no expone hwmon comparable — tarjetas «—».
             renderStat(R.id.txt_cpu_temp, null, TEMP_SUFFIX)
             renderStat(R.id.txt_gpu_temp, null, TEMP_SUFFIX)
-            renderStat(R.id.txt_fan, null, FAN_SUFFIX)
         }
     }
 
@@ -138,6 +136,31 @@ internal class WaitingGaugePanel(
         stat.text = value?.let { current -> "$current$suffix" } ?: NO_DATA_TEXT
     }
 
+    /** VRAM como RAM: cifra usada en GB y arco usado/total; ambos datos son necesarios. */
+    private fun renderVram(
+        usedMb: Long?,
+        totalMb: Long?,
+    ) {
+        val gauge = gaugeOf(activity, R.id.gauge_vram)
+        if (usedMb == null || totalMb == null) {
+            showNoVram(gauge)
+            return
+        }
+        if (totalMb <= 0L || usedMb > totalMb) {
+            showNoVram(gauge)
+            return
+        }
+        gauge.hasValue = true
+        gauge.animateProgressTo(usedMb.toFloat() / totalMb)
+        gauge.valueText = GB_TEXT_FORMAT.format(usedMb.toDouble() / MB_PER_GB)
+    }
+
+    /** VRAM sin dato: anillo atenuado y «—» (nunca inventos). */
+    private fun showNoVram(gauge: GaugeView) {
+        gauge.hasValue = false
+        gauge.valueText = NO_DATA_TEXT
+    }
+
     /** Porcentajes compartidos de PC/Gamepad; «—» sin dato. */
     private val renderPercent:
         (Int, Int?) -> Unit =
@@ -148,7 +171,7 @@ internal class WaitingGaugePanel(
                 gauge.valueText = NO_DATA_TEXT
             } else {
                 gauge.hasValue = true
-                gauge.progress = percent / GAUGE_MAX_PERCENT
+                gauge.animateProgressTo(percent / GAUGE_MAX_PERCENT)
                 gauge.valueText = "$percent%"
             }
         }

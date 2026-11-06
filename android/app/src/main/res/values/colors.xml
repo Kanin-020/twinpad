@@ -29,6 +29,7 @@
     <color name="metrics_ring_gpu">#4FA8FF</color>
     <color name="metrics_ring_cpu">#D941C8</color>
     <color name="metrics_ring_ram">#43CE7C</color>
+    <color name="metrics_ring_vram">#F2A65A</color>
 
     <color name="keyboard_overlay_background">#E6121212</color>
     <!-- CR-077: acento del arco de los gauges (ventana de espera) — Signal

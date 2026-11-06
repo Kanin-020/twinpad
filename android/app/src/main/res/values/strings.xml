@@ -33,10 +33,8 @@
     <string name="metrics_cpu">CPU</string>
     <string name="metrics_gpu">GPU</string>
     <string name="metrics_ram">RAM</string>
+    <string name="metrics_vram">VRAM</string>
     <string name="metrics_fps">FPS</string>
-    <!-- CR-085: columna del ventilador de la tarjeta de stats — % del
-         pwm del ventilador del GPU del host (vía hwmon). -->
-    <string name="metrics_fan">FAN</string>
     <!-- CR-077: alternador del origen de los gauges de espera — marcado =
          PC (host_metrics, CR-076); desmarcado = el teléfono Gamepad. -->
     <string name="settings_metrics_slider">Mostrar slider de métricas</string>

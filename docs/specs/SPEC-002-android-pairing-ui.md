@@ -7,13 +7,13 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.12.0 |
+| Version | 1.13.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
 | Realized by | DES-002 (implementado en `android/app`; decodificador de cámara diferido — §14) |
-| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089, TEST-0124, TEST-0130, TEST-0131, TEST-0134 (registrados en `testing/traceability.md`) |
-| Last updated | 2026-11-01 |
+| Verified by | TEST-010 … TEST-014, TEST-053, TEST-055, TEST-059, TEST-069, TEST-078, TEST-089, TEST-0124, TEST-0130, TEST-0131, TEST-0134, TEST-0177, TEST-0180, TEST-0181, TEST-0182 (registrados en `testing/traceability.md`) |
+| Last updated | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -181,7 +181,13 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
 - **R19 (CR-032):** el drawer de ajustes incluye el interruptor "Distribución Nintendo": preferencia local persistente, **apagada por defecto**. Activado, los cuatro botones de cara se muestran y se envían en distribución Nintendo (A derecha, B abajo, X arriba, Y izquierda; intercambio A↔B y X↔Y respecto del default Xbox/Play); se aplica en caliente y también al mando físico conectado al teléfono (CR-028). La Signature HID de SPEC-004 §4 no cambia. Ver TEST-089/090.
 - **R20 (CR-060):** la entrada manual del código (§8.4) no solicita permiso de cámara (R2 se exige solo en la vía de escaneo) y no registra el texto del código en logs (R3).
 - **R21 (nota, CR-077 — update a texto definitivo pendiente):** el drawer de ajustes incluye el interruptor «Métricas de la PC» (desmarcado: Gamepad), preferencia local persistente (`metrics_source_host`, default PC): define el origen de los 4 gauges de la ventana de espera de CR-076 — activado, los gauges muestran las métricas del HOST que corre `twinpad-server` (`host_metrics` de SPEC-006 §4); desmarcado, miden el propio teléfono Gamepad (CPU delta `/proc/stat`, GPU busy del driver si existe, RAM de ActivityManager, FPS del render por Choreographer) al menos cada segundo. Al STREAMING o sesión terminada el muestreo del teléfono se detiene. Sin dato («—») se muestra sin inventos (CR-076). Asimismo, la app aplica los tokens de `docs/design/DESIGN.md` (Featurebase dark: Void Canvas, Charcoal, Signal Violet acento restringido, Inter 400–700, radios 12/16 dp) a la actividad principal, drawer, botones, chip HUD y gauges. Ver TEST-0158.
-- **R22 (nota, CR-085 — update a texto definitivo pendiente):** la retícula de gauges de la ventana de espera/slot del stream es en **T** con la presentación de la referencia `reference/AYN-Thor-18.jpg`: fila superior con los ANILLOS GPU · CPU · RAM (`GaugeView` donut), fila inferior con la tarjeta FPS EN GRANDE a la izquierda (texto, sin anillo) y la tarjeta de stats a la derecha con las lecturas de temp CPU y temp GPU (°C) más el % del ventilador del GPU — todas del `host_metrics` de SPEC-006 §4 (CR-085); sin lectura del hwmon la card queda «—» (nunca inventos). En origen teléfono las tres stats siempre «—». Ver TEST-0177.
+- **R22 (CR-085/CR-086):** la retícula de gauges de la ventana de espera/slot del stream toma la presentación de la referencia `reference/AYN-Thor-18.jpg`, compacta: una fila con los CUATRO ANILLOS GPU · CPU · RAM · VRAM (`GaugeView` donut, con color propio por gauge) y debajo la tarjeta FPS EN GRANDE a la izquierda (texto, sin anillo) y la tarjeta de stats a la derecha con la temp CPU y la temp GPU (°C). Las etiquetas son CPU, GPU, RAM, VRAM y FPS.
+  - El anillo RAM muestra la RAM usada en el centro y su proporción usada/total en el arco; el anillo VRAM muestra la VRAM usada con el mismo formato del centro y la proporción VRAM usada/total en el arco (CR-086).
+  - FAN no existe: la app no muestra ni decodifica ningún indicador de ventilador (CR-086).
+  - Todas las lecturas vienen del `host_metrics` de SPEC-006 §4. Sin dato —campo ausente, VRAM sin par completo/coherente, RAM total < 1 o gauge de teléfono sin sensor— el anillo queda atenuado con «—» (nunca inventos). En origen teléfono, VRAM y las dos temps son siempre «—».
+  - Al llegar una muestra nueva, el arco de cada anillo transita desde su valor vigente hasta el nuevo en 700 ms (acelerar-desacelerar); una muestra posterior sustituye la transición anterior. El centro y la etiqueta se actualizan de inmediato con el valor de la muestra.
+  - Con dato, un brillo de 36° recorre el arco lleno en sentido horario de forma continua, una vuelta cada 1800 ms (estilo carga de batería): es la señal de que la lectura sigue viva aunque el valor no cambie. El brillo nunca se dibuja sobre la pista vacía; con «—» el anillo queda quieto. Se detiene mientras el gauge no está visible (hoja plegada, vista oculta o actividad en segundo plano) y se reanuda al volver a mostrarse.
+  - Ver TEST-0177, TEST-0180, TEST-0181, TEST-0182.
 
 ## 12. Contracts
 
@@ -248,6 +254,8 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | Monitor gyro opt-in dibuja orientación absoluta de sensor y paleta semántica (CR-016/CR-018) | TEST-078 |
 | Interruptor "Distribución Nintendo": default apagado, sin efecto sobre el wire (CR-032) | TEST-089 |
 | Entrada manual del código (§8.4: U1 → U3 y E5, sin cámara; trim §10) (CR-060) | TEST-0124 |
+| Cuatro anillos GPU · CPU · RAM · VRAM con VRAM usada/total y sin FAN (CR-086) | TEST-0177, TEST-0180, TEST-0181 |
+| Brillo de carga continuo sobre el arco lleno, sin gasto con la vista oculta (CR-086 v2) | TEST-0182 |
 
 ## 17. Open questions
 
@@ -276,6 +284,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.10.0 | 2026-10-28 | Product owner (CR-032) | R19: interruptor "Distribución Nintendo" en el drawer (preferencia local persistente, apagado por defecto), táctil y mando físico, wire sin cambios; TEST-089/090 |
 | 1.11.0 | 2026-11-01 | Buffy (agente) (CR-060) | Entrada manual del código de vinculación sin cámara (§3, §4, §8.4, §9-E5, §10, §11-R20); wire y criptografía sin cambios; TEST-0124 |
 | 1.12.0 | 2026-11-01 | Buffy (agente) (CR-056 + CR-057) | U6 «Reconectando»: corte en U4 entra a U6 e intenta `pair_resume` mientras la retención de 60 000 ms viva (SPEC-001 §8.2); U2→U3 y U1→U3 resuelta `s` vía mDNS (SPEC-009) antes de abrir TCP; TEST-0130/0131/0134 |
+| 1.13.0 | 2026-11-06 | Buffy (agente) (CR-085 + CR-086) | R22 definitiva: cuatro anillos compactos GPU · CPU · RAM · VRAM con color propio, FPS grande y temps CPU/GPU; FAN se retira de la UI; VRAM como RAM (usada al centro, arco usada/total) con «—» sin par válido, transición circular de 700 ms y brillo de carga continuo de 1800 ms que solo corre con dato y vista visible (v2); TEST-0177/0180/0181/0182 |
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |
 | 1.1.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Auto-selección de Plugin único, lista de elección para varios y confirmación antes de presentar sus medios |
