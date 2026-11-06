@@ -13,15 +13,15 @@ class AndroidSettingsStoreTest {
             AndroidSettings(
                 width = 960,
                 height = 540,
-                videoBitrateKbps = 12_000,
                 audioVolumePercent = 35,
                 showHud = false,
                 showControls = false,
             )
 
         // CR-029: `video_config` ya no lleva `fps` (emisión unlimited).
+        // CR-087: el bitrate sigue a la resolución (540p → 10 000 kbps).
         assertEquals(
-            "{\"type\":\"video_config\",\"w\":960,\"h\":540,\"bitrate_kbps\":12000}",
+            "{\"type\":\"video_config\",\"w\":960,\"h\":540,\"bitrate_kbps\":10000}",
             settings.videoConfigLine(),
         )
         assertEquals(35, settings.audioVolumePercent)
@@ -44,13 +44,12 @@ class AndroidSettingsStoreTest {
 
     @Test
     fun stream_settings_have_stable_defaults() {
-        // CR-031: fábrica = 1080p, bitrate fijo 10 000 kbps (el slider del
-        // drawer se eliminó a petición del owner), escalado "contener" y HUD
-        // fps / botones visibles.
+        // CR-031: fábrica = 1080p, escalado "contener" y HUD fps / botones
+        // visibles. CR-087: 1080p → 20 000 kbps (derivado de la resolución).
         val defaults = AndroidSettings()
         assertEquals(1920, defaults.width)
         assertEquals(1080, defaults.height)
-        assertEquals(10_000, defaults.videoBitrateKbps)
+        assertEquals(20_000, defaults.videoBitrateKbps)
         assertEquals(AndroidSettings.DEFAULT_AUDIO_VOLUME_PERCENT, defaults.audioVolumePercent)
         assertEquals(VideoScaleMode.CONTAIN, defaults.scaleMode)
         assertEquals(true, defaults.showHud)
@@ -73,11 +72,10 @@ class AndroidSettingsStoreTest {
             AndroidSettings(
                 width = 1920,
                 height = 1080,
-                videoBitrateKbps = 30_000,
                 nintendoDistribution = true,
             )
         assertEquals(
-            "{\"type\":\"video_config\",\"w\":1920,\"h\":1080,\"bitrate_kbps\":30000}",
+            "{\"type\":\"video_config\",\"w\":1920,\"h\":1080,\"bitrate_kbps\":20000}",
             settings.videoConfigLine(),
         )
         assertEquals(VideoScaleMode.CONTAIN, settings.scaleMode)

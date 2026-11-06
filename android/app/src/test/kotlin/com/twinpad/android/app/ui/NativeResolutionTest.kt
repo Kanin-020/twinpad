@@ -11,9 +11,10 @@ class NativeResolutionTest {
     @Test
     fun nativeOptionSendsZeroZeroWireAndDefaultStays1080p() {
         assertEquals(
-            "{\"type\":\"video_config\",\"w\":1920,\"h\":1080,\"bitrate_kbps\":10000}",
+            "{\"type\":\"video_config\",\"w\":1920,\"h\":1080,\"bitrate_kbps\":20000}",
             AndroidSettings().videoConfigLine(),
         )
+        // CR-087: sin frame conocido, «Nativa» parte de la clase 540p.
         assertEquals(
             "{\"type\":\"video_config\",\"w\":0,\"h\":0,\"bitrate_kbps\":10000}",
             AndroidSettings(width = 0, height = 0).videoConfigLine(),

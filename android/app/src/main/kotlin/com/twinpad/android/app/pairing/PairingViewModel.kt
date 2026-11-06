@@ -16,6 +16,7 @@ import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
+import com.twinpad.android.app.ui.bitrateForResolution
 import com.twinpad.android.app.wire.CameraRequestCodec
 import com.twinpad.android.app.wire.GameListCodec
 import com.twinpad.android.app.wire.HostMetricsCodec
@@ -123,6 +124,24 @@ class PairingViewModel(
      * `null`: sin decisión o sesión cerrada (el HUD de métricas lo oculta). */
     private val _mediaTransport = MutableStateFlow<Boolean?>(null)
     val mediaTransport: StateFlow<Boolean?> = _mediaTransport
+
+    /** CR-087: último bitrate que la app fijó para «Nativa». El drawer envía
+     * la clase 540p por defecto hasta conocer el tamaño real; sin este
+     * registro se reenviaría `video_config` en cada `stream_start` (cada
+     * reenvío reinicia el encoder y fuerza IDR). */
+    private var lastNativeBitrateSentKbps: Int? = null
+
+    /** CR-087: «Nativa» (0/0) no fija resolución propia, así que el bitrate
+     * sigue a la dimensión anunciada en `stream_start`. Función-propiedad por
+     * el umbral de funciones de detekt. */
+    private val adjustNativeBitrate: (Int, Int) -> Unit = { width, height ->
+        val settings = AndroidSettingsStore(getApplication()).load()
+        val target = bitrateForResolution(width, height)
+        if ((settings.width == 0 && settings.height == 0) && target != lastNativeBitrateSentKbps) {
+            lastNativeBitrateSentKbps = target
+            network.send(settings.videoConfigLine(target))
+        }
+    }
 
     private val mediaSession =
         PairingMediaSession(
@@ -291,6 +310,8 @@ class PairingViewModel(
         _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
         streamStats.reset()
         rumblePlayer.play(RumbleMessage(ByteArray(0)))
+        // CR-087: la próxima sesión vuelve a anunciar la clase de resolución.
+        lastNativeBitrateSentKbps = null
         _keyboardRequested.value = null
         _videoStageStats.value = null
         // CR-077: sin sesión viva NO hay muestra del HOST vigente; dejar el
@@ -318,8 +339,14 @@ class PairingViewModel(
     private fun handleStreamControlLine(line: String) {
         when (lineType(line)) {
             "stream_start" -> {
-                val message = runCatching { StreamCodec.decode(line) as? StreamMessage.Start }.getOrNull()
-                if (message == null) streamStats.onFrameRejected() else mediaSession.onStreamStart(message, line)
+                val message =
+                    runCatching { StreamCodec.decode(line) as? StreamMessage.Start }.getOrNull()
+                if (message == null) {
+                    streamStats.onFrameRejected()
+                } else {
+                    mediaSession.onStreamStart(message, line)
+                    adjustNativeBitrate(message.width, message.height)
+                }
             }
             "stream_stop" -> {
                 val message = runCatching { StreamCodec.decode(line) as? StreamMessage.Stop }.getOrNull()
@@ -417,6 +444,8 @@ class PairingViewModel(
             AndroidSettingsStore(getApplication()).load(),
     ) {
         AndroidSettingsStore(getApplication()).save(settings)
+        // CR-087: un envío explícito del drawer rearma el ajuste de «Nativa».
+        lastNativeBitrateSentKbps = null
         network.send(settings.videoConfigLine())
     }
 

@@ -16,12 +16,6 @@ enum class CameraLens { FRONT, BACK }
 data class AndroidSettings(
     val width: Int = DEFAULT_WIDTH,
     val height: Int = DEFAULT_HEIGHT,
-    /** Bitrate fijo del cliente (sin control de usuario). El slider del
-     * drawer se eliminó a petición del owner: su default de 30 000 kbps
-     * emitía ~3 400 datagrams/s por el UDP §4.4 y desbordaba el lector del
-     * teléfono (drops → AUs incompletas → 0 fps). 10 000 kbps queda debajo
-     * de la capacidad medida del cliente con margen >2×. */
-    val videoBitrateKbps: Int = DEFAULT_VIDEO_BITRATE_KBPS,
     val audioVolumePercent: Int = DEFAULT_AUDIO_VOLUME_PERCENT,
     val showGyroMonitor: Boolean = false,
     val showHud: Boolean = true,
@@ -47,7 +41,17 @@ data class AndroidSettings(
      * (nace ABIERTA, decisión del owner); `false` = no se muestra. */
     val metricsSliderOverStream: Boolean = true,
 ) {
-    fun videoConfigLine(): String =
+    /** CR-087: bitrate derivado de la resolución elegida (540p 10 Mbps,
+     * 720p 15 Mbps, 1080p 20 Mbps), sin control de usuario en el drawer
+     * (CR-064 lo retiró). Derivado y no almacenado para que cualquier cambio
+     * de resolución lo actualice aunque se haga con `copy`. */
+    val videoBitrateKbps: Int
+        get() = bitrateForResolution(width, height)
+
+    /** Línea `video_config` de la sesión. [bitrateKbps] permite fijar el
+     * bitrate cuando la clase de resolución se conoce fuera del drawer
+     * (CR-087: «Nativa» con las dimensiones del `stream_start`). */
+    fun videoConfigLine(bitrateKbps: Int = videoBitrateKbps): String =
         buildString {
             append("{\"type\":\"video_config\",\"w\":")
             append(width)
@@ -55,16 +59,15 @@ data class AndroidSettings(
             append(height)
             // CR-029: sin fps; emisión sin tope de tasa (SPEC-003 §4.1).
             append(",\"bitrate_kbps\":")
-            append(videoBitrateKbps)
+            append(bitrateKbps)
             append('}')
         }
 
     companion object {
         // CR-031: defaults de fábrica 1080p, pantalla "contener". El bitrate
-        // queda fijo en 10 000 kbps (sin control de usuario, decisión del owner).
+        // (20 000 kbps con 1080p) se deriva de la resolución (CR-087).
         const val DEFAULT_WIDTH = 1920
         const val DEFAULT_HEIGHT = 1080
-        const val DEFAULT_VIDEO_BITRATE_KBPS = 10_000
         const val DEFAULT_AUDIO_VOLUME_PERCENT = 100
     }
 }
