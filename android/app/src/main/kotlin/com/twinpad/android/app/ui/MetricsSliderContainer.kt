@@ -12,7 +12,7 @@ import com.twinpad.android.app.R
  * CR-079 (v7): contenedor del slider de métricas. Además del orden
  * declarado en el XML, intercepta los deslizamientos verticales que
  * arrancan dentro de la hoja y los entrega al controlador: el drag deja de
- * depender de qué hijo consumió el DOWN (HUD, gauges, `txt_games`); con el
+ * depender de qué hijo consumió el DOWN (HUD, gauges); con el
  * panel PLEGADO el hit-test solo alcanza la franja visible (el asa), y los
  * toques del juego quedan intactos fuera del panel. Responde solo con el
  * [dragResponder] activo (modo hoja); sin él no consume nada.

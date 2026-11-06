@@ -470,11 +470,6 @@ class PairingActivity : AppCompatActivity() {
                 applyStreamState(state)
             }
         }
-        lifecycleScope.launch {
-            viewModel.availableGames.collectLatest { games ->
-                findViewById<TextView>(R.id.txt_games).text = gamesText(games)
-            }
-        }
         observeSelectedGame()
         lifecycleScope.launch {
             viewModel.selectionRequest.collectLatest { games ->
@@ -542,17 +537,8 @@ class PairingActivity : AppCompatActivity() {
         // CR-079: la vista de espera CR-076 ahora tiene dos modos (fullscreen
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)
-        findViewById<TextView>(R.id.txt_games).isVisible =
-            state.state == StreamState.INACTIVE
         keepDisplayAwake(state.state)
     }
-
-    private fun gamesText(games: List<com.twinpad.android.app.wire.GameInfo>): String =
-        when {
-            games.isEmpty() -> ""
-            games.size == 1 -> getString(R.string.game_compatible_one, games[0].gameName)
-            else -> getString(R.string.game_compatible_many, games.joinToString { it.gameName })
-        }
 
     private fun renderHudChip() {
         val chip = findViewById<TextView>(R.id.hud_chip)

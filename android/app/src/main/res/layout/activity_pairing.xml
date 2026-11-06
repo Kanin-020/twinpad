@@ -170,7 +170,7 @@
 
                     <!-- CR-079 v8 (prueba del owner): la franja del asa queda
                          TRANSPARENTE — el fondo Charcoal vive SOLO en el
-                         contenido (la retícula + txt_games); plegado se ve
+                         contenido (la retícula); plegado se ve
                          únicamente el asa, nunca una banda de fondo. -->
                     <LinearLayout
                         android:id="@+id/metrics_content"
@@ -316,15 +316,6 @@
                                 </LinearLayout>
                             </LinearLayout>
                         </LinearLayout>
-
-                        <TextView
-                            android:id="@+id/txt_games"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center"
-                            android:paddingVertical="4dp"
-                            android:textColor="@color/design_misted_slate"
-                            android:textAppearance="?attr/textAppearanceBodySmall" />
                     </LinearLayout>
                 </LinearLayout>
             </com.twinpad.android.app.ui.MetricsSliderContainer>
