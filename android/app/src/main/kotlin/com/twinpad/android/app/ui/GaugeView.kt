@@ -77,6 +77,9 @@ class GaugeView
                 textAlign = Paint.Align.CENTER
             }
 
+        /** diámetro disponible para el texto dentro del anillo, en px. */
+        private var leadingWidth: Float = 0f
+
         private val labelPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = ContextCompat.getColor(context, R.color.design_misted_slate)
@@ -114,6 +117,11 @@ class GaugeView
             ringProgressPaint.strokeWidth = stroke
             valuePaint.textSize = w * VALUE_TEXT_RATIO
             labelPaint.textSize = density * LABEL_TEXT_DP
+            // anillo exterior interno (recto menos el grosor del trazo).
+            val cx = w / 2f
+            val cy = h / CENTER_RATIO
+            val radius = minOf(cx, cy) - ringProgressPaint.strokeWidth
+            leadingWidth = radius * 2f
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -137,8 +145,37 @@ class GaugeView
                 canvas.drawArc(arcBounds, START_ANGLE, progress * SWEEP, false, ringProgressPaint)
             }
 
-            canvas.drawText(valueText.ifEmpty { "—" }, cx, cy + valuePaint.textSize * VALUE_BASELINE_RATIO, valuePaint)
+            // CR-086: el valor nunca sale del anillo — si la cadena no cabe
+            // con el tamaño nominal, se escala hacia abajo (por mínimo 0.5×).
+            val displayedValue = valueText.ifEmpty { "—" }
+            fitTextSize(textToMeasure = displayedValue)
+            canvas.drawText(
+                displayedValue,
+                cx,
+                cy + valuePaint.textSize * VALUE_BASELINE_RATIO,
+                valuePaint,
+            )
             canvas.drawText(label, cx, height - labelPaint.textSize * LABEL_BASELINE_RATIO, labelPaint)
+        }
+
+        /** CR-086: ajusta el size del valor sólo si la cadena no cabe en el
+         * diámetro del anillo (ancho del arco menos el trazo). */
+        private fun fitTextSize(textToMeasure: String) {
+            if (textToMeasure.isEmpty() || leadingWidth <= 0f) {
+                return
+            }
+            var textSize = valuePaint.textSize
+            val minTextSize = textSize * FIT_TEXT_MIN_RATIO
+            while (textSize > minTextSize) {
+                valuePaint.textSize = textSize
+                if (valuePaint.measureText(textToMeasure)
+                    <= leadingWidth * FIT_TEXT_CAPTURE_RATIO
+                ) {
+                    return
+                }
+                textSize *= FIT_TEXT_DECAY_RATIO
+            }
+            valuePaint.textSize = textSize
         }
 
         /** CR-085 v2: color del gauge atenuado para la pista del anillo. */
@@ -175,5 +212,15 @@ class GaugeView
             const val CENTER_RATIO = 2.2f
             const val VALUE_BASELINE_RATIO = 0.35f
             const val LABEL_BASELINE_RATIO = 0.3f
+
+            /** CR-086: ratio de captura del anillo (el texto cabe si cabe en
+             * éste). */
+            const val FIT_TEXT_CAPTURE_RATIO = 0.9f
+
+            /** CR-086: mínimo de la escala del texto en pts. */
+            const val FIT_TEXT_MIN_RATIO = 0.5f
+
+            /** CR-086: reducción del size entre intentos de ajuste. */
+            const val FIT_TEXT_DECAY_RATIO = 0.8f
         }
     }
