@@ -186,42 +186,150 @@
                             android:layout_weight="1"
                             android:orientation="vertical">
 
+                            <!-- CR-085: barra de la T — anillos GPU · CPU · RAM -->
                             <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="0dp"
                                 android:layout_weight="1"
                                 android:orientation="horizontal">
-
-                                <com.twinpad.android.app.ui.GaugeView
-                                    android:id="@+id/gauge_cpu"
-                                    android:layout_width="0dp"
-                                    android:layout_height="match_parent"
-                                    android:layout_weight="1" />
 
                                 <com.twinpad.android.app.ui.GaugeView
                                     android:id="@+id/gauge_gpu"
                                     android:layout_width="0dp"
                                     android:layout_height="match_parent"
-                                    android:layout_weight="1" />
-                            </LinearLayout>
+                                    android:layout_marginHorizontal="4dp"
+                                    android:layout_weight="1"
+                                    app:ringColor="@color/metrics_ring_gpu" />
 
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="0dp"
-                                android:layout_weight="1"
-                                android:orientation="horizontal">
+                                <com.twinpad.android.app.ui.GaugeView
+                                    android:id="@+id/gauge_cpu"
+                                    android:layout_width="0dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_marginHorizontal="4dp"
+                                    android:layout_weight="1"
+                                    app:ringColor="@color/metrics_ring_cpu" />
 
                                 <com.twinpad.android.app.ui.GaugeView
                                     android:id="@+id/gauge_ram"
                                     android:layout_width="0dp"
                                     android:layout_height="match_parent"
-                                    android:layout_weight="1" />
+                                    android:layout_marginHorizontal="4dp"
+                                    android:layout_weight="1"
+                                    app:ringColor="@color/metrics_ring_ram" />
+                            </LinearLayout>
 
-                                <com.twinpad.android.app.ui.GaugeView
-                                    android:id="@+id/gauge_fps"
+                            <!-- CR-085: base de la T — FPS grande a la izquierda
+                                 (sin anillo, estilo de la referencia AYN Thor) y
+                                 stats CPU temp · GPU temp · FAN a la derecha -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="0dp"
+                                android:layout_marginHorizontal="8dp"
+                                android:layout_marginTop="8dp"
+                                android:layout_weight="1"
+                                android:orientation="horizontal">
+
+                                <LinearLayout
                                     android:layout_width="0dp"
                                     android:layout_height="match_parent"
-                                    android:layout_weight="1" />
+                                    android:layout_marginEnd="8dp"
+                                    android:layout_weight="3"
+                                    android:background="@drawable/bg_metric_card"
+                                    android:gravity="center"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:id="@+id/txt_fps_value"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:textColor="@color/design_cloud_white"
+                                        android:textSize="40sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="@string/metrics_fps"
+                                        android:textColor="@color/design_quiet_slate"
+                                        android:textSize="10sp" />
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_weight="3"
+                                    android:background="@drawable/bg_metric_card"
+                                    android:orientation="horizontal">
+
+                                    <LinearLayout
+                                        android:layout_width="0dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_weight="1"
+                                        android:gravity="center"
+                                        android:orientation="vertical">
+
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="@string/metrics_cpu"
+                                            android:textColor="@color/design_quiet_slate"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:id="@+id/txt_cpu_temp"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:textColor="@color/design_cloud_white"
+                                            android:textSize="20sp"
+                                            android:textStyle="bold" />
+                                    </LinearLayout>
+
+                                    <LinearLayout
+                                        android:layout_width="0dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_weight="1"
+                                        android:gravity="center"
+                                        android:orientation="vertical">
+
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="@string/metrics_gpu"
+                                            android:textColor="@color/design_quiet_slate"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:id="@+id/txt_gpu_temp"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:textColor="@color/design_cloud_white"
+                                            android:textSize="20sp"
+                                            android:textStyle="bold" />
+                                    </LinearLayout>
+
+                                    <LinearLayout
+                                        android:layout_width="0dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_weight="1"
+                                        android:gravity="center"
+                                        android:orientation="vertical">
+
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="@string/metrics_fan"
+                                            android:textColor="@color/design_quiet_slate"
+                                            android:textSize="10sp" />
+
+                                        <TextView
+                                            android:id="@+id/txt_fan"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:textColor="@color/design_cloud_white"
+                                            android:textSize="20sp"
+                                            android:textStyle="bold" />
+                                    </LinearLayout>
+                                </LinearLayout>
                             </LinearLayout>
                         </LinearLayout>
 

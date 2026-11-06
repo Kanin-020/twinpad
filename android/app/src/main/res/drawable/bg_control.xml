@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Plato/base oscuro de los controles (estilo de referencia SNES/N64/DS):
-     círculo detrás del botón (halo), base del D-pad y base del stick. -->
+<!-- CR-077 v2: plato/base de los controles (halo del botón, base del D-pad
+     y base del stick) con tokens de DESIGN.md (Featurebase dark) — Charcoal
+     Panel con hairline Slate Edge de 1 dp («1px Slate Edge borders around
+     dark panes… and outlined controls»). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#E62E2E2E" />
+    <solid android:color="#E60F1219" />
+    <stroke android:width="1dp" android:color="@color/design_slate_edge" />
 </shape>

@@ -179,6 +179,9 @@
     decisiones (13) y (14) conservan su mecánica; este threshold es el
     vigente.
 
+12. **Animación suave (v12, octava prueba del owner)**: la hoja deja de saltar — el plegado inicial ANIMA (`0 → tope` suave al medir) y en el drag SOLO el snap del ajuste automático anima (`panelConAnimacion(bruto, target)` puro + `ANIMACION_PANEL_MS = 150`); el drag a mano queda pegado al dedo sin retardo (regla v6 intacta) y la siguiente MOVE del dedo cancela la animación del snap (el dedo manda). TEST-0179.
+13. **Fila del slider en HUD (v12)**: el switch `switch_metrics_slider` sale del bloque Debug (CR-075) del drawer y pasa a ser el segundo elemento de la sección HUD, después de «Mostrar FPS» (elemento de HUD sobre el stream, decisión del owner).
+
 ## 4. Change (developer solution + update)
 
 | | |
@@ -253,6 +256,15 @@
   APK reinstalada. Verificación en banco (el snap al 100 % y el
   plegado completo deben verse desde el 70 % del recorrido) vuelve
   al owner.
+- v12 (2026-11-05, octava prueba del owner): animación suave — plegado
+  inicial animado (`0 → tope`, 150 ms) y en el drag SOLO el snap del
+  ajuste automático anima (helper puro `panelConAnimacion`, TEST-0179);
+  el drag a mano sigue pegado al dedo (v6 intacta). Asimismo la fila
+  «Mostrar slider de métricas» sale del bloque Debug y pasa a la
+  sección HUD (segunda fila, tras «Mostrar FPS»). Test enfocado verde,
+  luego gate completo (`testDebugUnitTest` + ktlint + detekt +
+  `assembleDebug` BUILD SUCCESSFUL, exit 0) y APK reinstalada. La
+  verificación visual del suavizado en banco vuelve al owner.
 
 ## 6. SPEC impact
 

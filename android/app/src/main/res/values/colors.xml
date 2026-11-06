@@ -18,6 +18,18 @@
     <color name="design_quiet_slate">#8F94A6</color>
     <color name="design_signal_violet">#7064F2</color>
 
+    <!-- CR-077 v2: superficie del control lleno claro (Header/Hero White
+         Conversion Button = rgba(255,255,255,0.92)) para las caras de los
+         botones táctiles y el pulgar del stick; texto/chevron sobre cara
+         clara = Charcoal Panel (design_charcoal_panel). -->
+    <color name="design_white_92">#EBFFFFFF</color>
+
+    <!-- CR-085 v2: color del anillo de cada gauge del medidor en T (los
+         anillos dejan de ser grises, como la referencia AYN Thor). -->
+    <color name="metrics_ring_gpu">#4FA8FF</color>
+    <color name="metrics_ring_cpu">#D941C8</color>
+    <color name="metrics_ring_ram">#43CE7C</color>
+
     <color name="keyboard_overlay_background">#E6121212</color>
     <!-- CR-077: acento del arco de los gauges (ventana de espera) — Signal
          Violet de DESIGN.md; antes era #7EC9B4 (CR-076). -->

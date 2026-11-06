@@ -41,6 +41,18 @@ internal fun pliegueAutomaticoAlFinal(
     topePlegado: Float,
 ): Float = if (target >= topePlegado * (1f - FRACCION_AJUSTE_PANEL)) topePlegado else target
 
+/** CR-079 (v12, prueba del owner): duración de la animación suave del panel
+ * (snap del ajuste automático y plegado inicial al medir). */
+internal const val ANIMACION_PANEL_MS = 150L
+
+/** CR-079 (v12): SOLO el snap del ajuste automático se anima suave — el
+ * drag a mano sigue pegado al dedo sin retardo (regla v6 intacta) y solo
+ * cuando el ajuste cambia el valor bruto por el objetivo snap anima. */
+internal fun panelConAnimacion(
+    bruto: Float,
+    target: Float,
+): Boolean = target != bruto
+
 /** CR-079 (v9, umbral de v11): la franja del asa lleva fondo SOLO cuando
  * el panel queda cercano/sobre el 100 % (misma condición del ajuste
  * automático); por debajo, transparente (se ve únicamente el asa,
@@ -177,13 +189,39 @@ internal class MetricsSliderController(
                 return@post
             }
             if (slider.height > 0 && handle.height > 0) {
-                sheet.translationY = peekTranslation().toFloat()
-                aplicarFondoFranja(sheet.translationY)
+                // CR-079 v12: el plegado inicial ANIMA en vez de saltar —
+                // la hoja nace en 0 y desliza suave hasta el asa.
+                val tope = peekTranslation().toFloat()
+                sheet.animate()
+                    .translationY(tope)
+                    .setDuration(ANIMACION_PANEL_MS)
+                    .start()
+                aplicarFondoFranja(tope)
                 plegadoPendiente = false
             } else {
                 aplicarPlegadoCuandoMedido()
             }
         }
+    }
+
+    /** CR-079 v12: traslación del panel — el drag a mano queda pegado al
+     * dedo (sin animación) y SOLO el snap del ajuste automático desliza
+     * suave el corto plazo; si el dedo sigue moviéndose la siguiente MOVE
+     * cancela la animación (el dedo manda, v6). */
+    private fun aplicarTraslacion(
+        bruto: Float,
+        target: Float,
+    ) {
+        val animator = sheet.animate()
+        if (!panelConAnimacion(bruto, target)) {
+            animator.cancel()
+            sheet.translationY = target
+            return
+        }
+        animator
+            .translationY(target)
+            .setDuration(ANIMACION_PANEL_MS)
+            .start()
     }
 
     /** CR-079 v9: la franja del asa deja de ser transparente cuando el
@@ -234,15 +272,10 @@ internal class MetricsSliderController(
                 // CR-079 v10 (umbral v11): en el sentido inverso (cierre),
                 // cuando el panel lleva recorrido ≥ 70 % del plegado se
                 // ajusta SOLO a la posición inicial (plegado completo).
+                val bruto = (translationAtDown + dy).coerceIn(0f, tope)
                 val target =
-                    pliegueAutomaticoAlFinal(
-                        ajusteAutomaticoAlFinal(
-                            (translationAtDown + dy).coerceIn(0f, tope),
-                            tope,
-                        ),
-                        tope,
-                    )
-                sheet.translationY = target
+                    pliegueAutomaticoAlFinal(ajusteAutomaticoAlFinal(bruto, tope), tope)
+                aplicarTraslacion(bruto, target)
                 aplicarFondoFranja(target)
                 Log.d(TAG_LOG, "drag dy=$dy -> t=$target (tope=$tope)")
             }

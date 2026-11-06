@@ -125,6 +125,24 @@
   `host_metrics`, los gauges PC muestran «—» y hay que alternar a
   Gamepad o usar el server release vigente.
 
+## 6a. v2 (2026-11-05, AC-4 pendiente — botones táctiles con tokens)
+
+- El AC-4 del CR-077 («aplica los tokens de DESIGN.md… a la actividad
+  principal, drawer, botones, chip HUD y gauges») dejó fuera el RENDER
+  TÁCTIL de los controles del gamepad (`ProfileSurfaceRenderer` + sus
+  drawables, autoridad SPEC-008); el owner pide ahora «el diseño visual
+  de los botones táctiles conforme a DESIGN.md».
+- Aplicado (v2): plato/halo `bg_control.xml` = Charcoal Panel
+  (`design_charcoal_panel`) con hairline Slate Edge de 1 dp («1px Slate
+  Edge borders around dark panes»); caras `touch_button.xml` (normal y
+  flechas del D-pad) y `stick_thumb.xml` = blanco 92 %
+  (`design_white_92` nuevo, rgba(255,255,255,0.92) del Header/Hero
+  White Conversion Button), presionado = Cloud White (feedback más
+  luminoso); etiquetas y chevrons del D-pad = Charcoal Panel (dark text
+  on white controls) con la familia **Inter** (`font/inter.xml` vía
+  `ResourcesCompat`, fallback sans-serif); sin cambios de comportamiento
+  ni hit-areas (CR-071/CR-072 intactos).
+
 ## 7. Files touched
 
 - `android/app/src/main/kotlin/com/twinpad/android/app/ui/{PairingActivity,WaitingGaugePanel,DeviceMetricsSampler,SettingsDrawerController,AndroidSettingsStore,GaugeView}.kt`
@@ -132,6 +150,7 @@
 - `android/app/src/main/res/values/{colors,strings,themes}.xml`
 - `android/app/src/main/res/layout/{activity_pairing,drawer_settings}.xml`
 - `android/app/src/main/res/drawable/bg_hud_chip.xml`
+- v2: `android/app/src/main/kotlin/com/twinpad/android/app/ui/ProfileSurfaceRenderer.kt` + `res/drawable/{bg_control,touch_button,stick_thumb}.xml` + `res/values/colors.xml` (`design_white_92`)
 - `android/app/src/main/res/font/{inter.xml,inter_variable.ttf}`
 - `android/font_licenses/Inter-OFL.txt`
 - `android/app/src/test/.../ui/{DeviceMetricsSamplerTest,AndroidSettingsStoreTest}.kt`
@@ -147,3 +166,14 @@
 - TEST-0158 (`DeviceMetricsSamplerTest`) restaurado y verde;
   `AndroidSettingsStoreTest` (casos extra en la suite TEST-069) cubre
   la persistencia round-trip de `metrics_source_host`.
+- v2 (2026-11-05): gate gradle completo (`testDebugUnitTest` + ktlint +
+  detekt + `assembleDebug`) BUILD SUCCESSFUL exit 0 y APK reinstalada;
+  verificación visual en banco (caras blancas 92 % + label Charcoal con
+  Inter, platos Charcoal con hairline Slate Edge) vuelve al owner.
+
+## 9. History
+
+| Version | Date | Author | CHANGE |
+|---|---|---|---|
+| 1.0.0 | 2026-11-05 | Buffy (agente) | Tokens de DESIGN.md en la app + alternador PC/Gamepad de los gauges + fix del medidor congelado |
+| 2.0.0 | 2026-11-05 | Buffy (agente) | AC-4 hecho completo: render táctil (`ProfileSurfaceRenderer`, `bg_control`, `touch_button`, `stick_thumb`) con tokens de Featurebase — platos Charcoal/Slate Edge, caras blancas 92 %, labels + chevrons Charcoal en Inter |

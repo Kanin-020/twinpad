@@ -1,5 +1,6 @@
 package com.twinpad.android.app.ui
 
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.twinpad.android.app.R
@@ -8,14 +9,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Techo del arco del gauge FPS de la ventana de espera (CR-076 v2: 60). */
-private const val GAUGE_MAX_FPS = 60f
-
 /** Total del arco de porcentajes (CR-076: todos los gauges usan 0..100). */
 private const val GAUGE_MAX_PERCENT = 100f
 
 /** Decimal único del GB de RAM (formato del gauge, PC y Gamepad). */
 private const val GB_TEXT_FORMAT = "%.1f GB"
+
+/** CR-085: sufijo del número de temperatura de las cards (°C). */
+private const val TEMP_SUFFIX = "°C"
+
+/** CR-085: sufijo del porcentaje del ventilador en la card FAN. */
+private const val FAN_SUFFIX = "%"
 
 /** FPS con una forma entera para el texto del gauge. */
 private const val FPS_TEXT_FORMAT = "%.0f"
@@ -54,10 +58,9 @@ internal class WaitingGaugePanel(
     private val ensureLabels: () -> Unit = {
         if (!labelsInitialized) {
             mapOf(
-                R.id.gauge_cpu to R.string.metrics_cpu,
                 R.id.gauge_gpu to R.string.metrics_gpu,
+                R.id.gauge_cpu to R.string.metrics_cpu,
                 R.id.gauge_ram to R.string.metrics_ram,
-                R.id.gauge_fps to R.string.metrics_fps,
             ).forEach { (id, label) ->
                 gaugeOf(activity, id).label = activity.getString(label)
             }
@@ -80,16 +83,11 @@ internal class WaitingGaugePanel(
             ramGauge.progress = metrics.ramUsedMb.toFloat() / metrics.ramTotalMb
             ramGauge.valueText = GB_TEXT_FORMAT.format(metrics.ramUsedMb.toDouble() / MB_PER_GB)
         }
-        val fpsGauge = gaugeOf(activity, R.id.gauge_fps)
-        val fps = metrics?.gameFps
-        if (fps == null) {
-            fpsGauge.hasValue = false
-            fpsGauge.valueText = NO_DATA_TEXT
-        } else {
-            fpsGauge.hasValue = true
-            fpsGauge.progress = (fps / GAUGE_MAX_FPS).coerceAtMost(1f)
-            fpsGauge.valueText = FPS_TEXT_FORMAT.format(fps)
-        }
+        renderFps(metrics?.gameFps)
+        // CR-085: tarjetas de stats — solo el origen PC trae hwmon.
+        renderStat(R.id.txt_cpu_temp, metrics?.cpuTempC, TEMP_SUFFIX)
+        renderStat(R.id.txt_gpu_temp, metrics?.gpuTempC, TEMP_SUFFIX)
+        renderStat(R.id.txt_fan, metrics?.fanPercent, FAN_SUFFIX)
     }
 
     /** CR-077: gauges del teléfono Gamepad — las lecturas pesadas van
@@ -106,15 +104,11 @@ internal class WaitingGaugePanel(
             ramGauge.hasValue = true
             ramGauge.progress = snapshot.ram.usedPercent / GAUGE_MAX_PERCENT
             ramGauge.valueText = snapshot.ram.usedGbText
-            val fpsGauge = gaugeOf(activity, R.id.gauge_fps)
-            if (snapshot.fps <= 0.0) {
-                fpsGauge.hasValue = false
-                fpsGauge.valueText = NO_DATA_TEXT
-            } else {
-                fpsGauge.hasValue = true
-                fpsGauge.progress = (snapshot.fps.toFloat() / GAUGE_MAX_FPS).coerceAtMost(1f)
-                fpsGauge.valueText = FPS_TEXT_FORMAT.format(snapshot.fps)
-            }
+            renderFps(snapshot.fps.takeIf { it > 0.0 }?.toFloat())
+            // CR-085: el teléfono no expone hwmon comparable — tarjetas «—».
+            renderStat(R.id.txt_cpu_temp, null, TEMP_SUFFIX)
+            renderStat(R.id.txt_gpu_temp, null, TEMP_SUFFIX)
+            renderStat(R.id.txt_fan, null, FAN_SUFFIX)
         }
     }
 
@@ -123,6 +117,25 @@ internal class WaitingGaugePanel(
     fun stopDeviceMonitor() {
         deviceFpsMonitor?.stop()
         deviceFpsMonitor = null
+    }
+
+    /** CR-085: FPS de la tarjeta grande a la izquierda (texto sin anillo;
+     * «—» sin juego o sin frames frescos). */
+    private fun renderFps(fps: Float?) {
+        val fpsText: TextView = activity.findViewById(R.id.txt_fps_value)
+        fpsText.text =
+            fps?.let { value -> FPS_TEXT_FORMAT.format(value) } ?: NO_DATA_TEXT
+    }
+
+    /** CR-085: valor de una tarjeta de stats con sufijo fijo (°C/%);
+     * «—» sin lectura del hwmon (nunca inventos, CR-076). */
+    private fun renderStat(
+        id: Int,
+        value: Int?,
+        suffix: String,
+    ) {
+        val stat: TextView = activity.findViewById(id)
+        stat.text = value?.let { current -> "$current$suffix" } ?: NO_DATA_TEXT
     }
 
     /** Porcentajes compartidos de PC/Gamepad; «—» sin dato. */

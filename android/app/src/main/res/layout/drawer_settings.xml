@@ -121,6 +121,16 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_show_fps" />
 
+        <!-- CR-079 v12 (pedido del owner): el slider de métricas es una
+             fila de la sección HUD (elemento de HUD sobre el stream), no de
+             Debug — la ventana de espera aparece como hoja arrastrable
+             sobre el video (nace abierta); desmarcado no se muestra. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_metrics_slider"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_metrics_slider" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -201,15 +211,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_show_advanced_metrics" />
-
-        <!-- CR-079: slider de gauges durante la sesión — la ventana de
-             espera aparece como hoja arrastrable sobre el video (nace
-             abierta); desmarcado no se muestra. -->
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switch_metrics_slider"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_metrics_slider" />
 
         <TextView
             android:layout_width="wrap_content"

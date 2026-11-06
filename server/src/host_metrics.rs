@@ -28,6 +28,12 @@ const FPS_MAX: f32 = 240.0;
 /// kB por MB al pasar de `/proc/meminfo` (valores en kB según Linux).
 const KIB_PER_MIB: f64 = 1024.0;
 
+/// Temperaturas del hwmon en mºC (miligrados por grado, CR-085).
+const MILLI_C_PER_C: f64 = 1000.0;
+
+/// Techo PCI del pwm cuando el driver no publica `pwmN_max` (CR-085).
+const PWM_MAX: u8 = 255;
+
 /// Muestra de consumo del host ya validada (CR-076 v2).
 #[derive(Clone, PartialEq, Debug)]
 pub struct HostMetrics {
@@ -36,6 +42,60 @@ pub struct HostMetrics {
     pub ram_used_mb: u32,
     pub ram_total_mb: u32,
     pub game_fps: Option<f32>,
+    /// °C enteros del chip de CPU del hwmon (CR-085); `None` sin sensor.
+    pub cpu_temp_c: Option<u8>,
+    /// °C enteros del chip de GPU del hwmon (CR-085); `None` sin sensor.
+    pub gpu_temp_c: Option<u8>,
+    /// % del ventilador del GPU (`pwm1/pwm1_max`, CR-085); `None` sin pwm.
+    pub fan_percent: Option<u8>,
+}
+
+/// Clase de chip hwmon para clasificar temps y ventilador (CR-085).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HwmonChipClass {
+    /// Chip de CPU (`k10temp`/`zenpower` AMD, `coretemp` Intel).
+    Cpu,
+    /// Chip de GPU (`amdgpu`, y por si el hardware cambia `nvidia`/
+    /// `nouveau`) — dueño de la temp de GPU y del pwm del ventilador.
+    Gpu,
+}
+
+/// Clasificación del chip hwmon por su `name`; `None` sin clase (chip
+/// ajeno: nvme, acpitz… no alimentan los gauges).
+pub fn hwmon_chip_class(name: &str) -> Option<HwmonChipClass> {
+    match name.trim() {
+        "k10temp" | "zenpower" | "coretemp" => Some(HwmonChipClass::Cpu),
+        "amdgpu" | "nouveau" | "nvidia" => Some(HwmonChipClass::Gpu),
+        _ => None,
+    }
+}
+
+/// Parseo de un `tempN_input` en mºC («58000») → °C entero redondeado;
+/// `None` con ruido o valor fuera de 0..255.
+pub fn parse_temp_input(text: &str) -> Option<u8> {
+    let milli = text.trim().parse::<f64>().ok()?;
+    let celsius = (milli / MILLI_C_PER_C).round();
+    (0.0..=f64::from(u8::MAX))
+        .contains(&celsius)
+        .then_some(celsius as u8)
+}
+
+/// % del ventilador desde `pwmN` y su `pwmN_max` (o 255, techo PCI cuando
+/// el driver no publica el máximo o el archivo vale ≤ 0); `None` con pwm
+/// fuera de 0..max o con ruido.
+pub fn parse_pwm_percent(pwm_text: &str, max_text: Option<&str>) -> Option<u8> {
+    let pwm = pwm_text.trim().parse::<f32>().ok()?;
+    let max = max_text
+        .and_then(|text| text.trim().parse::<f32>().ok())
+        .filter(|max| *max > 0.0)
+        .unwrap_or(PWM_MAX as f32);
+    if !(0.0..=max).contains(&pwm) {
+        return None;
+    }
+    let percent = (pwm * f32::from(PERCENT_MAX) / max).round();
+    (0.0..=f32::from(PERCENT_MAX))
+        .contains(&percent)
+        .then_some(percent as u8)
 }
 
 /// Parseo de la primera línea de `/proc/stat` («cpu u n i iow …»):
@@ -90,7 +150,8 @@ pub fn parse_gpu_busy(line: &str) -> Option<u8> {
     Some(percent)
 }
 
-/// Rutas sysfs conocidas del busy de GPU del host (primera que exista).
+/// Rutas sysfs conocidas del busy de GPU del host (fallback fijo tras el
+/// escaneo de tarjetas; CR-085 v2).
 const GPU_BUSY_PATHS: [&str; 2] = [
     "/sys/class/drm/card0/device/gpu_busy_percent",
     "/sys/kernel/gpu/gpu_busy",
@@ -111,13 +172,104 @@ fn cpu_percent(prev: (u64, u64), now: (u64, u64)) -> Option<u8> {
     Some(((d_busy * u64::from(PERCENT_MAX)) / d_total) as u8)
 }
 
-fn read_gpu_busy() -> Option<u8> {
-    GPU_BUSY_PATHS.iter().find_map(|path| {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| parse_gpu_busy(&text))
-    })
+/// Escaneo de `gpu_busy_percent` en TODAS las tarjetas del drm_root
+/// (CR-085 v2): el servidor puede correr con la GPU del stream como
+/// `card1`/`card2` — el busy fijo de `card0` dejaba la GPU «—» en banco.
+/// Devuelve las rutas existentes en orden de tarjeta leída.
+pub fn scan_gpu_busy_paths(drm_root: &str) -> Option<Vec<String>> {
+    const BUSY_FILE: &str = "device/gpu_busy_percent";
+    let cards = std::fs::read_dir(drm_root).ok()?;
+    let mut paths = Vec::new();
+    for card in cards.flatten() {
+        let name = card.file_name();
+        if !name.to_string_lossy().starts_with("card") {
+            continue;
+        }
+        let busy = card.path().join(BUSY_FILE);
+        if busy.is_file() {
+            paths.push(busy.to_string_lossy().to_string());
+        }
+    }
+    paths.retain(|path| std::fs::read_to_string(path).is_ok());
+    (!paths.is_empty()).then_some(paths)
 }
+
+fn read_gpu_busy() -> Option<u8> {
+    let scanned = scan_gpu_busy_paths("/sys/class/drm").unwrap_or_default();
+    GPU_BUSY_PATHS
+        .iter()
+        .copied()
+        .map(std::borrow::ToOwned::to_owned)
+        .chain(scanned)
+        .find_map(|path| {
+            std::fs::read_to_string(path)
+                .ok()
+                .and_then(|text| parse_gpu_busy(&text))
+        })
+}
+
+/// Lecturas del hwmon del host ya agregadas por chip (CR-085).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+struct HwmonReadings {
+    cpu_temp_c: Option<u8>,
+    gpu_temp_c: Option<u8>,
+    fan_percent: Option<u8>,
+}
+
+/// Lecturas del hwmon del host (CR-085): recorre `/sys/class/hwmon`,
+/// clasifica los chips conocidos y agrega el máx de sus `temp*_input`; el
+/// chip de GPU además alimenta el pwm del ventilador. Sin hwmon (host sin
+/// sensores) degrade a `Default` con los tres campos en `None` — sin
+/// datos inventados, mismo patrón del busy de GPU (CR-076 v2).
+fn read_hwmon() -> HwmonReadings {
+    let Ok(chips) = std::fs::read_dir(HWMON_ROOT) else {
+        return HwmonReadings::default();
+    };
+    let mut readings = HwmonReadings::default();
+    for chip in chips.flatten() {
+        let class = std::fs::read_to_string(chip.path().join("name"))
+            .ok()
+            .and_then(|name| hwmon_chip_class(&name));
+        let Some(class) = class else { continue };
+        let Ok(sensors) = std::fs::read_dir(chip.path()) else {
+            continue;
+        };
+        for sensor in sensors.flatten() {
+            let name = sensor.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with("temp") || !name.ends_with("_input") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(sensor.path()) else {
+                continue;
+            };
+            if let Some(celsius) = parse_temp_input(&text) {
+                let slot = match class {
+                    HwmonChipClass::Cpu => &mut readings.cpu_temp_c,
+                    HwmonChipClass::Gpu => &mut readings.gpu_temp_c,
+                };
+                *slot = Some(slot.map_or(celsius, |prev| prev.max(celsius)));
+            }
+        }
+        if class == HwmonChipClass::Gpu {
+            if let Some(percent) = read_fan_percent(&chip.path()) {
+                readings.fan_percent = Some(percent);
+            }
+        }
+    }
+    readings
+}
+
+/// % del ventilador de un chip: `pwmN` sobre `pwmN_max` (o el techo PCI
+/// 255 cuando el driver no publica el máximo; CR-085).
+fn read_fan_percent(chip: &std::path::Path) -> Option<u8> {
+    let pwm = std::fs::read_to_string(chip.join("pwm1")).ok()?;
+    let max = std::fs::read_to_string(chip.join("pwm1_max")).ok();
+    parse_pwm_percent(&pwm, max.as_deref())
+}
+
+/// Raíz del hwmon del host (CR-085).
+const HWMON_ROOT: &str = "/sys/class/hwmon";
 
 /// Muestreos del host con el previo de CPU a mano (CR-076 v2).
 pub struct HostMetricsSampler {
@@ -142,12 +294,18 @@ impl HostMetricsSampler {
         self.prev = Some(now);
         let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
         let (ram_used_mb, ram_total_mb) = parse_meminfo(&meminfo)?;
-        cpu_percent.map(|cpu_percent| HostMetrics {
-            cpu_percent,
-            gpu_percent: read_gpu_busy(),
-            ram_used_mb,
-            ram_total_mb,
-            game_fps: None, // el emisor rellena el fps del juego.
+        cpu_percent.map(|cpu_percent| {
+            let hwmon = read_hwmon();
+            HostMetrics {
+                cpu_percent,
+                gpu_percent: read_gpu_busy(),
+                ram_used_mb,
+                ram_total_mb,
+                game_fps: None, // el emisor rellena el fps del juego.
+                cpu_temp_c: hwmon.cpu_temp_c,
+                gpu_temp_c: hwmon.gpu_temp_c,
+                fan_percent: hwmon.fan_percent,
+            }
         })
     }
 }
@@ -199,6 +357,9 @@ pub fn host_metrics_line(sample: &HostMetrics) -> Option<String> {
         ram_used_mb: sample.ram_used_mb,
         ram_total_mb: sample.ram_total_mb,
         game_fps: sample.game_fps,
+        cpu_temp_c: sample.cpu_temp_c,
+        gpu_temp_c: sample.gpu_temp_c,
+        fan_percent: sample.fan_percent,
     }
     .encode()
     .ok()
@@ -314,6 +475,74 @@ mod tests {
             assert!(second.ram_total_mb > 0);
             assert!(second.ram_total_mb >= second.ram_used_mb);
         }
+    }
+
+    // TEST-0175 (server, CR-085): clasificación de chips y parsers puros
+    // del hwmon — temps mºC→°C, pwm→% con techo PCI y clases de chip.
+    #[test]
+    fn hwmon_chip_and_temperature_parsers_follow_the_wire_contract() {
+        assert_eq!(hwmon_chip_class("amdgpu"), Some(HwmonChipClass::Gpu));
+        assert_eq!(hwmon_chip_class("k10temp"), Some(HwmonChipClass::Cpu));
+        assert_eq!(hwmon_chip_class("coretemp\n"), Some(HwmonChipClass::Cpu));
+        assert_eq!(hwmon_chip_class("nvme"), None);
+
+        assert_eq!(parse_temp_input("58000"), Some(58));
+        assert_eq!(parse_temp_input(" 45500\n"), Some(46));
+        assert_eq!(parse_temp_input("-1000"), None);
+        assert_eq!(parse_temp_input("999999"), None);
+        assert_eq!(parse_temp_input("ruido"), None);
+
+        assert_eq!(parse_pwm_percent("110", Some("255")), Some(43));
+        assert_eq!(parse_pwm_percent("0", Some("255")), Some(0));
+        assert_eq!(parse_pwm_percent("255", None), Some(100));
+        assert_eq!(parse_pwm_percent("64", None), Some(25));
+        assert_eq!(parse_pwm_percent("300", None), None);
+        assert_eq!(parse_pwm_percent("abc", None), None);
+        // `pwm1_max` inválido (0) también cae al techo PCI por diseño.
+        assert_eq!(parse_pwm_percent("100", Some("0")), Some(39));
+        assert_eq!(parse_pwm_percent("100", Some("basura")), Some(39));
+    }
+
+    // TEST-0175 (CR-085): lectura REAL del hwmon del host, tolerante —
+    // el fan presente queda en 0..ù100 (clamp del parser); sin hwmon (host
+    // sin sensores o CI ajeno) los tres campos caen en `None` sin inventar
+    // nada. Las temps (u8 por contrato del wire) no necesitan un techo
+    // extra en el assert — `parse_temp_input` ya los acota a 0..ù255.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn hwmon_readings_follow_the_gauge_ranges() {
+        let readings = read_hwmon();
+        if let Some(fan) = readings.fan_percent {
+            assert!(fan <= 100);
+        }
+    }
+
+    // TEST-0178 (server, CR-085 v2): busy de GPU en CUALQUIER tarjeta —
+    // el escaneo del árbol drm encuentra las rutas legibles de
+    // `gpu_busy_percent` de cada tarjeta (ágil con la GPU del stream que
+    // no siempre es card0) y cae a los fallbacks fijos en `read_gpu_busy`.
+    #[test]
+    fn gpu_busy_scan_finds_busy_on_any_card() {
+        let root =
+            std::env::temp_dir().join(format!("twinpad_gpu_scan_test_{}", std::process::id()));
+        assert!(std::fs::create_dir_all(root.join("card0/device")).is_ok());
+        assert!(std::fs::create_dir_all(root.join("card1/device")).is_ok());
+        assert!(std::fs::write(root.join("card0/device/otro"), "ruido").is_ok());
+        assert!(std::fs::create_dir_all(root.join("cardN/device")).is_ok());
+        assert!(std::fs::write(root.join("cardN/device/gpu_busy_percent"), "37 %\n").is_ok());
+        let paths = scan_gpu_busy_paths(root.to_str().unwrap());
+        assert_eq!(
+            paths,
+            Some(Vec::from([format!(
+                "{}/cardN/device/gpu_busy_percent",
+                root.to_str().unwrap(),
+            )]))
+        );
+        assert_eq!(
+            parse_gpu_busy(&std::fs::read_to_string(&paths.unwrap()[0]).unwrap()),
+            Some(37)
+        );
+        std::fs::remove_dir_all(&root).ok();
     }
 
     // TEST-0159 (server, CR-078): el sampler EMITE en el segundo tick —

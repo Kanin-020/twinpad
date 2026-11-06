@@ -2,6 +2,7 @@ package com.twinpad.android.app.ui
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
@@ -14,14 +15,22 @@ import com.twinpad.android.app.R
  * anillo de progreso con el valor al centro y la etiqueta debajo. La medición
  * del HOST llega por `host_metrics` del server (CR-076 v2); esta View solo
  * pinta progreso 0..1, texto y etiqueta. Cambios de contenido invalidan el
- * dibujo directamente.
+ * dibujo directamente. CR-085 v2: el anillo lleva COLOR POR GAUGE vía el
+ * atributo XML `ringColor` (GPU azul, CPU magenta, RAM verde — los anillos
+ * dejan de ser grises): la pista de fondo es el mismo color atenuado y el
+ * dato ausente sigue en gris neutrinal con el valor «—».
  */
 class GaugeView
     @JvmOverloads
     constructor(
         context: Context,
         attrs: AttributeSet? = null,
-    ) : View(context, attrs) {
+        defStyleAttr: Int = 0,
+    ) : View(context, attrs, defStyleAttr) {
+        /** CR-085 v2: color del anillo del gauge (arco y pista atenuada);
+         * viene del XML por gauge y por defecto es el acento violeta. */
+        private var ringColor: Int = ContextCompat.getColor(context, R.color.metrics_accent)
+
         /** Progreso del arco en 0..1 (valores fuera de rango quedan topeados). */
         var progress: Float = 0f
             set(value) {
@@ -53,13 +62,13 @@ class GaugeView
         private val ringBackgroundPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                color = ContextCompat.getColor(context, R.color.design_slate_edge)
+                color = dimmed(ringColor)
             }
 
         private val ringProgressPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                color = ContextCompat.getColor(context, R.color.metrics_accent)
+                color = ringColor
             }
 
         private val valuePaint =
@@ -75,6 +84,20 @@ class GaugeView
             }
 
         private val arcBounds = RectF()
+
+        init {
+            context.theme
+                .obtainStyledAttributes(attrs, R.styleable.GaugeView, defStyleAttr, 0)
+                .apply {
+                    try {
+                        ringColor = getColor(R.styleable.GaugeView_ringColor, ringColor)
+                    } finally {
+                        recycle()
+                    }
+                }
+            ringBackgroundPaint.color = dimmed(ringColor)
+            ringProgressPaint.color = ringColor
+        }
 
         override fun onSizeChanged(
             w: Int,
@@ -100,7 +123,14 @@ class GaugeView
             val radius = minOf(cx, cy) - ringProgressPaint.strokeWidth
             arcBounds.set(cx - radius, cy - radius, cx + radius, cy + radius)
 
-            val ringColor = if (hasValue) ringProgressPaint.color else RING_INACTIVE_COLOR
+            // CR-085 v2: pista del color del gauge cuando hay dato, gris
+            // neutrinal cuando no lo hay («sin dato» sigue atenuado).
+            ringBackgroundPaint.color =
+                if (hasValue) {
+                    dimmed(ringColor)
+                } else {
+                    RING_INACTIVE_COLOR
+                }
             ringProgressPaint.color = ringColor
             canvas.drawArc(arcBounds, 0f, SWEEP, false, ringBackgroundPaint)
             if (hasValue) {
@@ -111,21 +141,37 @@ class GaugeView
             canvas.drawText(label, cx, height - labelPaint.textSize * LABEL_BASELINE_RATIO, labelPaint)
         }
 
+        /** CR-085 v2: color del gauge atenuado para la pista del anillo. */
+        private fun dimmed(color: Int): Int {
+            return Color.argb(
+                TRACK_ALPHA,
+                Color.red(color),
+                Color.green(color),
+                Color.blue(color),
+            )
+        }
+
         private companion object {
             /** La referencia arranca el arco arriba y avanza en sentido horario. */
             const val START_ANGLE = -90f
             const val SWEEP = 360f
 
             /** Color de fondo de los anillos cuando el gauge no tiene dato.
-             * CR-077: Quiet Slate de DESIGN.md atenudado sobre el Void Canvas. */
+             * CR-077: Quiet Slate de DESIGN.md atenuado sobre el Void Canvas. */
             const val RING_INACTIVE_COLOR = 0x558F94A6.toInt()
+
+            /** Alpha de la pista del anillo (CR-085 v2: 20 % del color). */
+            const val TRACK_ALPHA = 0x33
 
             /** Métricas del dibujo (proporciones del ancho del gauge). */
             const val STROKE_WIDTH_RATIO = 0.08f
             const val STROKE_MIN_DP = 4f
             const val STROKE_MAX_DP = 8f
-            const val VALUE_TEXT_RATIO = 0.2f
-            const val LABEL_TEXT_DP = 10f
+
+            /** CR-085 v2: letra DENTRO del anillo más pequeña (0.2 → 0.16
+             * del ancho en el valor, y etiqueta 10 → 9 dp). */
+            const val VALUE_TEXT_RATIO = 0.16f
+            const val LABEL_TEXT_DP = 9f
             const val CENTER_RATIO = 2.2f
             const val VALUE_BASELINE_RATIO = 0.35f
             const val LABEL_BASELINE_RATIO = 0.3f

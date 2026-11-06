@@ -273,6 +273,19 @@ pub enum GameMsg {
         /// hay juego vivo seleccionado o frames frescos.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         game_fps: Option<f32>,
+        /// Temperatura del chip de CPU del host en °C enteros del hwmon
+        /// (`k10temp`/`zenpower`/`coretemp`); ausente si el host no lo
+        /// expone (CR-085).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cpu_temp_c: Option<u8>,
+        /// Temperatura del chip de GPU del host en °C int (`amdgpu` u
+        /// otro hwmon gráfico); ausente si el host no lo expone (CR-085).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gpu_temp_c: Option<u8>,
+        /// % del ventilador del chip de GPU del host (`pwm1/pwm1_max`,
+        /// 0–100); ausente si el GPU no expone pwm (CR-085).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fan_percent: Option<u8>,
     },
 }
 
@@ -438,18 +451,23 @@ impl GameMsg {
             }
             // CR-076 v2: consumo del HOST para los gauges de la ventana de
             // espera; porcentajes 0–100, RAM coherente y fps no negativo.
+            // CR-085: fan del GPU 0–100 (temps son u8, sin techo extra).
             GameMsg::HostMetrics {
                 cpu_percent,
                 gpu_percent,
                 ram_used_mb,
                 ram_total_mb,
                 game_fps,
+                cpu_temp_c: _,
+                gpu_temp_c: _,
+                fan_percent,
             } => {
                 if *cpu_percent > HOST_METRICS_PERCENT_MAX
                     || gpu_percent.is_some_and(|percent| percent > HOST_METRICS_PERCENT_MAX)
                     || *ram_total_mb == 0
                     || *ram_used_mb > *ram_total_mb
                     || game_fps.is_some_and(|fps| fps < 0.0)
+                    || fan_percent.is_some_and(|percent| percent > HOST_METRICS_PERCENT_MAX)
                 {
                     return Err(PairError::MalformedMessage);
                 }
@@ -1230,6 +1248,9 @@ mod tests {
             ram_used_mb: 10_737,
             ram_total_mb: 15_729,
             game_fps: Some(59.8),
+            cpu_temp_c: Some(58),
+            gpu_temp_c: Some(64),
+            fan_percent: Some(37),
         };
         let line = msg.encode().unwrap();
         assert_eq!(GameMsg::decode(&line).unwrap(), msg);
@@ -1241,6 +1262,9 @@ mod tests {
             ram_used_mb: 0,
             ram_total_mb: 1,
             game_fps: None,
+            cpu_temp_c: None,
+            gpu_temp_c: None,
+            fan_percent: None,
         };
         assert_eq!(GameMsg::decode(&msg.encode().unwrap()).unwrap(), msg);
 
@@ -1289,6 +1313,54 @@ mod tests {
                 "\"ram_used_mb\":0,\"ram_total_mb\":1}"
             )),
             Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-0176 — CR-085: temps CPU/GPU y fan del GPU vendor omitibles;
+    // fan sobre 100 rechazado (E4) y sin campos el wire sigue idéntico.
+    #[test]
+    fn host_metrics_temp_and_fan_follow_the_wire_contract() {
+        let msg = GameMsg::HostMetrics {
+            cpu_percent: 12,
+            gpu_percent: None,
+            ram_used_mb: 512,
+            ram_total_mb: 15_729,
+            game_fps: None,
+            cpu_temp_c: Some(58),
+            gpu_temp_c: Some(64),
+            fan_percent: Some(37),
+        };
+        let line = msg.encode().unwrap();
+        assert!(line.contains("cpu_temp_c") && line.contains("fan_percent"));
+        assert_eq!(GameMsg::decode(&line).unwrap(), msg);
+
+        // fan sobre 100: E4.
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":1,\"fan_percent\":101}"
+            )),
+            Err(PairError::MalformedMessage)
+        );
+
+        // Sin los campos nuevos (host de la v1): el decode sigue válido
+        // (compatibilidad con el CR-076 v2).
+        assert_eq!(
+            GameMsg::decode(concat!(
+                "{\"type\":\"host_metrics\",\"cpu_percent\":5,",
+                "\"ram_used_mb\":0,\"ram_total_mb\":1}"
+            ))
+            .unwrap(),
+            GameMsg::HostMetrics {
+                cpu_percent: 5,
+                gpu_percent: None,
+                ram_used_mb: 0,
+                ram_total_mb: 1,
+                game_fps: None,
+                cpu_temp_c: None,
+                gpu_temp_c: None,
+                fan_percent: None,
+            }
         );
     }
 

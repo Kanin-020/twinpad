@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CR-085 v2: atributos del GaugeView — color del anillo por gauge
+     (GPU azul, CPU magenta, RAM verde, como la referencia AYN Thor). -->
+<resources>
+    <declare-styleable name="GaugeView">
+        <attr name="ringColor" format="color" />
+    </declare-styleable>
+</resources>

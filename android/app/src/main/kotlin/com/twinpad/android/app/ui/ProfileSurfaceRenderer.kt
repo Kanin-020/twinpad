@@ -32,12 +32,23 @@ internal class ProfileSurfaceRenderer(context: Context) {
         context.resources.getDrawable(com.twinpad.android.app.R.drawable.bg_control, context.theme).mutate()
     private val stickThumbDrawable =
         context.resources.getDrawable(com.twinpad.android.app.R.drawable.stick_thumb, context.theme).mutate()
+
+    /** CR-077 v2: color del texto/chevron sobre cara clara — Charcoal Panel
+     * de DESIGN.md («dark text on white controls»); Inter para las etiquetas. */
+    private val labelColor =
+        androidx.core.content.ContextCompat.getColor(
+            context,
+            com.twinpad.android.app.R.color.design_charcoal_panel,
+        )
+    private val labelTypeface: android.graphics.Typeface =
+        androidx.core.content.res.ResourcesCompat.getFont(context, com.twinpad.android.app.R.font.inter)
+            ?: DEFAULT_LABEL_TYPEFACE
     private val textPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFFFFFFF.toInt()
             textSize = TEXT_SIZE_SP * context.resources.displayMetrics.density
             textAlign = Paint.Align.CENTER
-            typeface = DEFAULT_LABEL_TYPEFACE
+            typeface = labelTypeface
         }
     private val chevronPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -77,7 +88,7 @@ internal class ProfileSurfaceRenderer(context: Context) {
             // gris oscuro, letra normal); se autoescala con el tamaño.
             textPaint.textSize = minOf(control.w * width, control.h * height) * LABEL_SCALE
             textPaint.alpha = alpha
-            textPaint.color = GAMEPAD_LABEL_DARK
+            textPaint.color = labelColor
             canvas.drawText(
                 control.label,
                 labelX(control, width),
@@ -215,7 +226,7 @@ internal class ProfileSurfaceRenderer(context: Context) {
         val wingY = dx
         val wing = radius * CHEVRON_WING
         chevronPaint.strokeWidth = radius * CHEVRON_STROKE
-        chevronPaint.color = GAMEPAD_LABEL_DARK
+        chevronPaint.color = labelColor
         canvas.drawLines(
             floatArrayOf(
                 backX + wingX * wing,
@@ -340,7 +351,6 @@ private const val CHEVRON_STROKE = 0.22f
 
 private const val JOYSTICK_KNOB_SCALE = 0.72f
 private const val BUTTON_HALO_RADIUS = 0.72f
-private const val GAMEPAD_LABEL_DARK = 0xFF4D4D4D.toInt()
 
 /** Altura de la etiqueta como fracción del lado menor del control (refs). */
 private const val LABEL_SCALE = 0.44f

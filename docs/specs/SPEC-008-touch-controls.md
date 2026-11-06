@@ -23,6 +23,15 @@ Fija el comportamiento observable de la superficie de controles táctiles del te
 - **Perfil**: el conjunto de controles + posiciones + asignaciones de un juego, guardado en el dispositivo.
 - Ver CTX §8: Input táctil.
 
+> **Nota (CR-077 v2, update pendiente — 2026-11-05):** el render de los
+> controles táctiles usa los tokens de `docs/design/DESIGN.md`
+> (Featurebase dark): plato/base Charcoal Panel con hairline Slate Edge de
+> 1 dp (`bg_control.xml`), caras de botón/flechas del D-pad y pulgar del
+> stick en blanco 92 % (`touch_button.xml`/`stick_thumb.xml`, token
+> `design_white_92`, presionado Cloud White), etiquetas y chevrons en
+> Charcoal Panel con la familia Inter. El estilo NO altera geometrías,
+> hit-areas ni comportamiento (CR-071/CR-072 intactos).
+
 ## 3. Preconditions
 
 - La **edición** puede hacerse sin sesión (offline, en el dispositivo).

@@ -70,4 +70,41 @@ class HostMetricsCodecTest {
         assertNull(HostMetricsCodec.decode("""{"type":"audio_stop","reason":"plugin_stopped"}"""))
         assertNull(HostMetricsCodec.decode("no json"))
     }
+
+    /** TEST-0177 — CR-085: temps CPU/GPU del hwmon y fan del GPU son
+     * omitibles («sin dato» → null) y el fan fuera de 0..100 se rechaza
+     * (misma semántica del gpu_percent horse del sobre). */
+    @Test
+    fun temp_and_fan_fields_are_omittable_and_bounded() {
+        val line =
+            """{"type":"host_metrics","cpu_percent":12,""" +
+                """"ram_used_mb":512,"ram_total_mb":15729,""" +
+                """"cpu_temp_c":58,"gpu_temp_c":64,"fan_percent":37}"""
+        assertEquals(
+            HostMetrics(12, null, 512, 15729, null, 58, 64, 37),
+            HostMetricsCodec.decode(line),
+        )
+
+        // Sin los campos nuevos (host v1): los tres quedan null.
+        val legacy = """{"type":"host_metrics","cpu_percent":5,"ram_used_mb":0,"ram_total_mb":1}"""
+        assertEquals(
+            HostMetrics(5, null, 0, 1, null, null, null, null),
+            HostMetricsCodec.decode(legacy),
+        )
+
+        // fan sobre 100: línea inválida.
+        assertNull(
+            HostMetricsCodec.decode(
+                """{"type":"host_metrics","cpu_percent":5,"ram_used_mb":0,""" +
+                    """"ram_total_mb":1,"fan_percent":101}""",
+            ),
+        )
+        // temp presente pero no numérica: línea inválida (guarda del sobre).
+        assertNull(
+            HostMetricsCodec.decode(
+                """{"type":"host_metrics","cpu_percent":5,"ram_used_mb":0,""" +
+                    """"ram_total_mb":1,"cpu_temp_c":"asi"}""",
+            ),
+        )
+    }
 }
