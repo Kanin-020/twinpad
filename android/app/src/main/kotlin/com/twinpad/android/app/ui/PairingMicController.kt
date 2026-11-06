@@ -102,12 +102,19 @@ class PairingMicController(
             return
         }
         val buffer = ShortArray(chunkSamples)
+        var filled = 0
         try {
             record.startRecording()
             while (running.get() && !Thread.currentThread().isInterrupted) {
-                val read = record.read(buffer, 0, chunkSamples, AudioRecord.READ_BLOCKING)
+                // AudioRecord puede devolver menos muestras de las pedidas: se
+                // acumulan hasta completar el bloque en vez de descartar el
+                // tramo parcial, que dejaba huecos de hasta 15 ms y se oía
+                // como micrófono cortado.
+                val read = record.read(buffer, filled, chunkSamples - filled, AudioRecord.READ_BLOCKING)
                 if (read <= 0) break
-                if (read < chunkSamples) continue // fragmento incompleto: se descarta
+                filled += read
+                if (filled < chunkSamples) continue
+                filled = 0
                 runCatching { onChunk(MicChunkCodec.encode(buffer, 0, chunkSamples)) }
                     .onFailure { android.util.Log.w(TAG, "mic_chunk inválido descartado", it) }
             }
