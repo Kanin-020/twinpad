@@ -93,6 +93,11 @@ internal class SettingsDrawerController(
         activity.findViewById<SwitchMaterial>(R.id.switch_show_gyro_monitor).isChecked = settings.showGyroMonitor
         activity.findViewById<SwitchMaterial>(R.id.switch_advanced_metrics).isChecked = settings.showAdvancedMetrics
         host.onAdvancedMetricsToggled(settings.showAdvancedMetrics)
+        // CR-077: el interruptor solo se marca; la restauración del origen
+        // vive en la Activity (host.onStreamSettingsChanged no corre aquí).
+        // CR-079: el switch gobierna el slider de gauges en sesión.
+        activity.findViewById<SwitchMaterial>(R.id.switch_metrics_slider).isChecked =
+            settings.metricsSliderOverStream
         activity.findViewById<SwitchMaterial>(R.id.switch_camera_stream).isChecked = settings.cameraStream
         val lensCheckedId =
             if (settings.cameraLens == CameraLens.FRONT) R.id.camera_lens_front else R.id.camera_lens_back
@@ -165,7 +170,8 @@ internal class SettingsDrawerController(
     }
 
     /** Interruptores de visualización: HUD, giroscopio, controles,
-     * distribución Nintendo (CR-032) y métricas avanzadas (CR-054). */
+     * distribución Nintendo (CR-032), métricas avanzadas (CR-054) y origen
+     * de los gauges de espera (CR-077). */
     private fun bindVisibilitySwitches() {
         activity.findViewById<SwitchMaterial>(R.id.switch_show_fps).setOnCheckedChangeListener { _, checked ->
             host.onHudToggled(checked)
@@ -190,6 +196,14 @@ internal class SettingsDrawerController(
             .setOnCheckedChangeListener { _, checked ->
                 host.onAdvancedMetricsToggled(checked)
                 persist { it.copy(showAdvancedMetrics = checked) }
+            }
+        // CR-079: «Mostrar slider de métricas» — muestra/oculta la hoja de
+        // gauges durante el stream; viaja por la ruta de ajustes existente
+        // (sin función nueva de interfaz: detekt TooManyFunctions) y aplica
+        // en caliente vía el tick de gauges que re-consulta el ajuste.
+        activity.findViewById<SwitchMaterial>(R.id.switch_metrics_slider)
+            .setOnCheckedChangeListener { _, checked ->
+                updateStreamSettings { it.copy(metricsSliderOverStream = checked) }
             }
     }
 

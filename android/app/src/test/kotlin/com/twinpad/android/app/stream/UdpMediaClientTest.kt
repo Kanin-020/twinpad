@@ -233,4 +233,174 @@ class UdpMediaClientTest {
         val recovery = codec.sealRecoveryDatagram(key, startSeq + chunks.size, chunks.size, recoveryPlain)
         return fragments to recovery
     }
+
+    // TEST-0162 — CR-081 (SPEC-003 §8.5): la señal del watchdog
+    // `runFallbackWatch` debe avanzar con CUALQUIER datagrama autenticado,
+    // no solo con AU completa: una IDR fragmentada con ≥ 2 pérdidas por
+    // grupo FEC no ensambla, pero el canal está vivo (`latest_seq` avanza
+    // con bytes autenticados sanos) y el UDP no debe ser condenado.
+    @Test
+    fun watchdog_signal_avanza_con_fragmento_autenticado_sin_au() {
+        val codec = UdpMediaCodec(sessionKey)
+        val key = mediaKey(ByteArray(32) { 0x31 })
+        val reassembler = UdpReassembler(key, codec)
+        // Fragmento 0 de una AU de 10 (el resto se pierde y la recovery
+        // es imposible con > 1 faltantes): autenticado, sin AU completa.
+        val datagram =
+            codec.sealDataDatagram(
+                key,
+                seq = 0,
+                auId = 1,
+                flags = UdpMediaCodec.FLAG_FIRST,
+                fragIndex = 0,
+                fragTotal = 10,
+                plaintext = ByteArray(8) { 0x0A },
+            )
+        assertNull(reassembler.ingestUnit(datagram, datagram.size))
+        // Señal del watchdog (CR-081): `latest_seq` avanza aunque nada
+        // ensamble — `receivedAnyAuthenticatedFragment()` se enciende y
+        // el fallback TCP no roba la conexión.
+        assertEquals(0L, reassembler.latestSeq)
+        val next =
+            codec.sealDataDatagram(
+                key,
+                seq = 5,
+                auId = 2,
+                flags = 0,
+                fragIndex = 0,
+                fragTotal = 10,
+                plaintext = ByteArray(8) { 0x0B },
+            )
+        assertNull(reassembler.ingestUnit(next, next.size))
+        assertEquals(5L, reassembler.latestSeq)
+    }
+
+    // TEST-0165 — CR-082 (SPEC-003 §4.4): la política del watch de
+    // recuperación re-JOINa tras 5 000 ms sin progreso de seq y entrega
+    // Close tras 2 intentos sin revivir; el progreso re-arma y resetea
+    // los intentos; sin progreso JAMÁS el watch no actúa (el arranque
+    // frío lo cubre el one-shot §8.5 de 900 ms, TEST-0162/TEST-0140).
+    @Test
+    fun watch_recuperacion_rejoin_tras_idle_y_close_tras_dos_intentos() {
+        val policy =
+            MediaRecoveryPolicy(
+                idleTriggerMs = 5_000L,
+                maxRejoinAttempts = 2,
+            )
+        // Señal de AU entregada pasiva (-1: como en CR-082, el starve no
+        // entra en este banco y no perturba el camino del re-JOIN).
+        val sinAu = -1L
+        // Sin progreso jamás: el watch no actúa.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(-1L, sinAu, 0L))
+        // Primer progreso: arma con ventana limpia.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(0L, sinAu, 1_000L))
+        // Idle < ventana: sin acción.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(0L, sinAu, 5_999L))
+        // Idle ≥ 5 000 ms: re-JOIN (1.er intento).
+        assertEquals(MediaRecoveryPolicy.Action.Rejoin, policy.tick(0L, sinAu, 6_000L))
+        // Progreso tras el re-JOIN: resetea intentos y re-arma.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(42L, sinAu, 6_500L))
+        // Idle completa sin progreso: 2.º re-JOIN.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(42L, sinAu, 11_499L))
+        assertEquals(MediaRecoveryPolicy.Action.Rejoin, policy.tick(42L, sinAu, 11_500L))
+        // Seguir sin progreso: el 2.º intento se agota y el 3.er idle
+        // destruye el canal (Closed al caller del compuesto).
+        assertEquals(MediaRecoveryPolicy.Action.Rejoin, policy.tick(42L, sinAu, 16_500L))
+        assertEquals(MediaRecoveryPolicy.Action.Close, policy.tick(42L, sinAu, 21_500L))
+    }
+
+    // TEST-0169 — CR-083 (pieza C): starve de AU con canal auténtico vivo
+    // (seq progresando, ninguna AU entregada) — la renegociación decreta
+    // una vez por minuto (RENEGOTIATE_GAP_MS) y tras RENEGOTIATE_MAX
+    // renegociaciones entrega Close; con AU fluente reinicia el starve y
+    // resetea los contadores (sin renegociación alguna).
+    @Test
+    fun starvation_renegocia_una_vez_por_minuto_y_cierra_tras_tres() {
+        val policy =
+            MediaRecoveryPolicy(
+                idleTriggerMs = 5_000L,
+                maxRejoinAttempts = 2,
+                starveTriggerMs = 8_000L,
+                maxRenegotiations = 3,
+            )
+        // AU entregada al arranque: re-arma el starve.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(0L, 10L, 1_000L))
+        // Seq progresando (canal auténtico vivo) pero AU congelada: sin
+        // starve aún (< AU_STARVE_MS) y gap intacto: sin acción.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(30L, 10L, 2_000L))
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(60L, 10L, 8_999L))
+        // Starve en 8 000 ms exactos: la 1.ª renegociación.
+        assertEquals(MediaRecoveryPolicy.Action.Renegotiate, policy.tick(90L, 10L, 9_000L))
+        // Gap de 1 min no cumplido: sin nueva renegociación aunque starve.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(120L, 10L, 30_000L))
+        // Gap cumplido: 2.ª renegociación.
+        assertEquals(MediaRecoveryPolicy.Action.Renegotiate, policy.tick(150L, 10L, 69_000L))
+        // 3.ª renegociación (gap 1 min desde la 2.ª).
+        assertEquals(MediaRecoveryPolicy.Action.Renegotiate, policy.tick(180L, 10L, 129_000L))
+        // Starve persistente más allá del tope: Close.
+        assertEquals(MediaRecoveryPolicy.Action.Close, policy.tick(210L, 10L, 189_000L))
+        // AU fluente de nuevo: resetea starve y contadores (el canal resucita).
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(240L, 20L, 190_000L))
+        // Y al volver a morir el flujo de AU, la cuenta reinicia: 1.ª otra vez.
+        assertEquals(MediaRecoveryPolicy.Action.None, policy.tick(270L, 20L, 197_999L))
+        assertEquals(MediaRecoveryPolicy.Action.Renegotiate, policy.tick(300L, 20L, 198_000L))
+    }
+
+    // TEST-0170 — CR-084 (SPEC-003 §4.4): una AU de más de
+    // REPLAY_WINDOW (256) fragmentos ensambla y se entrega al llegar el
+    // último — la purga abandona pendientes solo cuando su ÚLTIMO seq
+    // esperado venció (`firstSeq + fragTotal - 1`), no al cruzar la
+    // ventana media (la regla previa mataba la AU en el fragmento 257.º:
+    // la IDR de 1080p, 485-588 dg, jamás ensamblaba — dictamen del banco
+    // del 17:31: Qin=0 con fragmentos auténticos fluidos).
+    @Test
+    fun au_sobre_ventana_ensambla_completa() {
+        val codec = UdpMediaCodec(sessionKey)
+        val key = mediaKey(ByteArray(32) { 0x44 })
+        val reassembler = UdpReassembler(key, codec)
+        val bodySize = 500 * 100 - UdpMediaCodec.AU_PLAINTEXT_HEADER_BYTES
+        val body = ByteArray(bodySize) { index -> (index % 251).toByte() }
+        val plain =
+            ByteBuffer
+                .allocate(UdpMediaCodec.AU_PLAINTEXT_HEADER_BYTES + body.size)
+                .order(ByteOrder.BIG_ENDIAN)
+                .putLong(7_001L)
+                .putLong(5_000L)
+                .put(1.toByte())
+                .put(body)
+                .array()
+        // 500 fragmentos exactos de 100 B (por encima de la ventana).
+        val chunks = plain.toList().chunked(100)
+        assertEquals(500, chunks.size)
+        var entregadas = 0
+        var entregada: H264MediaClient.EncodedAccessUnit? = null
+        chunks.forEachIndexed { index, chunk ->
+            var flags = 0
+            if (index == 0) flags = flags or UdpMediaCodec.FLAG_FIRST
+            if (index == chunks.size - 1) flags = flags or UdpMediaCodec.FLAG_LAST
+            val datagram =
+                codec.sealDataDatagram(
+                    key,
+                    index.toLong(),
+                    1,
+                    flags,
+                    index,
+                    chunks.size,
+                    chunk.toByteArray(),
+                )
+            val unit = reassembler.ingestUnit(datagram, datagram.size)
+            if (unit != null) {
+                entregadas++
+                entregada = unit
+            }
+        }
+        assertEquals(1, entregadas)
+        val dejada = requireNotNull(entregada)
+        assertEquals(7_001L, dejada.frameNumber)
+        assertEquals(5_000L, dejada.timestampUs)
+        assertTrue(dejada.idr)
+        assertEquals(bodySize, dejada.bytes.size)
+        // El restante (AU chica siguiente) vive en el test 0162: la grande
+        // ya entregada no deja estado sucio (fn/ts de latest-wins vivos).
+    }
 }

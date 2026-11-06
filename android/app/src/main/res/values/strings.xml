@@ -29,11 +29,14 @@
     <string name="game_select_title">Selecciona el juego</string>
     <!-- CR-075: sección final del drawer con instrumentación de diagnóstico. -->
     <string name="settings_debug">Debug</string>
-    <!-- CR-076: etiquetas de los gauges del dispositivo (ventana de espera). -->
+    <!-- CR-076: etiquetas de los gauges de la ventana de espera (PC/gamepad). -->
     <string name="metrics_cpu">CPU</string>
     <string name="metrics_gpu">GPU</string>
     <string name="metrics_ram">RAM</string>
     <string name="metrics_fps">FPS</string>
+    <!-- CR-077: alternador del origen de los gauges de espera — marcado =
+         PC (host_metrics, CR-076); desmarcado = el teléfono Gamepad. -->
+    <string name="settings_metrics_slider">Mostrar slider de métricas</string>
     <string name="settings_title">Ajustes de transmisión</string>
     <string name="settings_resolution">Resolución</string>
     <string name="settings_gyro">Giroscopio</string>

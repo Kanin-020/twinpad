@@ -19,4 +19,7 @@ internal data class PairingMediaDependencies(
     val streamMachine: StreamStateMachine,
     /** Métricas de etapas del video (SPEC-003 §7 HUD). */
     val streamStats: StreamStats,
+    /** CR-083 (pieza C): línea `video_config` vigente (CR-027/CR-030) —
+     * la renegociación ante starve la reenvía por el canal de control. */
+    val renegotiateVideoConfigLine: () -> String,
 )

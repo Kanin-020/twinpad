@@ -31,6 +31,11 @@ use crate::media::{AccessUnit, MediaHub, SelectedGameLookup};
 
 /// Keepalive fresco para la señal R11 (§4.4: ≤ 5 s).
 pub const KEEPALIVE_FRESH_MS: u64 = 5_000;
+/// CR-081 (§8.5): expiración del binding del relay — sin keepalives ni
+/// JOINs que refresquen `last_keepalive_ms` en este lapso, el cliente ya
+/// no está en el otro extremo (socket muerto por watchdog/cierre) y el
+/// relay sale con log en lugar de emitir a un puerto muerto sin rastro.
+const BINDING_EXPIRATION_MS: u64 = 10_000;
 /// Acotado de reevaluación del hub en el relay UDP (igual que el TCP).
 const HUB_WAIT: Duration = Duration::from_millis(50);
 /// Longitud del buffer de recepción UDP: los JOINs son de 92 B; todo lo
@@ -223,6 +228,9 @@ fn handle_join(
         *lock(&existing.addr) = addr;
         *lock(&existing.last_keepalive_ms) = now;
         *lock(&existing.last_seq) = join.last_seq;
+        // CR-081: el refresco dejó rastro en el log — si el binding muere
+        // por expiración, se ve cuánto duró vivo y qué addr tenía.
+        println!("udp-relay binding refrescado addr={addr} (mismo nonce, keepalive §4.4)");
         let current_seq = existing.current_seq_value();
         if let Some(stats) = rollover_window(&existing, now, current_seq, join.last_seq) {
             deps.congestion.ingest_window(stats);
@@ -232,8 +240,17 @@ fn handle_join(
     // Re-join (nonce distinto) o primer JOIN: toma la propiedad e IDR.
     let media_key = derive_udp_media_key(&key.0, &join.join_nonce);
     let chan = registry.start_channel(&sid, addr, join.join_nonce, media_key, now);
-    let _ = (deps.on_media_joined)();
-    println!("udp-relay join nuevo addr={addr} dueño=UDP (IDR solicitado)");
+    // CR-083 (pieza A): reintentos con desenlace visible — sin IDR el
+    // gate §14 del decoder jamás abre y la sesión muere a 0 fps.
+    let idr_ok = crate::media::idr_with_retry(&deps.on_media_joined);
+    println!(
+        "udp-relay join nuevo addr={addr} dueño=UDP (IDR {})",
+        if idr_ok {
+            "solicitada"
+        } else {
+            "falló: sin retransmisión"
+        }
+    );
     let socket = Arc::clone(socket);
     let registry = Arc::clone(registry);
     let deps = Arc::clone(deps);
@@ -290,6 +307,16 @@ fn relay_udp_session(
     let mut last_fn: Option<u64> = None;
     let mut last_timestamp_us: Option<u64> = None;
     let mut park_log_ms: u64 = 0;
+    // CR-083 (pieza B): crédito de envío por sesión (token bucket).
+    // Relleno anclado a `effective_kbps` (la misma fuente de la escalera
+    // §4.3); la IDR pasa SIEMPRE; las AU sin crédito se descartan
+    // (latest-frame-wins: la siguiente tendrá crédito). Arranca con un
+    // crédito lleno (1 s del cap) para no estrangular las AU pequeñas de
+    // derecho tras el join.
+    let mut token_last_ms = deps.congestion.now_ms();
+    let mut token_bytes: u64 = u64::from(deps.congestion.effective_kbps().max(10_000)) * 125;
+    let mut dropped_by_rate: u64 = 0;
+    let mut drop_log_ms: u64 = 0;
     loop {
         if !pair_active.load(Ordering::Acquire) {
             println!("udp-relay salida: Pairing inactivo");
@@ -299,6 +326,18 @@ fn relay_udp_session(
         if registry.current_generation(&session_id) != chan.generation {
             println!("udp-relay salida: perdió el dueño (TCP o re-join)");
             return; // perdió la propiedad (TCP o re-join)
+        }
+        // CR-081 (§8.5): binding muerto — sin keepalives frescos en 10 s el
+        // cliente ya no escucha; salir con log y liberar el canal.
+        let now_ms = deps.congestion.now_ms();
+        if now_ms.saturating_sub(*lock(&chan.last_keepalive_ms)) > BINDING_EXPIRATION_MS {
+            println!(
+                "udp-relay salida: binding sin keepalive {} ms addr={}",
+                BINDING_EXPIRATION_MS,
+                *lock(&chan.addr),
+            );
+            registry.drop_if_generation(&session_id, chan.generation);
+            return;
         }
         let Some(game_id) = (deps.selected)(&session_id) else {
             if current_game.is_some() {
@@ -348,6 +387,19 @@ fn relay_udp_session(
             println!("udp-relay salida: dueño cambió durante el wait");
             return;
         }
+        // CR-081 (§8.5): re-chequeo del binding ANTES de emitir — si el
+        // keepalive expiró durante el wait, no se envía el datagrama a un
+        // destino muerto (la AU que despertó esta iteración se descarta).
+        let now_ms = deps.congestion.now_ms();
+        if now_ms.saturating_sub(*lock(&chan.last_keepalive_ms)) > BINDING_EXPIRATION_MS {
+            println!(
+                "udp-relay salida: binding sin keepalive {} ms addr={}",
+                BINDING_EXPIRATION_MS,
+                *lock(&chan.addr),
+            );
+            registry.drop_if_generation(&session_id, chan.generation);
+            return;
+        }
         if source.width < 16
             || source.width > 3840
             || source.height < 16
@@ -363,6 +415,29 @@ fn relay_udp_session(
             registry.drop_if_generation(&session_id, chan.generation);
             return;
         }
+        // CR-083 (pieza B): tope de tasa — sin crédito la AU no-IDR no se
+        // emite (el flood de 6 600 dgs/s medido en banco contra 10 000
+        // kbps configurados). Piso del crédito: 10 000 kbps aunque el
+        // `configured` declare menos (§8.4: nunca supera el bitrate).
+        let now_ms = deps.congestion.now_ms();
+        let kbps = u64::from(deps.congestion.effective_kbps().max(10_000));
+        let elapsed = now_ms.saturating_sub(token_last_ms);
+        token_last_ms = now_ms;
+        let cap_bytes = kbps * 125; // 1 s de crédito en bytes
+        token_bytes = cap_bytes.min(token_bytes + elapsed.saturating_mul(kbps) / 8);
+        let au_bytes = u64::try_from(source.latest.annex_b.len()).unwrap_or(u64::MAX);
+        if !source.latest.idr && au_bytes > token_bytes {
+            dropped_by_rate += 1;
+            if now_ms >= drop_log_ms {
+                println!(
+                    "udp-relay tasa: descartadas {dropped_by_rate} AU por crédito (kbps={kbps})"
+                );
+                drop_log_ms = now_ms + 2_000;
+                dropped_by_rate = 0;
+            }
+            continue;
+        }
+        token_bytes = token_bytes.saturating_sub(au_bytes);
         let Ok(datagrams) = emitter.seal_au(
             source.latest.fn_,
             source.latest.timestamp_us,
@@ -736,6 +811,107 @@ mod tests {
             .unwrap();
         let mut buffer = vec![0_u8; 2_048];
         assert!(client.recv_from(&mut buffer).is_err());
+        drop(client);
+    }
+
+    // TEST-0163 (CR-081, §8.5): el fallback TCP del §8.5 ya vive en el
+    // server (main.rs: bind 8425 + media.rs:handle_media_client); su
+    // acoplamiento con el registro UDP es devolver la propiedad al TCP:
+    // un handshake TCP §4.2 válido (bump_tcp_owner) retira el binding
+    // UDP vivo del teléfono que ya no lo ejerce.
+    #[test]
+    fn tcp_handshake_returns_ownership_and_drops_udp_binding() {
+        let clock = TestClock(Arc::new(AtomicU64::new(0)));
+        let rig = setup(clock);
+        let client = UdpSocket::bind("127.0.0.1:0").unwrap();
+        send_join(&client, &rig, &[0x71; 32], 0);
+        wait_generation(&rig, 1);
+        assert!(rig.registry.channel(&rig.sid).is_some());
+        // El teléfono completa el handshake TCP: la propiedad vuelve al
+        // canal TCP y el binding UDP queda sin dueño vivo.
+        rig.registry.bump_tcp_owner(&rig.sid);
+        assert!(rig.registry.channel(&rig.sid).is_none());
+        assert_eq!(rig.registry.current_generation(&rig.sid), 2);
+    }
+
+    // TEST-0164 (CR-081, §8.5): expiración del binding del relay — sin
+    // keepalive en 10 s el relay sale con log, libera el canal y deja de
+    // emitir a un puerto muerto sin rastro.
+    #[test]
+    fn binding_expires_without_keepalive_and_relay_stops() {
+        let clock_ms = Arc::new(AtomicU64::new(0));
+        let rig = setup(TestClock(Arc::clone(&clock_ms)));
+        rig.hub.publish(h264_source(0, 100, true, b"initial-idr"));
+        let client = UdpSocket::bind("127.0.0.1:0").unwrap();
+        send_join(&client, &rig, &[0x5A; 32], 0);
+        wait_generation(&rig, 1);
+        let key = derive_udp_media_key(&rig.session_key.0, &[0x5A; 32]);
+        let mut reassembler = UdpReassembler::new(key);
+        assert_eq!(recv_au(&client, &mut reassembler).unwrap().fn_, 0);
+        drain(&client); // datagrama FEC sobrante de la AU ya entregada
+        // Reloj por encima de la expiración, sin keepalive nuevo: la
+        // siguiente AU despierta al relay y el guard del binding lo corta.
+        clock_ms.store(10_100, Ordering::Relaxed);
+        rig.hub.publish(h264_source(1, 200, false, b"second"));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < deadline && rig.registry.channel(&rig.sid).is_some() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(rig.registry.channel(&rig.sid).is_none());
+        // La AU posterior a la expiración no llega al cliente muerto.
+        client
+            .set_read_timeout(Some(Duration::from_millis(300)))
+            .unwrap();
+        let mut buffer = vec![0_u8; 2_048];
+        assert!(client.recv_from(&mut buffer).is_err());
+        drop(client);
+    }
+
+    // TEST-0168 (CR-083, pieza B): crédito de envío en el relay UDP — la
+    // AU no-IDR mayor que el cap (2 MB > 1 250 000 B) se descarta sin
+    // llegar al cliente; tras el relleno del reloj la AU pequeña sí sale
+    // (2 000 ms ⇒ crédito al tope); la IDR nace con crédito (arranque
+    // lleno) y el bypass la deja pasar de todas formas (TEST-0168 vía
+    // TEST-0139: el orden IDR→P intacto).
+    #[test]
+    fn token_bucket_idr_bypass_and_non_idr_discard_with_refill() {
+        let clock_ms = Arc::new(AtomicU64::new(0));
+        let rig = setup(TestClock(Arc::clone(&clock_ms)));
+        let client = UdpSocket::bind("127.0.0.1:0").unwrap();
+        send_join(&client, &rig, &[0x6B; 32], 0);
+        wait_generation(&rig, 1);
+        let key = derive_udp_media_key(&rig.session_key.0, &[0x6B; 32]);
+        let mut reassembler = UdpReassembler::new(key);
+
+        // IDR de arranque (crédito lleno): pasa y queda entregada.
+        rig.hub
+            .publish(h264_source(0, 100, true, b"idr-token-bucket"));
+        let au = recv_au(&client, &mut reassembler).expect("IDR de arranque pasa");
+        assert_eq!(au.fn_, 0);
+        assert!(au.idr);
+        drain(&client);
+
+        // No-IDR de 2 MB mayor que el cap (10 000 kbps ⇒ 1 250 000 B):
+        // descartada aunque el reloj avanzara en el lapso del wait.
+        clock_ms.store(2_000, Ordering::Relaxed);
+        rig.hub
+            .publish(h264_source(1, 200, false, &vec![b'x'; 2_000_000]));
+        client
+            .set_read_timeout(Some(Duration::from_millis(300)))
+            .unwrap();
+        let mut buffer = vec![0_u8; 2_048];
+        assert!(
+            client.recv_from(&mut buffer).is_err(),
+            "la AU no-IDR sin crédito no debe salir"
+        );
+
+        // La siguiente AU pequeña (crédito intacto tras el descarte):
+        // sale por el relay (fn 2).
+        rig.hub
+            .publish(h264_source(2, 300, false, b"p-con-credito"));
+        let au = recv_au(&client, &mut reassembler).expect("AU sale con crédito");
+        assert_eq!(au.fn_, 2);
+        assert_eq!(au.annex_b, b"p-con-credito");
         drop(client);
     }
 }

@@ -671,14 +671,22 @@ impl UdpReassembler {
         self.raw_by_seq.retain(|stored, _| *stored > cutoff);
     }
 
-    /// Abandona AUs pendientes cuyo primer fragmento quedó ≥ 256 `seq`
-    /// atrás del corriente (discontinuidad: se espera IDR).
+    /// CR-084: abandona AUs pendientes solo cuando TODOS sus fragmentos
+    /// salieron de la ventana — su último `seq` esperado
+    /// (`first_seq + frag_total - 1`) ya venció. La regla previa
+    /// (`first_seq <= cutoff`) mataba toda AU de más de `REPLAY_WINDOW`
+    /// fragmentos al llegar el 257.º: la IDR de 1080p (485-588 dg) jamás
+    /// ensamblaba en el teléfono (paridad con el fijó Kotlin, TEST-0171).
     fn purge_abandoned(&mut self, seq: u32) {
         if seq < REPLAY_WINDOW as u32 {
             return;
         }
         let cutoff = seq - REPLAY_WINDOW as u32;
-        self.pending.retain(|_, pending| pending.first_seq > cutoff);
+        let cutoff64 = u64::from(cutoff);
+        self.pending.retain(|_, pending| {
+            u64::from(pending.first_seq) + u64::from(pending.frag_total.saturating_sub(1))
+                > cutoff64
+        });
     }
 
     fn accept_data(&mut self, env: &OpenEnvelope) -> Option<AssembledAu> {
@@ -1019,10 +1027,14 @@ mod tests {
         assert_eq!(r.ingest(&tail_of_oldest).unwrap(), None);
     }
 
-    // TEST-0138 (CR-062): abandono de AU pendiente al superar el seq
-    // corriente en ≥ 256.
+    // TEST-0138 (CR-062) — regla CR-084: la AU pendiente se abandona
+    // solo cuando su ÚLTIMO seq esperado (`first_seq + frag_total - 1`)
+    // venció la ventana: el 257.º seq ya no mata a una AU de 2
+    // fragmentos (la regla previa purgaba por `first_seq` y la IDR de
+    // 1080p jamás ensamblaba); una AU cuyo último seq ya venció sí
+    // expira.
     #[test]
-    fn pending_au_abandoned_after_256_seq_gap() {
+    fn pending_au_abandoned_after_last_seq_gate() {
         let mut r = UdpReassembler::new(KEY);
         let head = seal_data_datagram(
             &KEY,
@@ -1035,6 +1047,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.ingest(&head).unwrap(), None);
+        // El seq REPLAY_WINDOW no purga la AU pendiente (su último seq
+        // esperado, 0+1, sigue en ventana).
         let filler = seal_data_datagram(
             &KEY,
             REPLAY_WINDOW as u32,
@@ -1042,13 +1056,41 @@ mod tests {
             FLAG_FIRST | FLAG_LAST,
             0,
             1,
-            b"filler",
+            b"0123456789ABCDEF",
         )
         .unwrap();
-        assert_eq!(r.ingest(&filler).unwrap(), None);
+        let _ = r.ingest(&filler).unwrap();
+        // El tail llega con last_seq en ventana: la AU SÍ ensambla.
         let tail =
             seal_data_datagram(&KEY, REPLAY_WINDOW as u32 + 1, 0, FLAG_LAST, 1, 2, b"end").unwrap();
-        assert_eq!(r.ingest(&tail).unwrap(), None); // AU viva abandonada
+        assert!(r.ingest(&tail).unwrap().is_some());
+        // AU pendiente cuyo último seq esperado (4_001) ya venció al
+        // llegar el seq 4_300 (cutoff 4_044): expirada, y su tail tardío
+        // recrea una pendiente sin cabeza — nunca entrega.
+        let head2 = seal_data_datagram(
+            &KEY,
+            4_000,
+            2,
+            FLAG_FIRST,
+            0,
+            2,
+            &h264_bytes(2, MAX_PAYLOAD_BYTES),
+        )
+        .unwrap();
+        assert_eq!(r.ingest(&head2).unwrap(), None); // fn/ts de h264_bytes(1,…): plain corto → None igual; la retención solo necesita el estado pendiente
+        let filler2 = seal_data_datagram(
+            &KEY,
+            4_300,
+            3,
+            FLAG_FIRST | FLAG_LAST,
+            0,
+            1,
+            b"0123456789ABCDEF",
+        )
+        .unwrap();
+        let _ = r.ingest(&filler2).unwrap();
+        let tail2 = seal_data_datagram(&KEY, 4_301, 2, FLAG_LAST, 1, 2, b"end").unwrap();
+        assert_eq!(r.ingest(&tail2).unwrap(), None);
     }
 
     // TEST-0138 (CR-062): latest-frame-wins — AU ensamblada con fn/ts
@@ -1121,5 +1163,32 @@ mod tests {
         // AU pendiente) pero el return es Ok.
         let datagram = seal_data_datagram(&KEY, 0, 9, FLAG_FIRST | FLAG_LAST, 0, 1, b"ok").unwrap();
         assert_eq!(r.ingest(&datagram).unwrap(), None);
+    }
+
+    // TEST-0171 — CR-084 (SPEC-003 §4.4): una AU de más de
+    // `REPLAY_WINDOW` fragmentos ensambla y se entrega única al llegar
+    // el último fragmento — la purga abandona pendientes solo cuando su
+    // ÚLTIMO seq esperado venció, no al cruzar la ventana (la regla previa
+    // mataba la AU en el fragmento 257.º y la IDR de 1080p, 485-588 dg,
+    // jamás ensamblaba; dictamen del banco 17:31: Qin=0 con fragmentos
+    // auténticos fluidos).
+    #[test]
+    fn au_sobre_ventana_ensambla_completa() {
+        let annex_b = h264_bytes(0x5A, 500 * MAX_PAYLOAD_BYTES);
+        let mut emitter = UdpEmitter::new(KEY, 0, 1);
+        let datagrams = emitter.seal_au(7, 900, true, &annex_b).unwrap();
+        let mut r = UdpReassembler::new(KEY);
+        let mut entregadas = 0;
+        for datagram in &datagrams {
+            if r.ingest(datagram).unwrap().is_some() {
+                entregadas += 1;
+            }
+        }
+        assert_eq!(1, entregadas);
+        // La AU chica siguiente entregada normal: la AU grande ya entregada
+        // no deja estado sucio y el wire vivo no retrocede.
+        let mut small = UdpEmitter::new(KEY, emitter.current_seq(), 2);
+        let siguiente = small.seal_au(8, 1_000, false, b"pequena").unwrap();
+        assert_eq!(1, ingest_all(&mut r, &siguiente).len());
     }
 }

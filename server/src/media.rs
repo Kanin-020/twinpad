@@ -32,6 +32,27 @@ pub type MediaJoinedHook = dyn Fn() -> bool + Send + Sync;
 /// server lo conecta al reenvío de `video_config` (CR-027) + IDR (CR-051).
 pub type MediaBitrateApply = dyn Fn(u32) -> bool + Send + Sync;
 
+/// CR-083 (pieza A): pedido de IDR con reintentos y desenlace visible.
+/// El hook de CR-051 puede fallar (writer del juego no listo en el
+/// instante del join); el código previo ignoraba el resultado y logeaba
+/// igualmente «IDR solicitado». Backoff corto (0/250/500 ms) alineado con
+/// el banco: la sesión Macedonia siega un IDR que nunca llega.
+pub fn idr_with_retry(hook: &Arc<MediaJoinedHook>) -> bool {
+    for attempt in 0..3_u32 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        if hook() {
+            if attempt > 0 {
+                println!("media IDR: ok tras reintento {} (CR-083)", attempt + 1);
+            }
+            return true;
+        }
+    }
+    println!("media IDR falló tras 3 intentos (sin retransmisión de IDR)");
+    false
+}
+
 /// CR-058 (SPEC-003 §4.3): ámbito global de la escalera de bitrate del
 /// encoder compartido. Cada sesión de media observa su propia ventana P/D
 /// (descartes latest-frame-wins) y la ingiere aquí; el rung es global y el
@@ -295,7 +316,17 @@ fn handle_media_client(mut stream: TcpStream, hub: Arc<MediaHub>, deps: Arc<Medi
     // CR-051: SPEC-003 §8.2 — el servidor solicita IDR para el nuevo
     // suscriptor al (re)entrar el canal media; el plugin la emite en el
     // siguiente frame en lugar de esperar la cadencia periódica.
-    let _ = (deps.on_media_joined)();
+    // CR-083 (pieza A): reintentos con desenlace visible — sin IDR el
+    // gate §14 del decoder jamás abre y la sesión muere a 0 fps.
+    let idr_ok = idr_with_retry(&deps.on_media_joined);
+    println!(
+        "tcp media join sid-ok: IDR {}",
+        if idr_ok {
+            "solicitada"
+        } else {
+            "falló: sin retransmisión"
+        }
+    );
     let mut counter = 0_u64;
     let mut current_game = None::<String>;
     let mut last_fn = None;
@@ -648,5 +679,28 @@ mod tests {
         let mut response = [0_u8; 1];
         assert_eq!(client.read(&mut response).unwrap(), 0);
         server_thread.join().unwrap();
+    }
+
+    // TEST-0167 (CR-083, pieza A): el hook de IDR con reintentos — los
+    // 2 primeros intentos fallan y el 3.º retorna ok; el hook que falla
+    // siempre agota los 3 intentos y devuelve false (desenlace logeado
+    // con «media IDR falló tras 3 intentos»).
+    #[test]
+    fn idr_with_retry_recovers_on_third_attempt_and_reports_exhaustion() {
+        let recovered_calls = Arc::new(AtomicU64::new(0));
+        let calls_for_hook = Arc::clone(&recovered_calls);
+        let hook_ok_later: Arc<MediaJoinedHook> =
+            Arc::new(move || calls_for_hook.fetch_add(1, Ordering::SeqCst) >= 2);
+        assert!(idr_with_retry(&hook_ok_later));
+        assert_eq!(recovered_calls.load(Ordering::SeqCst), 3);
+
+        let exhausted_calls = Arc::new(AtomicU64::new(0));
+        let exhausted_for_hook = Arc::clone(&exhausted_calls);
+        let hook_never: Arc<MediaJoinedHook> = Arc::new(move || {
+            exhausted_for_hook.fetch_add(1, Ordering::SeqCst);
+            false
+        });
+        assert!(!idr_with_retry(&hook_never));
+        assert_eq!(exhausted_calls.load(Ordering::SeqCst), 3);
     }
 }

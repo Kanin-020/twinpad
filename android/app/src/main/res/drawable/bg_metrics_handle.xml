@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CR-079: asa del slider de gauges — barra 4 dp centrada dentro del área
+     táctil de 72×24 dp (la zona de arrastre supera con holgura a la barra). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="center">
+        <shape android:shape="rectangle">
+            <size android:height="4dp" />
+            <corners android:radius="2dp" />
+            <solid android:color="@color/design_quiet_slate" />
+        </shape>
+    </item>
+</layer-list>

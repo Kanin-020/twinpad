@@ -132,6 +132,7 @@ class PairingViewModel(
                 network,
                 streamMachine,
                 streamStats,
+                { AndroidSettingsStore(getApplication()).load().videoConfigLine() },
             ),
             currentStreamState = { _streamState.value },
             setStreamState = { state -> _streamState.value = state },
@@ -292,6 +293,10 @@ class PairingViewModel(
         rumblePlayer.play(RumbleMessage(ByteArray(0)))
         _keyboardRequested.value = null
         _videoStageStats.value = null
+        // CR-077: sin sesión viva NO hay muestra del HOST vigente; dejar el
+        // valor anterior pintaría en los gauges una lectura congelada de la
+        // sesión que acaba de terminar (el server deja de emitir al cortar).
+        _hostMetrics.value = null
         _mediaTransport.value = null
     }
 

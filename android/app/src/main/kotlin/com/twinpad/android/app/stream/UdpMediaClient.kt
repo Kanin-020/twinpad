@@ -19,8 +19,118 @@ internal sealed interface UdpPreferredEvent {
     /** Transporte activo decidido a los 900 ms (true=UDP, false=TCP). */
     data class TransportActive(val isUdp: Boolean) : UdpPreferredEvent
 
+    /** CR-083 (pieza C): starve de AU con canal auténtico vivo — el
+     * dueño de la sesión reenvía el `video_config` vigente (CR-030)
+     * y el server acompaña el pedido de IDR (CR-051). */
+    data object Renegotiate : UdpPreferredEvent
+
     /** Canal muerto sin fallback viable (§8.5). */
     data object Closed : UdpPreferredEvent
+}
+
+/**
+ * CR-082 (SPEC-003 §4.4) + CR-083 (pieza C): máquina de estados pura del
+ * watchdog de recuperación del canal media (TEST-0165/TEST-0169). El watch
+ * compuesto consulta cada [WATCH_INTERVAL_MS] con DOS señales: el
+ * progreso de seq (bytes auténticos aceptados) y las AU entregadas al
+ * caller. Arma en el primer progreso; el idle decreta re-JOIN y el reintent
+ * sin revivir entrega Close (CR-082); CR-083 añade el STARVE: seq
+ * progresando (canal auténtico vivo) sin AU entregadas por [AU_STARVE_MS]
+ * decreta [Action.Renegotiate] al menos una vez por [RENEGOTIATE_GAP_MS]
+ * y hasta [RENEGOTIATE_MAX] antes de Close — el re-JOIN no basta cuando
+ * el relay solo reenvía P-frames (sin IDR el gate §14 del decoder jamás
+ * abre). El arranque frío muerto (cero datagramas) sigue en el one-shot
+ * §8.5 a los 900 ms (TEST-0162).
+ */
+internal class MediaRecoveryPolicy(
+    private val idleTriggerMs: Long = MEDIA_IDLE_MS,
+    private val maxRejoinAttempts: Int = REJOIN_ATTEMPTS_MAX,
+    private val starveTriggerMs: Long = AU_STARVE_MS,
+    private val maxRenegotiations: Int = RENEGOTIATE_MAX,
+) {
+    /** Acciones del watch por tick. */
+    internal enum class Action { None, Rejoin, Renegotiate, Close }
+
+    private var watchedSeq = -1L
+    private var watchedAu = -1L
+    private var lastProgressMs = -1L
+    private var lastAuMs = -1L
+    private var rejoinAttempts = 0
+    private var renegotiations = 0
+    private var lastRenegotiateMs = -1L
+
+    /** Un tick del watch: progreso de seq re-arma; entregada una AU
+     * reinicia el starve; idle decreta re-JOIN; starve decreta
+     * renegociación (gap máx 1/min, [RENEGOTIATE_MAX] y Close). */
+    fun tick(
+        currentSeq: Long,
+        currentAu: Long,
+        nowMs: Long,
+    ): Action {
+        if (currentAu != watchedAu) {
+            watchedAu = currentAu
+            lastAuMs = nowMs
+            renegotiations = 0
+        }
+        if (currentSeq != watchedSeq) {
+            watchedSeq = currentSeq
+            lastProgressMs = nowMs
+            rejoinAttempts = 0
+        }
+        return if (lastProgressMs >= 0 && nowMs - lastProgressMs >= idleTriggerMs) {
+            rejoinDecision(nowMs)
+        } else {
+            starveDecision(nowMs)
+        }
+    }
+
+    /** Decisión del idle de seq (CR-082): re-JOIN con conteo o Close. */
+    private fun rejoinDecision(nowMs: Long): Action =
+        when {
+            rejoinAttempts >= maxRejoinAttempts -> Action.Close
+            else -> {
+                rejoinAttempts++
+                lastProgressMs = nowMs
+                Action.Rejoin
+            }
+        }
+
+    /** Decisión del starve de AU (CR-083, pieza C): renegociar respetando
+     * el gap de 1 min; agotadas las [RENEGOTIATE_MAX] renegociaciones,
+     * Close. */
+    private fun starveDecision(nowMs: Long): Action {
+        val starved = lastAuMs >= 0 && nowMs - lastAuMs >= starveTriggerMs
+        val gapElapsed = lastRenegotiateMs < 0 || nowMs - lastRenegotiateMs >= RENEGOTIATE_GAP_MS
+        return when {
+            !starved || !gapElapsed -> Action.None
+            renegotiations >= maxRenegotiations -> Action.Close
+            else -> {
+                renegotiations++
+                lastRenegotiateMs = nowMs
+                Action.Renegotiate
+            }
+        }
+    }
+
+    companion object {
+        /** Ritmo del watch (CR-082). */
+        internal const val WATCH_INTERVAL_MS = 2_000L
+
+        /** Ventana sin progreso que decreta el re-JOIN (§4.4). */
+        internal const val MEDIA_IDLE_MS = 5_000L
+
+        /** Re-JOINs consecutivos sin progreso antes de entregar Closed. */
+        internal const val REJOIN_ATTEMPTS_MAX = 2
+
+        /** CR-083 (pieza C): starve de AU que decreta la renegociación. */
+        internal const val AU_STARVE_MS = 8_000L
+
+        /** CR-083 (pieza C): renegociaciones antes de entregar Closed. */
+        internal const val RENEGOTIATE_MAX = 3
+
+        /** CR-083 (pieza C): separación mínima entre renegociaciones. */
+        internal const val RENEGOTIATE_GAP_MS = 60_000L
+    }
 }
 
 /**
@@ -72,13 +182,24 @@ internal class UdpPreferredMediaClient(
             "twinpad-media-fallback",
         )
 
+    /** CR-082 (§4.4): vigilancia posterior al one-shot §8.5. */
+    private val recoveryWatch =
+        Thread(
+            {
+                runRecoveryWatch()
+            },
+            "twinpad-media-recovery",
+        )
+
     override fun start() {
         udp.start()
         fallbackWatch.start()
+        recoveryWatch.start()
     }
 
     override fun close() {
         fallbackWatch.interrupt()
+        recoveryWatch.interrupt()
         udp.close()
         tcp.close()
     }
@@ -104,8 +225,10 @@ internal class UdpPreferredMediaClient(
         } catch (_: InterruptedException) {
             return
         }
-        if (udp.receivedAnyDatagram()) {
-            // UDP viable: el cliente TCP queda inactivo para esta conexión.
+        if (udp.receivedAnyAuthenticatedFragment()) {
+            // CR-081: hay bytes auténticos en el canal UDP aunque una IDR
+            // fragmentada no ensamble todavía — UDP viable; el cliente TCP
+            // queda inactivo para esta conexión.
             onEvent(UdpPreferredEvent.TransportActive(isUdp = true))
             return
         }
@@ -114,6 +237,60 @@ internal class UdpPreferredMediaClient(
         udp.close()
         tcp.start()
         onEvent(UdpPreferredEvent.TransportActive(isUdp = false))
+    }
+
+    /** CR-082 (§4.4): el one-shot §8.5 (900 ms) NO vuelve a mirar el
+     * canal: un corte EN TRÁNSITO (keepalives sin llegar al server, la
+     * pieza C de CR-081 expira el binding a los 10 s) deja el canal sin
+     * dueño y la app muda (evidencia 16:07:35 del duque). Este watch
+     * revisa cada 2 000 ms el progreso de seq (bytes auténticos
+     * aceptados, la misma señal de TEST-0162 — no engancha una IDR
+     * fragmentada); con 5 000 ms sin progreso re-JOINa con nonce nuevo
+     * (el server toma binding nuevo y pide IDR, TEST-0139) y a los 2
+     * intentos sin revivir entrega Closed. Corre DETRÁS del one-shot:
+     * el arranque frío muerto ya lo cubre el fallback §8.5. */
+    private fun runRecoveryWatch() {
+        try {
+            Thread.sleep(TCP_FALLBACK_AFTER_MS + MediaRecoveryPolicy.WATCH_INTERVAL_MS)
+            if (!fallbackStarted.get() && !closedDelivered.get()) {
+                recoveryTickLoop()
+            }
+        } catch (_: InterruptedException) {
+            // Interrupción del compuesto (close): sin recuperación pendiente.
+        }
+    }
+
+    /** CR-082/CR-083 (§4.4): bucle del watch ya armado (el `try` del
+     * arranque vive en [runRecoveryWatch] para no anidar la decisión del
+     * tick). Consulta las DOS señales: progreso de seq y AU entregadas
+     * (CR-083, pieza C — starve). */
+    private fun recoveryTickLoop() {
+        try {
+            val policy = MediaRecoveryPolicy()
+            while (!fallbackStarted.get() && !closedDelivered.get()) {
+                Thread.sleep(MediaRecoveryPolicy.WATCH_INTERVAL_MS)
+                when (
+                    policy.tick(
+                        udp.lastSeqAcceptedValue(),
+                        udp.deliveredAuCountValue(),
+                        System.currentTimeMillis(),
+                    )
+                ) {
+                    MediaRecoveryPolicy.Action.Rejoin -> udp.requestRejoin()
+                    MediaRecoveryPolicy.Action.Renegotiate ->
+                        onEvent(UdpPreferredEvent.Renegotiate)
+                    MediaRecoveryPolicy.Action.Close -> {
+                        // Cierre deliverado por onClosed del socket (el
+                        // hilo del socket sale con `running=false`).
+                        udp.close()
+                        return
+                    }
+                    else -> Unit
+                }
+            }
+        } catch (_: InterruptedException) {
+            // Interrupción del compuesto (close): sin acción pendiente.
+        }
     }
 
     private companion object {
@@ -146,16 +323,39 @@ internal class UdpMediaClient(
     private val running = AtomicBoolean(false)
     private val lastSeqAccepted = AtomicLong(-1)
 
+    /** CR-082 (§4.4): re-JOIN pedido por el watch compuesto; el hilo del
+     * socket lo ejecuta entre recepciones (sin acceso concurrente al
+     * socket ni al reassembler). */
+    private val reconnectRequested = AtomicBoolean(false)
+
     @Volatile
     private var socket: DatagramSocket? = null
 
     private var worker: Thread? = null
 
-    /** Para el fallback §8.5: ¿llegó el primer datagrama autenticado? */
+    /** CR-081 (§8.5): ¿llegó al menos un datagrama autenticado individualmente
+     * (AU completa o no)? El reensamblador avanza `latest_seq` solo con un
+     * envelope TWDU auténtico aceptado en la ventana, así que es la señal
+     * fiel del canal vivo para el watchdog: una IDR fragmentada ≥ 2 pérdidas
+     * por grupo FEC no debe condenar un canal que recibe bytes sanos. */
     @Volatile
-    private var anyAuthenticatedDatagram = false
+    private var anyAuthenticatedFragment = false
 
-    fun receivedAnyDatagram(): Boolean = anyAuthenticatedDatagram
+    fun receivedAnyAuthenticatedFragment(): Boolean = anyAuthenticatedFragment
+
+    /** CR-082 (§4.4): seq vigente para el watch de recuperación. */
+    fun lastSeqAcceptedValue(): Long = lastSeqAccepted.get()
+
+    /** CR-083 (pieza C): AU entregadas al caller hasta aquí (segunda
+     * señal del watch — starve de AUs con canal auténtico vivo). */
+    fun deliveredAuCountValue(): Long = deliveredAuCount.get()
+
+    private val deliveredAuCount = AtomicLong(0)
+
+    /** CR-082 (§4.4): pide re-JOIN — lo ejecuta el hilo del socket. */
+    fun requestRejoin() {
+        reconnectRequested.set(true)
+    }
 
     override fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -191,13 +391,24 @@ internal class UdpMediaClient(
             datagramSocket.soTimeout = RECEIVE_TIMEOUT_MS.toInt()
             runCatching { datagramSocket.receiveBufferSize = RECV_SOCKET_BUFFER_BYTES }
             datagramSocket.connect(InetSocketAddress(host, port))
-            val joinNonce = ByteArray(MediaCrypto.NONCE_BYTES).also(SecureRandom()::nextBytes)
-            val mediaKey = codec.udpMediaKey(joinNonce)
-            val reassembler = UdpReassembler(mediaKey, codec)
+            var joinNonce = ByteArray(MediaCrypto.NONCE_BYTES).also(SecureRandom()::nextBytes)
+            var reassembler = UdpReassembler(codec.udpMediaKey(joinNonce), codec)
             sendJoin(datagramSocket, joinNonce, FIRST_JOIN_LAST_SEQ)
             var nextKeepaliveNanos = System.nanoTime() + KEEPALIVE_PERIOD_NANOS
             val buffer = ByteArray(RECV_BUFFER_BYTES)
             while (running.get()) {
+                if (reconnectRequested.compareAndSet(true, false)) {
+                    // CR-082 (§4.4): re-JOIN con nonce NUEVO — el server
+                    // toma binding nuevo con seq 0 (§4.2, TEST-0139); el
+                    // reassembler y el last_seq se reinician con la clave
+                    // del nonce fresco (el keepalive pasa a refrescar el
+                    // binding nuevo con el MISMO nonce).
+                    joinNonce = ByteArray(MediaCrypto.NONCE_BYTES).also(SecureRandom()::nextBytes)
+                    reassembler = UdpReassembler(codec.udpMediaKey(joinNonce), codec)
+                    lastSeqAccepted.set(-1)
+                    sendJoin(datagramSocket, joinNonce, FIRST_JOIN_LAST_SEQ)
+                    nextKeepaliveNanos = System.nanoTime() + KEEPALIVE_PERIOD_NANOS
+                }
                 if (System.nanoTime() >= nextKeepaliveNanos) {
                     val lastSeq = lastSeqAccepted.get().coerceAtLeast(0)
                     sendJoin(datagramSocket, joinNonce, lastSeq)
@@ -210,11 +421,14 @@ internal class UdpMediaClient(
                     continue
                 }
                 val unit = reassembler.ingestUnit(packet.data, packet.length)
+                if (unit != null) deliveredAuCount.incrementAndGet()
                 if (reassembler.latestSeq > lastSeqAccepted.get()) {
                     lastSeqAccepted.set(reassembler.latestSeq)
+                    // CR-081 (§8.5): señal del watchdog — datagrama auténtico
+                    // individual; la AU completa no es necesaria para el watchdog.
+                    anyAuthenticatedFragment = true
                 }
                 if (unit == null) continue
-                anyAuthenticatedDatagram = true
                 onAccessUnit(unit)
             }
         } catch (_: Exception) {
@@ -675,13 +889,21 @@ internal class UdpReassembler(
         rawBySeq.headMap(cutoff, false).clear()
     }
 
+    /** CR-084: la AU pendiente se abandona solo cuando TODOS sus
+     * fragmentos salieron de la ventana: el último seq esperado
+     * (`firstSeq + fragTotal - 1`) ya venció. La regla anterior
+     * (`firstSeq <= cutoff`) mataba toda AU de más de `REPLAY_WINDOW`
+     * fragmentos al llegar el 257.º (la IDR de 1080p, 485-588 dg, jamás
+     * ensamblaba — gate §14 y Qin=0 del dictamen 17:31). TEST-0170. */
     private fun purgeAbandoned(seq: Long): Int {
         if (seq < UdpMediaCodec.REPLAY_WINDOW.toLong()) return 0
         val cutoff = seq - UdpMediaCodec.REPLAY_WINDOW.toLong()
         var removed = 0
         val iterator = pending.values.iterator()
         while (iterator.hasNext()) {
-            if (iterator.next().firstSeq <= cutoff) {
+            val pendingAu = iterator.next()
+            val lastExpectedSeq = pendingAu.firstSeq + (pendingAu.fragTotal - 1)
+            if (lastExpectedSeq <= cutoff) {
                 iterator.remove()
                 removed++
             }

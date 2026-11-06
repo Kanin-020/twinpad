@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.14.0 |
+| Version | 1.15.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
-| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132, TEST-0138, TEST-0139, TEST-0140 |
+| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132, TEST-0138, TEST-0139, TEST-0140, TEST-0162, TEST-0163, TEST-0164 |
 | Last updated | 2026-11-02 |
 
 ## 1. Purpose
@@ -60,7 +60,7 @@ CR-058 (R10) — degradación automática por congestión en el relay: por venta
 
 ### 4.4 Canal media UDP preferente con fallback TCP (CR-062)
 
-Canal **unidireccional Servidor→Android** por datagramas UDP al mismo `media_port=8425`, OPCIONAL y PREFERENTE: el TCP de §4.2–§4.3 queda como fallback intacto. El teléfono decide: envía JOIN y, si en 900 ms no llega ninguna AU válida por UDP, revierte al TCP media existente (§8.5).
+Canal **unidireccional Servidor→Android** por datagramas UDP al mismo `media_port=8425`, OPCIONAL y PREFERENTE: el TCP de §4.2–§4.3 queda como fallback intacto. El teléfono decide: envía JOIN y, si en 900 ms no llega NINGÚN datagrama autenticado individual por UDP (CR-081: cuenta la señal por datagrama — cualquier envelope TWDU autenticado aunque la AU no ensamble —, no la entrega de AU completas), revierte al TCP media existente (§8.5).
 
 **JOIN (Android→Servidor, 92 B):** `magic[8 b"TWPUDP01"] || session_id[16] || last_seq:u32 BE || join_nonce[32] || HMAC-SHA256[32]`; el MAC cubre ASCII `"twinpad.v1 media udp client"` || `session_id` || `last_seq:u32 BE` || `join_nonce` con `session_key`. Validación idéntica a §4.2 (sesión activa o retención viva, CR-056). El teléfono reenvía el MISMO join como keepalive cada 1 000 ms mientras quiera UDP (reporte R11: `last_seq` = último `seq` de datos recibido, 0 si aún ninguno). El Servidor lo usa solo para refrescar binding/estadística, sin IDR; un JOIN con `join_nonce` distinto del vigente es re-join: deriva clave nueva y toma la propiedad del canal (IDR).
 
@@ -74,7 +74,7 @@ Canal **unidireccional Servidor→Android** por datagramas UDP al mismo `media_p
 
 **Dueño del relay:** por sesión hay UN solo dueño del relay, decidido por recencia de eventos: un JOIN válido toma la propiedad UDP (y solicita IDR, CR-051); un handshake TCP §4.2 válido la devuelve a TCP (también con IDR). Entre eventos de propiedad, solo el dueño vigente escribe datagramas. Reenviar el mismo JOIN (keepalive) NO cambia la propiedad ni solicita IDR. El cierre/revocación del Pairing (R8) elimina el canal UDP y el de TCP simultáneamente.
 
-**Señal de pérdida (R11):** el `last_seq` de los JOIN vigentes alimenta la MISMA escalera de R10: por ventana de 2 000 ms el Servidor cuenta `P` = datagramas de datos enviados y `D` = huecos estimados (`seq_corriente − last_seq_recibido`, acotado ≥ 0, solo con keepalive fresco ≤ 5 s; sin señal no se ingiere). Umbrales e histéresis idénticos a R10 (§4.3).
+**Señal de pérdida (R11):** el `last_seq` de los JOIN vigentes alimenta la MISMA escalera de R10: por ventana de 2 000 ms el Servidor cuenta `P` = datagramas de datos enviados y `D` = huecos estimados (`seq_corriente − last_seq_recibido`, acotado ≥ 0, solo con keepalive fresco ≤ 5 s; sin señal no se ingiere). Umbrales e histéresis idénticos a R10 (§4.3). Cada keepalive del mismo nonce refresca el binding y deja una línea de log en el Servidor (CR-081). **Expiración del binding (CR-081):** si durante 10 000 ms no llega ningún JOIN/keepalive autenticado del canal vigente, el relay del Servidor cesa de emitir (con log) y libera el canal; el siguiente JOIN válido reabre con IDR. Un socket del teléfono muerto no deja al relay disparando datagramas a un puerto sin dueño ni rastro.
 
 Los datagramas UDP no relajan las invariantes de §14: una AU con fallo de validación se descarta y se conserva la última imagen válida (§5), sin basura en el decoder.
 
@@ -147,7 +147,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 
 ### 8.5 Fallback UDP → TCP (CR-062, REQ-005 AC-2)
 
-- **Trigger:** el teléfono emitió JOIN (§4.4) y no recibe ninguna AU válida por UDP en 900 ms (paired en retención o Pairing activo).
+- **Trigger:** el teléfono emitió JOIN (§4.4) y no recibe NINGÚN datagrama autenticado individual por UDP en 900 ms (señal por datagrama de CR-081; paired en retención o Pairing activo).
 - **Flow:** el teléfono cierra el socket UDP, deja de enviar keepalives y sigue la ruta TCP existente de §4.2 (conexión, HMAC, subclave nueva, IDR). El Servidor, al autenticar ese TCP, toma la propiedad del relay (recencia, §4.4) y suspende el envío UDP. La recuperación de UDP tras un fallback exige un ciclo nuevo de reconexión media (§8.2): el teléfono vuelve a intentar JOIN al reiniciar el transporte.
 - **Result:** un solo dueño envía; ninguna AU duplicada llega al decoder; la pérdida del canal UDP se comporta igual que la pérdida del TCP media (V2 → reconexión).
 
@@ -279,6 +279,7 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.8.0 | 2026-10-27 | Product owner (CR-027) | `video_config` admite y reenvía `bitrate_kbps` (1.000–30.000, default 8.000); trigger §8.1 incluye el cambio de bitrate |
+| 1.15.0 | 2026-11-05 | Buffy (agente, CR-081) | Watchdog del fallback §8.5 por datagramas autenticados (no AU completas); expiración del binding del relay UDP (10 s sin keepalive → salida con log) y log del refresco por keepalive (§4.4); §8.5 alineado |
 | 1.9.0 | 2026-10-28 | Product owner (CR-029) | FPS unlimited: sin pacing ni tope 30/60; `stream_start.fps` metadata 0–255 (`0` = unlimited); `video_config` sin fps |
 | 1.10.0 | 2026-10-28 | Product owner (CR-030) | `video_config` reenvía w/h a Cemu; el DRC se escala (nearest, sin upscale) antes del encode; trigger §8.1 define el escalado |
 | 1.11.0 | 2026-11-04 | Product owner (CR-074) | Escalado bidireccional del DRC (upscale permitido) y sentinela `0/0` = nativo en `video_config`; §8.1 sin cambio wire |

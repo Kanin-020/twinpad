@@ -754,6 +754,20 @@ fn main() {
                                                     cfg.height,
                                                     cfg.bitrate_kbps,
                                                 );
+                                                // CR-083 (pieza C): la renegociación del
+                                                // teléfono (starve de AU en el watch,
+                                                // TEST-0169) y cualquier ajuste del drawer
+                                                // reenvían este `video_config`; el re-envío
+                                                // viene acompañado del pedido de IDR de
+                                                // CR-051 — sin IDR nueva el gate §14 del
+                                                // decoder jamás abre (sesión 16:34:47 del
+                                                // duque: 0 fps con P-frames a 6 600 dgs/s).
+                                                let idr_ok = games_ref.send_cemu_video_force_idr();
+                                                if !idr_ok {
+                                                    println!(
+                                                        "video_force_idr falló (juego sin writer vivo) tras video_config."
+                                                    );
+                                                }
                                             }
                                             println!(
                                                 "Video config actualizada por la app: {}×{}, {} kbps (sin tope de fps).",

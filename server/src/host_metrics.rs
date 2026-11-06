@@ -131,13 +131,18 @@ impl HostMetricsSampler {
 
     /// Muestrea el host ahora; `None` en el primer muestreo (el delta
     /// de CPU necesita el previo) o si `/proc/meminfo` no está.
+    ///
+    /// CR-078: el previo de CPU se instala ANTES de evaluar el delta —
+    /// la versión anterior salía por `?` con `prev == None` sin guardar
+    /// `now` (el previo jamás se instalaba y el emisor corría sin emitir
+    /// nunca: medido en banco, wchar del proceso solo crecía con pings).
     pub fn sample(&mut self) -> Option<HostMetrics> {
         let now = read_cpu_stat()?;
-        let cpu_percent = self.prev.and_then(|prev| cpu_percent(prev, now))?;
+        let cpu_percent = self.prev.and_then(|prev| cpu_percent(prev, now));
         self.prev = Some(now);
         let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
         let (ram_used_mb, ram_total_mb) = parse_meminfo(&meminfo)?;
-        Some(HostMetrics {
+        cpu_percent.map(|cpu_percent| HostMetrics {
             cpu_percent,
             gpu_percent: read_gpu_busy(),
             ram_used_mb,
@@ -309,5 +314,28 @@ mod tests {
             assert!(second.ram_total_mb > 0);
             assert!(second.ram_total_mb >= second.ram_used_mb);
         }
+    }
+
+    // TEST-0159 (server, CR-078): el sampler EMITE en el segundo tick —
+    // regresión del defecto bancario del cual el pre-EL previo de CPU se
+    // instalaba tras el `?` del delta (el emisor corría sin emitir nunca).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn sampler_emits_from_the_second_tick() {
+        let mut sampler = HostMetricsSampler::new();
+        assert!(sampler.sample().is_none(), "primer tick: instala previo");
+        // Jiffies nuevos: con HZ≥100, 300 ms dan ≥30 ticks de CPU agregada
+        // (un delta total de 0 es legítimo del wire y el emisor lo salta).
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let sample = sampler.sample();
+        assert!(sample.is_some(), "segundo tick: emite (CR-078)");
+        if let Some(second) = sample {
+            assert!(second.cpu_percent <= 100);
+            assert!(second.ram_total_mb > 0);
+            assert!(second.ram_total_mb >= second.ram_used_mb);
+        }
+        // Tercer tick emite también (jiffies nuevos, como arriba).
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(sampler.sample().is_some(), "tercer tick: emite");
     }
 }

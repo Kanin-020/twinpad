@@ -267,6 +267,7 @@ internal class PairingMediaSession(
             onEvent = { event ->
                 when (event) {
                     is UdpPreferredEvent.TransportActive -> setMediaTransport(event.isUdp)
+                    UdpPreferredEvent.Renegotiate -> renegotiateStream(connectionGeneration)
                     UdpPreferredEvent.Closed -> onClientClosed(connectionGeneration)
                 }
             },
@@ -309,6 +310,20 @@ internal class PairingMediaSession(
             clearQueuedAccessUnits()
             outputDecoder.resetForDiscontinuity()
         }
+    }
+
+    /** CR-083 (pieza C): renegociación ante starve de AU — el canal media
+     * recibe fragmentos auténticos pero el gate §14 del decoder no abre
+     * (ní una AU entregada: el relay del server solo reenvía P-frames
+     * sin IDR). Reenvía el `video_config` VIGENTE por el canal de control
+     * (la secuencia CR-030 ya existente, compilada del ajuste actual de
+     * la app); el server la reléa a Cemu y acompaña el pedido de IDR
+     * (CR-051), la MISMA acción que en banco revive el stream sin nuevas
+     * piezas de wire. El gap y el tope de intentos viven en
+     * MediaRecoveryPolicy (TEST-0169). */
+    private fun renegotiateStream(connectionGeneration: Long) {
+        if (connectionGeneration != generation.get()) return
+        network.send(dependencies.renegotiateVideoConfigLine())
     }
 
     private fun onClientClosed(connectionGeneration: Long) {

@@ -1,8 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Colores canónicos de la app; CR-044 añade el fondo del overlay del
-     teclado del juego (90 % negro). -->
+<!-- Colores canónicos de la app. CR-077: tokens de DESIGN.md (Featurebase,
+     tema dark) con palette de la guía + acento de los gauges.
+     SURFACES: level 0 = design_void_canvas … level 4 = design_slate_edge. -->
 <resources>
+    <!-- Tokens de superficie (DESIGN.md §Surfaces 0..4). -->
+    <color name="design_void_canvas">#050608</color>
+    <color name="design_ink_surface">#0A0B0F</color>
+    <color name="design_charcoal_panel">#0F1219</color>
+    <color name="design_steel_panel">#151822</color>
+    <color name="design_slate_edge">#1F1E2A</color>
+
+    <!-- Tokens de texto/acentos (DESIGN.md §Tokens). Signal Violet es un
+         acento REDUCIDO: estados seleccionados y medidores (Do/Don't). -->
+    <color name="design_cloud_white">#FFFFFF</color>
+    <color name="design_frost_text">#DEE1EA</color>
+    <color name="design_misted_slate">#B2B8CD</color>
+    <color name="design_quiet_slate">#8F94A6</color>
+    <color name="design_signal_violet">#7064F2</color>
+
     <color name="keyboard_overlay_background">#E6121212</color>
-    <!-- CR-076: acento del arco de los gauges (ventana de espera). -->
-    <color name="metrics_accent">#7EC9B4</color>
+    <!-- CR-077: acento del arco de los gauges (ventana de espera) — Signal
+         Violet de DESIGN.md; antes era #7EC9B4 (CR-076). -->
+    <color name="metrics_accent">@color/design_signal_violet</color>
 </resources>

@@ -53,7 +53,7 @@ class GaugeView
         private val ringBackgroundPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                color = 0x33FFFFFF
+                color = ContextCompat.getColor(context, R.color.design_slate_edge)
             }
 
         private val ringProgressPaint =
@@ -64,13 +64,13 @@ class GaugeView
 
         private val valuePaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = 0xFFFFFFFF.toInt()
+                color = ContextCompat.getColor(context, R.color.design_cloud_white)
                 textAlign = Paint.Align.CENTER
             }
 
         private val labelPaint =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = 0xB3FFFFFF.toInt()
+                color = ContextCompat.getColor(context, R.color.design_misted_slate)
                 textAlign = Paint.Align.CENTER
             }
 
@@ -116,8 +116,9 @@ class GaugeView
             const val START_ANGLE = -90f
             const val SWEEP = 360f
 
-            /** Color del anillo cuando el gauge no tiene dato. */
-            const val RING_INACTIVE_COLOR = 0x55FFFFFF
+            /** Color de fondo de los anillos cuando el gauge no tiene dato.
+             * CR-077: Quiet Slate de DESIGN.md atenudado sobre el Void Canvas. */
+            const val RING_INACTIVE_COLOR = 0x558F94A6.toInt()
 
             /** Métricas del dibujo (proporciones del ancho del gauge). */
             const val STROKE_WIDTH_RATIO = 0.08f

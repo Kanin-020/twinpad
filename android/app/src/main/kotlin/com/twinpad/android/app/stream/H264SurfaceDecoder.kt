@@ -208,7 +208,13 @@ class H264SurfaceDecoder(
                 codec.releaseOutputBuffer(index, lastPresentNs + emaIntervalNs)
                 lastPresentNs += emaIntervalNs
             } else {
-                codec.releaseOutputBuffer(index, true)
+                // CR-080: presentación inmediata SIEMPRE con el reloj del
+                // teléfono. `true` dejaba al MediaCodec el PTS del contenido
+                // (decenas de segundos) y la rama diferida el reloj del
+                // teléfono (uptime, ~días): el salto entre bases entre dos
+                // renders consecutivos disparaba el «AV Sync Warning» y
+                // paralizaba la presentación (fps 0).
+                codec.releaseOutputBuffer(index, nowNs)
                 // Presentación inmediata bajo el ritmo medido o retraso (
                 // resync al reloj actual, nunca acumulativa).
                 if (frameNumber != null) lastPresentNs = nowNs

@@ -31,6 +31,15 @@ class AndroidSettingsStoreTest {
         val advanced = settings.copy(showAdvancedMetrics = true)
         assertEquals(true, advanced.showAdvancedMetrics)
         assertEquals(settings.videoConfigLine(), advanced.videoConfigLine())
+        // CR-077: el origen de los gauges de espera también es local.
+        val gamepadSource = settings.copy(metricsSourceHost = false)
+        assertEquals(false, gamepadSource.metricsSourceHost)
+        assertEquals(settings.videoConfigLine(), gamepadSource.videoConfigLine())
+        // CR-079 (TEST-0160): el slider de gauges también es local y no
+        // altera el contrato video_config.
+        val sliderHidden = settings.copy(metricsSliderOverStream = false)
+        assertEquals(false, sliderHidden.metricsSliderOverStream)
+        assertEquals(settings.videoConfigLine(), sliderHidden.videoConfigLine())
     }
 
     @Test
@@ -50,6 +59,11 @@ class AndroidSettingsStoreTest {
         assertEquals(false, defaults.nintendoDistribution)
         // CR-054: las métricas avanzadas arrancan apagadas (opt-in).
         assertEquals(false, defaults.showAdvancedMetrics)
+        // CR-077: el alternador arranca mostrando la PC (CR-076 v2).
+        assertEquals(true, defaults.metricsSourceHost)
+        // CR-079 (TEST-0160): el slider nace activo (hoja abierta al entrar
+        // en sesión, decisión del owner).
+        assertEquals(true, defaults.metricsSliderOverStream)
     }
 
     @Test

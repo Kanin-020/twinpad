@@ -1,8 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tema M3 sobre Views (sin Compose). CR-077: DESIGN.md (Featurebase) —
+     escenario dark Void Canvas como fondo, texto Inter en toda la app,
+     principal Cloud White/Frost; los botones de conversión llenos usan
+     blanco 92 % con texto Charcoal Panel (Do/Don't de la guía). -->
 <resources>
-    <!-- Tema M3 sobre Views (sin Compose): acciones y color de fondo coherente
-         con el resto de la app (ENG P14). -->
     <style name="Theme.Twinpad" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:windowBackground">@color/design_void_canvas</item>
+        <item name="android:colorBackground">@color/design_void_canvas</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+        <item name="colorOnBackground">@color/design_frost_text</item>
+        <item name="colorOnSurface">@color/design_frost_text</item>
+        <item name="android:textColorPrimary">@color/design_cloud_white</item>
+        <item name="android:textColorSecondary">@color/design_misted_slate</item>
+    </style>
+
+    <!-- CR-077: botón de conversión lleno de DESIGN.md (Header/Hero White
+         Conversion Button) — fill rgba(255,255,255,0.92), texto Charcoal
+         Panel en 14sp/500, radio 12 px. -->
+    <style name="Widget.Twinpad.Button.Filled" parent="Widget.Material3.Button">
+        <item name="android:backgroundTint">#EBFFFFFF</item>
+        <item name="android:textColor">@color/design_charcoal_panel</item>
+        <item name="android:textSize">14sp</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:textFontWeight">500</item>
     </style>
 </resources>

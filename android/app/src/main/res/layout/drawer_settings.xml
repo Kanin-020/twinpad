@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Drawer de ajustes del stream (CR-001, CR-027; CR-029: sin selector
      de fps porque la emisión ya no se limita): resolución, bitrate,
-     bitrate de video, HUD y controles táctiles; editable en Android Studio. -->
+     bitrate de video, HUD y controles táctiles; editable en Android Studio.
+     CR-077: superficie Charcoal Panel con títulos Cloud White y etiquetas
+     Misted Slate de DESIGN.md; nuevo origen de los gauges de espera. -->
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/drawer_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/design_charcoal_panel"
     android:fillViewport="true"
     android:overScrollMode="ifContentScrolls">
 
@@ -20,6 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_title"
+            android:textColor="@color/design_cloud_white"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
         <TextView
@@ -27,6 +31,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="@string/settings_resolution"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <RadioGroup
@@ -66,6 +71,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_scale"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <RadioGroup
@@ -92,6 +98,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_audio"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <SeekBar
@@ -105,6 +112,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_hud"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
@@ -118,6 +126,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_controls"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
@@ -131,6 +140,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_distribution"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <!-- CR-034: distribución de los botones de cara; también el mando
@@ -146,6 +156,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_camera"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <!-- CR-034: opt-in del stream de cámara hacia Cemu; los frames solo
@@ -181,6 +192,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="@string/settings_debug"
+            android:textColor="@color/design_cloud_white"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
         <!-- CR-054: métricas por etapa del Plugin, opt-in, off por defecto. -->
@@ -190,11 +202,21 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_show_advanced_metrics" />
 
+        <!-- CR-079: slider de gauges durante la sesión — la ventana de
+             espera aparece como hoja arrastrable sobre el video (nace
+             abierta); desmarcado no se muestra. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_metrics_slider"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_metrics_slider" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/settings_gyro"
+            android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
@@ -205,6 +227,7 @@
 
         <Button
             android:id="@+id/btn_close_drawer"
+            style="@style/Widget.Twinpad.Button.Filled"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/settings_close" />

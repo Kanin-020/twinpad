@@ -7,6 +7,7 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/root_content"
+        android:background="@color/design_void_canvas"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
@@ -16,6 +17,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
             android:text="@string/app_name"
+            android:textColor="@color/design_cloud_white"
+            android:fontFamily="@font/inter"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -25,6 +28,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
+            style="@style/Widget.Twinpad.Button.Filled"
             android:text="@string/pairing_scan_button"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
@@ -36,6 +40,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            style="@style/Widget.Twinpad.Button.Filled"
             android:text="@string/pairing_typed_code_button"
             android:visibility="gone"
             app:layout_constraintEnd_toEndOf="parent"
@@ -66,6 +71,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            style="@style/Widget.Twinpad.Button.Filled"
             android:text="@string/pairing_cancel_button"
             android:visibility="gone"
             app:layout_constraintEnd_toEndOf="parent"
@@ -77,6 +83,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            style="@style/Widget.Twinpad.Button.Filled"
             android:text="@string/pairing_retry_button"
             android:visibility="gone"
             app:layout_constraintEnd_toEndOf="parent"
@@ -125,17 +132,16 @@
                 </FrameLayout>
             </FrameLayout>
 
-            <!-- CR-076 v3: MONITOR FULL-SCREEN de espera (no un overlay): cubre
-                 el Framebuffer residual (drc_content queda debajo) con una retícula
-                 2×2 de gauges grandes del consumo de la PC (host_metrics del
-                 server). Sin texto central («Sin segunda pantalla activa»): el
-                 único texto es la lista de juegos, al pie. El toggle vive en
-                 PairingActivity (StreamState). -->
-            <LinearLayout
-                android:id="@+id/waiting_view"
+            <!-- CR-079: slider de gauges — la MISMA retícula 2×2 de la ventana
+                 de espera (CR-076 v3, única instancia en la jerarquía). Sin
+                 stream es la vista frontal fullscreen opaca (cubre el
+                 Framebuffer residual); en STREAMING se ancla abajo como hoja
+                 arrastrable SOBRE el video (nace abierta, CR-079). Declarado
+                 tras surface_container para ganar el toque en el drag. -->
+            <com.twinpad.android.app.ui.MetricsSliderContainer
+                android:id="@+id/metrics_slider"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
-                android:orientation="vertical"
                 android:visibility="gone"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -143,52 +149,94 @@
                 app:layout_constraintTop_toTopOf="parent">
 
                 <LinearLayout
+                    android:id="@+id/metrics_sheet"
                     android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:orientation="horizontal">
+                    android:layout_height="match_parent"
+                    android:background="@color/design_void_canvas"
+                    android:orientation="vertical">
 
-                    <com.twinpad.android.app.ui.GaugeView
-                        android:id="@+id/gauge_cpu"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1" />
+                    <!-- CR-079 v4: el asa vive ARRIBA de la hoja (decisión del
+                         owner). Así el plegado real es posible: la hoja baja y
+                         solo queda el asa visible en el borde inferior. -->
+                    <View
+                        android:id="@+id/metrics_handle"
+                        android:layout_width="72dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginBottom="10dp"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/bg_metrics_handle"
+                        android:visibility="gone" />
 
-                    <com.twinpad.android.app.ui.GaugeView
-                        android:id="@+id/gauge_gpu"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1" />
+                    <!-- CR-079 v8 (prueba del owner): la franja del asa queda
+                         TRANSPARENTE — el fondo Charcoal vive SOLO en el
+                         contenido (la retícula + txt_games); plegado se ve
+                         únicamente el asa, nunca una banda de fondo. -->
+                    <LinearLayout
+                        android:id="@+id/metrics_content"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:id="@+id/gauge_grid"
+                            android:layout_width="match_parent"
+                            android:layout_height="0dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="0dp"
+                                android:layout_weight="1"
+                                android:orientation="horizontal">
+
+                                <com.twinpad.android.app.ui.GaugeView
+                                    android:id="@+id/gauge_cpu"
+                                    android:layout_width="0dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_weight="1" />
+
+                                <com.twinpad.android.app.ui.GaugeView
+                                    android:id="@+id/gauge_gpu"
+                                    android:layout_width="0dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_weight="1" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="0dp"
+                                android:layout_weight="1"
+                                android:orientation="horizontal">
+
+                                <com.twinpad.android.app.ui.GaugeView
+                                    android:id="@+id/gauge_ram"
+                                    android:layout_width="0dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_weight="1" />
+
+                                <com.twinpad.android.app.ui.GaugeView
+                                    android:id="@+id/gauge_fps"
+                                    android:layout_width="0dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_weight="1" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/txt_games"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:paddingHorizontal="12dp"
+                            android:paddingVertical="4dp"
+                            android:textColor="@color/design_misted_slate"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
                 </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:orientation="horizontal">
-
-                    <com.twinpad.android.app.ui.GaugeView
-                        android:id="@+id/gauge_ram"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1" />
-
-                    <com.twinpad.android.app.ui.GaugeView
-                        android:id="@+id/gauge_fps"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/txt_games"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="4dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
-            </LinearLayout>
+            </com.twinpad.android.app.ui.MetricsSliderContainer>
 
             <FrameLayout
                 android:id="@+id/surface_container"
@@ -253,7 +301,7 @@
                 android:background="@drawable/touch_button"
                 android:contentDescription="@string/settings_title"
                 android:src="@drawable/ic_settings"
-                android:tint="#4D4D4D"
+                android:tint="@color/design_quiet_slate"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
 
@@ -289,6 +337,7 @@
 
                     <Button
                         android:id="@+id/btn_keyboard_cancel"
+                        style="@style/Widget.Twinpad.Button.Filled"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
@@ -296,6 +345,7 @@
 
                     <Button
                         android:id="@+id/btn_keyboard_accept"
+                        style="@style/Widget.Twinpad.Button.Filled"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"

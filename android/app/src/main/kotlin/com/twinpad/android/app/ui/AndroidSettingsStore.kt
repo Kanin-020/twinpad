@@ -36,6 +36,16 @@ data class AndroidSettings(
     /** CR-054: bloque «Métricas avanzadas» del HUD con las etapas del
      * pipeline del Plugin (`video_stage_stats`); opt-in del drawer. */
     val showAdvancedMetrics: Boolean = false,
+    /** CR-077: origen interno de los gauges — `true` = HOST (la PC que
+     * corre el server, `host_metrics` del CR-076), `false` = el dispositivo
+     * Gamepad ([DeviceMetricsSampler]). Desde CR-079 ya no tiene interruptor
+     * en el drawer (default PC) pero sigue alimentando la vista de espera.
+     */
+    val metricsSourceHost: Boolean = true,
+    /** CR-079: slider de gauges durante la sesión — `true` = en STREAMING
+     * la ventana de espera aparece como hoja arrastrable sobre el video
+     * (nace ABIERTA, decisión del owner); `false` = no se muestra. */
+    val metricsSliderOverStream: Boolean = true,
 ) {
     fun videoConfigLine(): String =
         buildString {
@@ -89,6 +99,10 @@ internal class AndroidSettingsStore(context: Context) {
                 },
             // CR-054: métricas avanzadas opt-in, off por defecto.
             showAdvancedMetrics = preferences.getBoolean(KEY_ADVANCED_METRICS, false),
+            // CR-077: los gauges muestran la PC por defecto (CR-076 v2).
+            metricsSourceHost = preferences.getBoolean(KEY_METRICS_SOURCE_HOST, true),
+            metricsSliderOverStream =
+                preferences.getBoolean(KEY_METRICS_SLIDER_OVER_STREAM, true),
         )
 
     fun save(settings: AndroidSettings) {
@@ -116,6 +130,8 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_CAMERA_STREAM, settings.cameraStream)
             .putString(KEY_CAMERA_LENS, settings.cameraLens.name)
             .putBoolean(KEY_ADVANCED_METRICS, settings.showAdvancedMetrics)
+            .putBoolean(KEY_METRICS_SOURCE_HOST, settings.metricsSourceHost)
+            .putBoolean(KEY_METRICS_SLIDER_OVER_STREAM, settings.metricsSliderOverStream)
             .apply()
     }
 
@@ -132,5 +148,7 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_CAMERA_STREAM = "camera_stream"
         const val KEY_CAMERA_LENS = "camera_lens"
         const val KEY_ADVANCED_METRICS = "show_advanced_metrics"
+        const val KEY_METRICS_SOURCE_HOST = "metrics_source_host"
+        const val KEY_METRICS_SLIDER_OVER_STREAM = "metrics_slider_over_stream"
     }
 }
