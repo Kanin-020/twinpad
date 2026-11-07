@@ -21,6 +21,8 @@ The agent **creates the commit directly** in the repository. The expected outcom
 
 3. **Project gates (workflow §8)**
    - Run the gates defined in `docs/process/workflow.md` §8 (format, linter, tests) over the changed files.
+   - The gates cover the root workspace and `android/` only: `./scripts/test.sh` (`cargo fmt`/`clippy`/`test`, `ktlint`, `detekt`, `testDebugUnitTest`).
+   - The integration submodules (`integrations/cemu`, `integrations/dusklight`, `integrations/decky-twinpad`) are NOT part of the gates: a full CMake build of any of them takes minutes and is only needed when the commit itself changes that submodule's code, not when it bumps its pointer.
    - If a gate fails: do NOT commit. Diagnose (code bug, test bug, SPEC ambiguity) and report it.
 
 4. **Determine the message**
@@ -48,6 +50,7 @@ The agent **creates the commit directly** in the repository. The expected outcom
 
 5. **Create the commit**
    - Stage only the files of the logical change (`git add <paths>`, or `git commit -am` if everything applies).
+   - A submodule pointer change is only part of the change once that submodule's own commit exists; never commit the parent pointer while the submodule work tree is dirty with the same work.
    - Create the commit with a heredoc:
 
      ```bash
