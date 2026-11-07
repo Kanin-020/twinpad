@@ -30,6 +30,14 @@ pub const DEFAULT_AUDIO_IPC_PORT: u16 = 8422;
 /// Capacidad de cola de audio; los bloques viejos se descartan (CR-003).
 const AUDIO_QUEUE_CAPACITY: usize = 8;
 
+/// Nombres canónicos de capacidad (SPEC-006 §4/§10), para no escribirlos a
+/// mano ni dejar que un typo lo detecte recién `GameConfig::new`.
+pub const CAPABILITY_SECOND_SCREEN: &str = "second_screen";
+/// El juego publica PCM por el canal de audio dedicado.
+pub const CAPABILITY_AUDIO: &str = "audio";
+/// El juego consume el gamepad del teléfono por [`TwinpadGame::poll_input`].
+pub const CAPABILITY_INPUT_CONSUMPTION: &str = "input_consumption";
+
 /// Timeout para el anuncio (el server debe aceptarlo al momento).
 const ANNOUNCE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -49,6 +57,39 @@ pub enum SdkError {
     InvalidConfig,
 }
 
+// `Display` y `std::error::Error` son deliberados: sin ellos el SDK solo se
+// podía depurar con `{:?}` y un `?` en una app con `anyhow`/`Box<dyn Error>`
+// no compilaba. Nada de esto cambia el wire ni el comportamiento.
+impl std::fmt::Display for SdkError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ServerUnreachable(error) => write!(
+                formatter,
+                "servidor Twinpad inalcanzable en el IPC local (¿está corriendo?): {error}"
+            ),
+            Self::AnnouncementRejected => write!(
+                formatter,
+                "el servidor cerró el anuncio: game_id duplicado o mensaje inválido"
+            ),
+            Self::InvalidConfig => {
+                write!(
+                    formatter,
+                    "configuración inválida para el anuncio (SPEC-006 §4)"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SdkError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ServerUnreachable(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
 /// Identificación del juego (SPEC-006 §4). Valídada al construir.
 #[derive(Clone, Debug)]
 pub struct GameConfig {
@@ -56,8 +97,9 @@ pub struct GameConfig {
     pub game_id: String,
     /// 1–128 chars legibles.
     pub game_name: String,
-    /// Subconjunto de capacidades (`second_screen`, `audio`,
-    /// `input_consumption`); vacío válido (§10).
+    /// Subconjunto de capacidades; vacío válido (§10). Usa las constantes
+    /// [`CAPABILITY_SECOND_SCREEN`], [`CAPABILITY_AUDIO`] y
+    /// [`CAPABILITY_INPUT_CONSUMPTION`] en vez de literales.
     pub capabilities: Vec<String>,
 }
 
@@ -199,6 +241,10 @@ impl Drop for TwinpadGame {
 
 impl TwinpadGame {
     /// Anuncia el juego al Servidor PC (SPEC-006 §7 pasos 1–2).
+    ///
+    /// **Bloquea hasta ~500 ms** (`REJECT_PROBE`): el servidor no responde en
+    /// el flujo feliz, así que el SDK espera ese lapso sin datos ni cierre para
+    /// confirmar el registro. Llámalo al arrancar el juego, no por frame.
     pub fn announce(config: GameConfig) -> Result<Self, SdkError> {
         Self::announce_on(("127.0.0.1", DEFAULT_IPC_PORT), config)
     }
@@ -273,7 +319,13 @@ impl TwinpadGame {
     }
 
     /// Inicia una fuente PCM por la conexión IPC dedicada (CR-003).
-    /// El callback corre en hilo dedicado y la cola limita la memoria a ocho chunks.
+    /// El callback corre en hilo dedicado y la cola limita la memoria a ocho
+    /// chunks: si el juego produce más rápido que el socket, se descarta el
+    /// chunk más viejo en silencio (nunca se bloquea al llamador).
+    ///
+    /// Una sola fuente por handle y solo con la capacidad
+    /// [`CAPABILITY_AUDIO`]: la segunda llamada devuelve
+    /// [`SdkError::InvalidConfig`].
     pub fn start_audio_source<F>(
         &mut self,
         rate: u32,
@@ -359,6 +411,18 @@ impl TwinpadGame {
     ///
     /// El `gfn` lo asigna el SDK (monotónico desde 0 por conexión); el
     /// server re-empacará el frame con el `fn` de su stream hacia la app.
+    ///
+    /// # Hilos
+    ///
+    /// **Esta llamada escribe de forma síncrona en el socket**, con el timeout
+    /// de escritura del anuncio (10 s) todavía activo. No la invoques desde el
+    /// hilo de render: pásale los frames a un hilo de envío tuyo con una cola
+    /// acotada que descarte los viejos. Un servidor que no drena (app dormida,
+    /// sesión cortada) bloquea al llamador hasta que vence el timeout.
+    ///
+    /// El frame completo se codifica a base64 y se copia dentro del JSON en
+    /// cada llamada: con `rgb8` a 1080p eso es una asignación de decenas de MB
+    /// por frame, así que para video usa formatos comprimidos.
     ///
     /// # Errors
     /// [`SdkError::InvalidConfig`] si los parámetros no cumplen SPEC-003 §4

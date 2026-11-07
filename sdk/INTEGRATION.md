@@ -92,7 +92,9 @@ retira al Ctrl+C (verificable en la lista de juegos disponibles de la app).
 | `push_frame` | `gfn` lo asigna el SDK (monotónico por conexión). H.264 (`FrameFormat::H264`) exige `push_h264_access_unit` con `ts_capture_us` monotónico e `idr` (CR-015). |
 | Audio | PCM s16le, chunks ≤ 16 KiB, rate 8k–192k. Cola interna de 8 chunks: al llenarse descarta el más viejo y `push_frame` nunca se bloquea. |
 | Input | `poll_input()` devuelve el último snapshot de `input_report` o `None`; sin cola histórica. |
-| Errores | `SdkError::ServerUnreachable` (server caído), `SdkError::AnnouncementRejected` (server cerró la conexión: id duplicado o inválido), `SdkError::InvalidConfig` (violación de §4 antes de conectar). |
+| Errores | `SdkError::ServerUnreachable` (server caído), `SdkError::AnnouncementRejected` (server cerró la conexión: id duplicado o inválido), `SdkError::InvalidConfig` (violación de §4 antes de conectar). Implementa `Display` y `std::error::Error`, así que `?` funciona con `anyhow`/`Box<dyn Error>`. |
+| Capacidades | Usa `CAPABILITY_SECOND_SCREEN`, `CAPABILITY_AUDIO`, `CAPABILITY_INPUT_CONSUMPTION` en vez de literales. |
+| Hilos | `push_frame` escribe en el socket **de forma síncrona** (timeout de 10 s heredado del anuncio) y `announce` espera hasta ~500 ms. Ninguna de las dos va en el hilo de render: frames a un hilo de envío con cola acotada; anuncio al arrancar. |
 | Reanudación | Si el proceso muere, el juego desaparece; para proseguir el stream basta re-anunciar + re-seleccionar el juego en la app. |
 
 ## 5. Cómo probarlo sin app
@@ -144,7 +146,8 @@ integrations/
 │                                # GyroMonitor, Motion; binarios de CMake)
 ├── cemu-vcpkg-overlay-linux/    # Overlays de dependencias de construcción
 │                                # del host (al lado del fork, no adentro)
-└── dusklight/                   # Siguiente integración: misma filas de carpetas
+└── dusklight/                   # Port nativo (C++/Aurora): misma capa, adaptada
+    └── src/dusk/twinpad/        # (ver §9) Core/Client/Video/Channels + Tests
 ```
 
 Reglas de organización tomadas de Cemu (aplicables a cualquier motor):
@@ -170,3 +173,42 @@ internos del crate.
 - `TwinpadGame` no es `Sync`: úsalo desde un hilo o envuélvelo tú.
 - Los frames solo viajan al teléfono si la sesión Android tiene el juego
   **seleccionado** (`game_select`); sin selección no hay fuente (SPEC-006 §4).
+
+## 9. Hosts que no son Rust (C++/C) — y agentes que los escriben
+
+El SDK es un **crate Rust**: hoy no expone ABI C ni librería estática, así
+que un host C++ no puede enlazarlo. La consecuencia práctica es que cada host
+implementa el wire por su cuenta. Hay dos implementaciones vivas y verificables
+que sirven de referencia:
+
+| Host | Transporte / contrato | Cliente y máquina de estados |
+|---|---|---|
+| Cemu | `integrations/cemu/src/Cafe/Twinpad/Core/TwinpadTransport.*` | `…/Client/TwinpadClient*.cpp` |
+| Dusklight | `integrations/dusklight/src/dusk/twinpad/Core/TwinpadProtocol.*` | `…/Client/TwinpadClient.*` |
+
+Contrato mínimo que un host nuevo debe cumplir (todo lo demás es opinión):
+
+1. **Un solo sitio con los nombres y rangos de campo.** Un header de protocolo
+   por host; ni el transporte ni los tests repiten literales del wire.
+2. **Anuncio** exacto por el canal primario (`127.0.0.1:8421`), una línea
+   NDJSON, y la conexión viva **es** el anuncio: al cerrarla el juego deja de
+   estar disponible. Sin heartbeat.
+3. **`gfn` monotónico desde 0 por conexión** (no por proceso) y base64url sin
+   relleno en `game_frame`/`game_audio_*`.
+4. **Parseo estricto del `input_report`**: campo desconocido, faltante, valor no
+   entero o fuera de rango ⇒ se descarta la línea. El servidor valida con
+   `deny_unknown_fields`; ser laxo del otro lado produce desincronizaciones
+   silenciosas. Ordena por `seq` y descarta repetidos/viejos.
+5. **Nunca bloquear el hilo de juego**: cola acotada con descarte de frames y
+   todo el trabajo de red/códec en un hilo propio.
+6. **Reanudar**: servidor ausente o caído ⇒ reintentar cada 2 s y re-anunciar;
+   al caer la conexión, limpiar el estado de input (no reanudar con una
+   pulsación vieja) y reiniciar `gfn`.
+7. **Tests sin dispositivo**: el contrato y el mapeo de pads deben compilar y
+   probarse en host, sin GPU ni servidor (ver `tests/twinpad_protocol_test.cpp`
+   de Dusklight).
+
+Pendiente de decisión de arquitectura (no implementado): exponer una ABI C
+sobre `core`/`sdk` o un header de protocolo compartido entre hosts, para que el
+wire no tenga N copias. Mientras tanto, la regla es: **copiar semántica, nunca
+inventar campos**, y mantener el test de parseo estricto en cada host.
