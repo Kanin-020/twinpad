@@ -3,7 +3,7 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.27.0 |
+| Version | 1.28.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
@@ -140,7 +140,7 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 - **R11 (CR-012):** en el adaptador Cemu, TV solo usa la salida local PC y PCM Android procede solo de DRC/GamePad. Las salidas y volúmenes son independientes; no se mezclan ni se altera TV cuando el transporte Android se detiene. No se añade un segundo stream de sesión.
 - **R12 (CR-013):** al conectar Cemu/Twinpad, crear un VPAD temporal en memoria para Jugador 1 solo si no existe uno; reutilizar sin modificar el VPAD existente; nunca persistir el temporal; retirarlo al desconectar y preservar cualquier controlador configurado que haya reemplazado ese temporal.
 - **R13 (CR-016/CR-017):** el host Cemu permite activar por preferencia local un monitor visual de orientación en una ventana wxWidgets independiente y redimensionable (640×480 inicial, mínimo 480×360), inicialmente apagado. Presenta el snapshot recibido y las tres vueltas mapeadas al VPAD; se actualiza al llegar nuevos snapshots. Sin gyro válido indica que espera entrada. Desactivar la preferencia o cerrar la ventana la cierra y deja la preferencia apagada; habilitarla abre la ventana. No cambia input, A/V, selección ni contrato wire.
-- **R14 (CR-091):** el host de Dusklight mantiene el inicio manual (sin gestionar el Servidor ni presentar QR), se anuncia con `game_id="dusklight"` y reintenta la conexión cada 2 s. Al conectar selecciona Twinpad como dispositivo del puerto 1 y aplica los `input_report` solo a ese puerto; al desconectar libera el pad virtual y restaura el dispositivo previo. Publica el panel como H.264 Annex B (Baseline, nivel ≤4.2, SPS/PPS por IDR) con `ts_capture_us`/`idr` y nunca JPEG; un `video_force_idr` recibido produce un IDR en el siguiente frame, y sin él hay un keyframe de respaldo cada ~2 s. No cambia el wire ni añade capabilities.
+- **R14 (CR-091/CR-092):** el host de Dusklight mantiene el inicio manual (sin gestionar el Servidor ni presentar QR), se anuncia con `game_id="dusklight"` y reintenta la conexión cada 2 s. Al conectar selecciona Twinpad como dispositivo del puerto 1 **solo si ese puerto está libre** (ni mando SDL asignado ni teclado con bindings); si lo ocupa otro control no lo desaloja y Twinpad queda sin asignar hasta que el usuario lo elija a mano en «Device», elección que sí libera el puerto. Los `input_report` se aplican solo a ese puerto; al desconectar libera el pad virtual y el dispositivo auto-seleccionado. Publica el panel como H.264 Annex B (Baseline, nivel ≤4.2, SPS/PPS por IDR) con `ts_capture_us`/`idr` y nunca JPEG; un `video_force_idr` recibido produce un IDR en el siguiente frame, y sin él hay un keyframe de respaldo cada ~2 s. **Consume el táctil del `input_report`** (`touch_x`/`touch_y`/`touch_pressed`, SPEC-004 §4) traduciéndolo a los gestos de su capa táctil local (down/move/up, coordenadas normalizadas); el táctil nativo del companion sigue operativo y gana el último que escriba. **Aplica `video_config`** (SPEC-003 §4): `w`/`h` con `0/0` = nativo, escalado nearest-neighbor antes de codificar, y `bitrate_kbps` clampeado a 1.000–30.000, reiniciando el encoder con IDR al cambiar. No cambia el wire ni añade capabilities.
 
 ## 12. Contracts
 
@@ -272,3 +272,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.25.0 | 2026-11-06 | Buffy (agente) (CR-085 + CR-086) | `host_metrics`: el par opcional `vram_used_mb`/`vram_total_mb` (MiB, DRM del host) sustituye a `fan_percent`, que se elimina del wire; se confirman `cpu_temp_c`/`gpu_temp_c` como campos opcionales del hwmon; TEST-0177/0180/0181 |
 | 1.26.0 | 2026-11-06 | Buffy (agente) (CR-090) | `mic_chunk` añade el gate del interruptor del drawer («Enviar micrófono al GamePad», activado por defecto) al juego seleccionado + `mic_request` de CR-035; wire sin cambios; TEST-069 |
 | 1.27.0 | 2026-11-06 | Owner (CR-091) | Segundo host experimental Dusklight: inicio manual con reintento, Twinpad como dispositivo seleccionable/auto-seleccionado por puerto y Segunda pantalla H.264 conforme a SPEC-003 §4 (sin JPEG); sin cambio de wire |
+| 1.28.0 | 2026-11-06 | Owner (CR-092) | R14: la auto-selección del puerto 1 exige que esté libre; el host consume el táctil del `input_report` sobre su capa táctil local y aplica `video_config` (resolución escalada y bitrate) con IDR al reconfigurar; sin cambio de wire |
