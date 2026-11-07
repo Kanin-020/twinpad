@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-091 |
+| CR | CR-092 |
 
 ## Open / In review
 
@@ -51,6 +51,7 @@
 
 ## Approved / in execution
 
+| CR-091 | Dusklight como host Twinpad: «Twinpad» como opción propia en Ajustes → Controles → «Device», auto-seleccionada al conectar (inputs solo a ese puerto; liberación y restauración al desconectar; `game.twinpadInputPort` persistido) y Segunda pantalla publicada como H.264 Annex B con `ts_capture_us`/`idr` en lugar de JPEG | CTX §4, ARCH §2/§3/§6, SPEC-006 §3/§7, DES del host, código `integrations/dusklight`, traceability (TEST-0185/0186) | 2026-11-06 | [CR-091-dusklight-host-and-device.md](CR-091-dusklight-host-and-device.md) |
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
 | CR-055 | Heartbeat de sesión `ping`/`pong` (S3) cada 5 s con expiración a los 15 s: detección de corte silencioso y cierre de sesiones zombi; TEST-0120/0121/0122 | SPEC-001, DES-001 | 2026-11-01 | [CR-055-session-heartbeat-zombie-expiry.md](CR-055-session-heartbeat-zombie-expiry.md) |
@@ -116,4 +117,4 @@
 |---|---|
 | Open | 3 |
 | Median time open → applied | ≤1 día (CR-036: 2026-10-28 → 2026-10-29) |
-| Last reviewed | 2026-11-05 |
+| Last reviewed | 2026-11-06 |

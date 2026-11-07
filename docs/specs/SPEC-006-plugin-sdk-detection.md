@@ -3,7 +3,7 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.26.0 |
+| Version | 1.27.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
@@ -26,7 +26,8 @@ Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `
 ## 3. Preconditions
 
 - La integración host del Plugin inicia/reutiliza el Servidor PC y presenta el QR de vinculación.
-- Un juego con SDK integrado arranca en el mismo PC; el SDK conecta y anuncia su Plugin (Cemu es la primera integración host).
+- Un juego con SDK integrado arranca en el mismo PC; el SDK conecta y anuncia su Plugin (Cemu es la primera integración host; el fork Dusklight es la segunda, CR-091).
+- El host de Dusklight arranca su cliente contra el canal primario (`127.0.0.1:8421`), sin gestionar el proceso del Servidor ni presentar QR: el inicio es manual y la conexión se reintenta cada 2 s (R14).
 
 ## 4. Inputs
 
@@ -85,6 +86,8 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 6. Al cambiar de Plugin, el Servidor detiene los streams previos antes de iniciar los nuevos. Si la fuente seleccionada desaparece, detiene sus streams y Android procesa la nueva lista.
 7. Cemu publica el framebuffer DRC/GamePad internamente sin tope de framerate (sin pacing: cada frame en cuanto captura+encoder lo permiten, CR-029) y PCM DRC, sin ventana separada ni selector, y consume los snapshots de input enviados por el Servidor. Si Twinpad se conecta y Jugador 1 no tiene VPAD emulado, Cemu crea uno temporal en memoria; si ya hay VPAD, lo reutiliza. El temporal no se persiste y se retira al desconectar sin alterar un perfil/asignación configurados. Conforme a CR-012, la salida TV del juego continúa local en Cemu/PC; la única fuente PCM de Cemu que se publica al Plugin SDK y se retransmite a Android es GamePad/DRC. La ausencia o fallo del stream Android no silencia TV y las rutas no se mezclan. El wire de SPEC-005 no cambia.
 
+El host de Dusklight (CR-091) usa el mismo canal primario y el mismo contrato, sin tocar el wire. Al conectar, Twinpad se selecciona como dispositivo del puerto 1 en Ajustes → Controles → Device (`game.twinpadInputPort`): se suelta el mando SDL o el teclado que ocupara el puerto y cada `input_report` se aplica solo a ese puerto mediante el pad virtual. Al desconectar se libera el pad y se restaura el dispositivo previo; elegir otro dispositivo en «Device» devuelve el control al usuario. La Segunda pantalla se publica como `game_frame` con `fmt:"h264"` (Annex B, Baseline y nivel ≤4.2, SPS/PPS precediendo a cada IDR) con `ts_capture_us` e `idr`, emite un keyframe de respaldo cada ~2 s y, si recibe `video_force_idr`, fuerza un IDR en el siguiente frame (hoy el Servidor solo lo dirige a Cemu); nunca emite JPEG, conforme a SPEC-003 §4.
+
 El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su política de auto/manual start se mantiene salvo donde contradiga este flujo. Bajo CR-016/CR-017, Configuraciones permite activar un monitor de orientación en una ventana Cemu separada y redimensionable, inicialmente apagado; muestra yaw/pitch/roll recibido y su mapeo al VPAD desde el último snapshot. Sin gyro válido, la ventana indica que espera entrada. No se superpone al juego ni requiere cambiar inputs o contrato wire.
 
 
@@ -137,6 +140,7 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 - **R11 (CR-012):** en el adaptador Cemu, TV solo usa la salida local PC y PCM Android procede solo de DRC/GamePad. Las salidas y volúmenes son independientes; no se mezclan ni se altera TV cuando el transporte Android se detiene. No se añade un segundo stream de sesión.
 - **R12 (CR-013):** al conectar Cemu/Twinpad, crear un VPAD temporal en memoria para Jugador 1 solo si no existe uno; reutilizar sin modificar el VPAD existente; nunca persistir el temporal; retirarlo al desconectar y preservar cualquier controlador configurado que haya reemplazado ese temporal.
 - **R13 (CR-016/CR-017):** el host Cemu permite activar por preferencia local un monitor visual de orientación en una ventana wxWidgets independiente y redimensionable (640×480 inicial, mínimo 480×360), inicialmente apagado. Presenta el snapshot recibido y las tres vueltas mapeadas al VPAD; se actualiza al llegar nuevos snapshots. Sin gyro válido indica que espera entrada. Desactivar la preferencia o cerrar la ventana la cierra y deja la preferencia apagada; habilitarla abre la ventana. No cambia input, A/V, selección ni contrato wire.
+- **R14 (CR-091):** el host de Dusklight mantiene el inicio manual (sin gestionar el Servidor ni presentar QR), se anuncia con `game_id="dusklight"` y reintenta la conexión cada 2 s. Al conectar selecciona Twinpad como dispositivo del puerto 1 y aplica los `input_report` solo a ese puerto; al desconectar libera el pad virtual y restaura el dispositivo previo. Publica el panel como H.264 Annex B (Baseline, nivel ≤4.2, SPS/PPS por IDR) con `ts_capture_us`/`idr` y nunca JPEG; un `video_force_idr` recibido produce un IDR en el siguiente frame, y sin él hay un keyframe de respaldo cada ~2 s. No cambia el wire ni añade capabilities.
 
 ## 12. Contracts
 
@@ -267,3 +271,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.23.2 | 2026-10-30 | Product owner (CR-044) | Semántica de `cancel` definida: cierra el form del HLE `swkbd` sin decidir (`swkbd_cancelInput`: `isActive=false`, `decideButtonWasPressed` intacto — el juego percibe el cierre con su polling de estado) y publica `on=false` al teléfono; «retrocede» sin validar el texto (la publicación del form corrige además la lectura del buffer `wchar_t` de 32-bit que desfasaba el eco tras la primera letra) |
 | 1.25.0 | 2026-11-06 | Buffy (agente) (CR-085 + CR-086) | `host_metrics`: el par opcional `vram_used_mb`/`vram_total_mb` (MiB, DRM del host) sustituye a `fan_percent`, que se elimina del wire; se confirman `cpu_temp_c`/`gpu_temp_c` como campos opcionales del hwmon; TEST-0177/0180/0181 |
 | 1.26.0 | 2026-11-06 | Buffy (agente) (CR-090) | `mic_chunk` añade el gate del interruptor del drawer («Enviar micrófono al GamePad», activado por defecto) al juego seleccionado + `mic_request` de CR-035; wire sin cambios; TEST-069 |
+| 1.27.0 | 2026-11-06 | Owner (CR-091) | Segundo host experimental Dusklight: inicio manual con reintento, Twinpad como dispositivo seleccionable/auto-seleccionado por puerto y Segunda pantalla H.264 conforme a SPEC-003 §4 (sin JPEG); sin cambio de wire |

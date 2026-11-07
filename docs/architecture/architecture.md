@@ -8,10 +8,10 @@
 | | |
 |---|---|
 | ID | ARCH |
-| Version | 1.0.0 |
+| Version | 1.2.0 |
 | Status | Draft |
 | Owner | Twinpad team |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-11-06 |
 
 ## 1. System context
 
@@ -45,6 +45,7 @@ C4Context
 | `SDK Twinpad` | Permitir al Plugin anunciarse, publicar medios y consultar por polling el último snapshot de input | lib | REQ-006 |
 | `Integración host del Plugin` | Iniciar/reutilizar el Servidor PC y presentar el QR para Pairing | responsabilidad del host/integración | CR-010, REQ-006 |
 | `Adaptador experimental Cemu` | Codificar readback DRC a H.264 con encoder hardware opt-in y fallback OpenH264 CPU, publicar A/V e inputs del GamePad emulado | module (C++) | CR-004..CR-010/CR-012/CR-014/CR-020, SPEC-003/004/006 |
+| `Adaptador experimental Dusklight` | Codificar el panel de su dual-screen a H.264 (OpenH264), publicar `game_frame` y aplicar el pad del teléfono al puerto cuyo «Device» es Twinpad | module (C++ en el fork) | CR-091, SPEC-003/004/006 |
 | `Cargador de Config externa` | Cargar y validar configuraciones de juegos no integrados | module (Rust) | REQ-007 |
 | `App Twinpad (Android)` | Mostrar la Segunda pantalla mediante MediaCodec/Surface y capturar inputs táctiles/físicos | app (Kotlin) | REQ-004, REQ-008, CR-014 |
 | `Motor HID (Android)` | Presentar el celular como Gamepad HID vía Bluetooth y codificar inputs al descriptor | module (Kotlin+Rust) | REQ-003 |
@@ -62,6 +63,7 @@ C4Context
 | `SDK Twinpad` | `Servidor PC` | IPC local de anuncio/publicación y consumo de inputs | escribir directamente a la sesión LAN Android |
 
 | `Adaptador experimental Cemu` | `Servidor PC` | Inicio del proceso, consulta QR loopback e IPC de plugin conforme a SPEC-006; publicación DRC hasta 60 fps configurados | Acceso directo a la sesión Android; captura por Servidor PC |
+| `Adaptador experimental Dusklight` | `Servidor PC` | IPC de plugin conforme a SPEC-006 (anuncio, `game_frame` H.264, `input_report` vía pad virtual) | Acceso directo a la sesión Android; decodificar/transcodificar video; escribir el pad de un puerto que no sea el suyo |
 | `Cargador de Config externa` | `Twinpad Core (PC)` | Modelo de configuración validado | Ejecutar código del juego |
 | `Twinpad Core (PC)` | `Servidor PC` | Eventos internos de sesión | Depender del juego concreto |
 | `Servidor PC` | `Android device` | control NDJSON por Pairing + canal media TCP 8425 autenticado/cifrado (SPEC-003 §4) | Publicar medios no originados por el Plugin seleccionado; no decodificar ni transcodificar H.264 |
@@ -94,6 +96,7 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | Configs externas de juegos | `Cargador de Config externa` | archivos locales en PC | Comunidad/usuario |
 | Preferencia de inicio automático Cemu | `Adaptador experimental Cemu` | configuración persistente local de Cemu | `false` por defecto; implementación del primer host SDK, no política del SDK headless |
 | Preferencia de aceleración hardware H.264 Cemu | `Adaptador experimental Cemu` | configuración persistente local de Cemu | `twinpad_hardware_acceleration`, `false` por defecto; fallback OpenH264 CPU (CR-020) |
+| Dispositivo de entrada por puerto (Dusklight) | `Adaptador experimental Dusklight` | configuración persistente local de Dusklight | `game.twinpadInputPort` (`-1` = sin Twinpad); el adaptador lo selecciona al conectar y restaura el previo al desconectar (CR-091) |
 | Tokens/sesiones de pairing | `Servidor PC` | almacén local cifrado + sesión activa en memoria | `session_key` disponible solo en RAM mientras vive Pairing; revocable |
 
 ## 6. Integrations
@@ -105,6 +108,7 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | Integración host del Plugin SDK | Iniciar/reutilizar Servidor PC y presentar QR | inbound | contrato host de REQ-006/SPEC-006 | Error del servidor/QR → host informa y no presenta Pairing |
 | Juego / Aplicación huesped (con SDK) | Publicar A/V y consumir inputs | bidirectional vía Plugin/Servidor PC | API SDK headless (SPEC-006) | Sin Plugin seleccionado no hay A/V; fallo Plugin detiene sus streams sin romper Pairing |
 | Cemu (adaptador experimental CR-004..CR-010) | Inicia/reutiliza Servidor, presenta QR, publica DRC/PCM y consume snapshots de input | bidirectional vía Servidor PC | QR local y SDK/IPC de SPEC-006; DRC hasta 60 fps configurados | Fallo local → Cemu informa; el servidor no captura escritorio ni genera demo |
+| Dusklight (adaptador experimental CR-091) | Publica el panel de su dual-screen como H.264 y aplica el pad del teléfono al puerto seleccionado | bidirectional vía Servidor PC | IPC primary `127.0.0.1:8421` de SPEC-006 (SPEC-003 §4 para el video, SPEC-004 §4 para input) | Sin servidor reintenta cada 2 s; al caer libera el pad y restaura el dispositivo previo |
 | Juego sin integración (vía Config externa) | Solo inputs (gamepad estándar) | inbound | Signature HID | Sin captura de pantalla garantizada |
 | SO Windows (HID) | Registrar el Gamepad HID | outbound | Driver/HID del sistema | Sin registro → juego no ve el control |
 | Router WiFi LAN / Bluetooth | Transporte | — | CTX-C2 | Degradación por señal; reconexión automática |
@@ -183,3 +187,4 @@ Regla transversal: ningún componente del lado PC importa código de Android y v
 | 0.9.0 | 2026-10-19 | Product owner + Twinpad team (CR-012) | Cemu conserva TV en PC y envía DRC/GamePad a Android en rutas independientes |
 | 1.0.0 | 2026-10-20 | Product owner + Twinpad team (CR-014) | Migra el video a H.264 OpenH264; relay PC opaco por TCP media autenticado/cifrado y MediaCodec Android |
 | 1.1.0 | 2026-10-23 | Product owner (CR-020) | Encoder H.264 hardware opt-in para Cemu, fallback OpenH264 CPU y contrato/wire H.264 invariantes |
+| 1.2.0 | 2026-11-06 | Owner (CR-091) | Segundo adaptador experimental (Dusklight): video H.264 desde su dual-screen y Twinpad como dispositivo de entrada seleccionable por puerto |

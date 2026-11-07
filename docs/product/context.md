@@ -8,10 +8,10 @@
 | | |
 |---|---|
 | ID | CTX |
-| Version | 0.3.0 |
+| Version | 0.4.0 |
 | Status | Draft |
 | Owner | Twinpad team |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-11-06 |
 
 ## 1. Problem
 
@@ -47,7 +47,7 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 | iOS / otros sistemas móviles distintos de Android | El stack elegido (Kotlin + Rust, HID nativo) es específico de Android |
 | Modo "segunda pantalla" renderizada como HTML/UI genérica | La decisión de v1 es framebuffers e imágenes (decisión de la entrevista); el contenido HTML queda como evolución futura |
 | Contenido no interactivo (mirroring completo de escritorio) | Twinpad no es una app de screen-mirroring genérica; la segunda pantalla es para contenido de juegos/apps integradas |
-| Soporte general para consolas y emuladores como clientes directos | Se atiende vía integración por Plugin/SDK, no por compatibilidad directa genérica; CR-004 permite únicamente un adaptador experimental puntual de Cemu para prueba semi-real |
+| Soporte general para consolas y emuladores como clientes directos | Se atiende vía integración por Plugin/SDK, no por compatibilidad directa genérica; solo hay dos adaptadores experimentales puntuales para prueba semi-real: Cemu (CR-004) y el fork Dusklight (CR-091), ambos hosts del mismo contrato de Plugin |
 
 ## 5. Users and actors
 
@@ -131,3 +131,4 @@ Que cualquier juego o aplicación de PC pueda tener, sin modificar su lógica ce
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft adapted from template with Twinpad decisions |
 | 0.2.0 | 2026-10-17 | Product owner + Twinpad team (CR-004) | Permite adaptador experimental puntual de Cemu; se mantiene excluido el soporte genérico de emuladores |
 | 0.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Plugin origen de medios; host gestiona Servidor/QR; selección Android y relay sin captura/generación del Server |
+| 0.4.0 | 2026-11-06 | Owner (CR-091) | Admite el fork Dusklight como segundo host experimental, con Twinpad como dispositivo de entrada seleccionable y Segunda pantalla H.264 |
