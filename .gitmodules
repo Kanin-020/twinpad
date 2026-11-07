@@ -4,3 +4,6 @@
 [submodule "integrations/dusklight"]
 	path = integrations/dusklight
 	url = https://github.com/Kanin-020/dusklight.git
+[submodule "integrations/decky-twinpad"]
+	path = integrations/decky-twinpad
+	url = https://github.com/Kanin-020/decky-twinpad.git
