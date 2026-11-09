@@ -90,6 +90,7 @@ class BluetoothHidGamepad(context: Context) {
     /** Libera el proxy del perfil; la histéresis de salida la maneja la app. */
     fun stop() {
         cancelRegisterRetry()
+        cancelConnectRetry()
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
         val profile = hidProfile
         if (adapter != null && profile != null) {
@@ -162,6 +163,10 @@ class BluetoothHidGamepad(context: Context) {
             ) {
                 if (!registered) {
                     Log.i(TAG, "bt-hid: registro HID no activo en el SO; reintentando")
+                    // El registro se perdió: sin volver a IDLE el reintento no actúa.
+                    cancelConnectRetry()
+                    host = null
+                    channel = Channel.IDLE
                     scheduleRegisterRetry()
                     return
                 }
