@@ -6,7 +6,6 @@
 | Title | Servidor en PC persistente y empaquetado |
 | Version | 0.2.0 |
 | Status | `Implemented` (vía SPEC-010; autoarranque y AC-2 cubiertos por CR-061) |
-| Status | `Draft` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Servidor residente en la PC" |

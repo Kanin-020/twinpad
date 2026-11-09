@@ -5,7 +5,7 @@
 | ID | REQ-005 |
 | Title | Transmisión de video y audio |
 | Version | 0.2.0 |
-| Status | `Draft` |
+| Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope items "Transmisión de segunda pantalla" y "Retransmisión de audio y video publicados por un Plugin" |

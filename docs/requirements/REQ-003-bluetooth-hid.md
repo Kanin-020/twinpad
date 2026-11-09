@@ -5,7 +5,7 @@
 | ID | REQ-003 |
 | Title | Emulación Gamepad Bluetooth HID nativo |
 | Version | 0.1.0 |
-| Status | `Draft` |
+| Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Emulación del celular como gamepad HID" |

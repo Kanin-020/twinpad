@@ -19,7 +19,7 @@
 | ADR-005 | Segunda pantalla por framebuffers (no HTML/UI) | 2026-10-07 | ARCH §2, §4 | [ADR-005-framebuffer-second-screen.md](ADR-005-framebuffer-second-screen.md) |
 | ADR-006 | Plugins: SDK Twinpad (B) + Config externa (C) | 2026-10-07 | ARCH §2, §6 | [ADR-006-plugin-models-sdk-and-config.md](ADR-006-plugin-models-sdk-and-config.md) |
 | ADR-007 | Transporte inicial de inputs: sesión LAN de SPEC-001 | 2026-10-07 | SPEC-004 §17, DES-004 | [ADR-007-hid-over-lan-initial.md](ADR-007-hid-over-lan-initial.md) |
-| ADR-008 | Canal IPC SDK ↔ Servidor: TCP localhost NDJSON | 2026-10-08 | SPEC-006 §4/§17, DES-006 | [ADR-008-sdk-ipc-tcp-localhost.md](ADR-008-sdk-ipc-tcp-localhost.md) |
+| ADR-008 | Canal IPC SDK ↔ Servidor: TCP localhost NDJSON | 2026-10-08 | SPEC-006 §4/§17 | [ADR-008-sdk-ipc-tcp-localhost.md](ADR-008-sdk-ipc-tcp-localhost.md) |
 | ADR-009 | Canal Bluetooth HID nativo: alternativa completa + failover automático de inputs | 2026-11-01 | SPEC-004 §4/§6/§12, módulo hid (ARCH §2) | [ADR-009-bt-hid-native-complete-alt.md](ADR-009-bt-hid-native-complete-alt.md) |
 | ADR-010 | UI local del Servidor PC: tray StatusNotifier + página HTTP loopback, sin framework web | 2026-11-01 | DES-005, adaptador ejecutable del server (CR-061) | [ADR-010-tray-webui-loopback.md](ADR-010-tray-webui-loopback.md) |
 

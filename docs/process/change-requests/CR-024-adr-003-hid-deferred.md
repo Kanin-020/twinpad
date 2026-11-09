@@ -59,7 +59,7 @@ Estado de implementación: diferido. La decisión de arquitectura (Opción A) se
 
 ## 3. Motivation
 
-ADR-003 declara una decisión de implementación inmediata, pero el proyecto no tiene una especificación de descriptor HID con giroscopio. SPEC-004 §4 y el TODO.md ya la tratan como meta posterior (`ADR-007` resolvió el transporte inicial por sesión LAN). El análisis de CR-023 mostró que el HID genérico no transporta giroscopio, mientras que el SDK sí. Mantener ADR-003 sin matiz podría llevar a asumir compatibilidad de giroscopio para terceros que no está especificada.
+ADR-003 declara una decisión de implementación inmediata, pero el proyecto no tiene una especificación de descriptor HID con giroscopio. SPEC-004 §4 ya la trata como meta posterior (`ADR-007` resolvió el transporte inicial por sesión LAN). El análisis de CR-023 mostró que el HID genérico no transporta giroscopio, mientras que el SDK sí. Mantener ADR-003 sin matiz podría llevar a asumir compatibilidad de giroscopio para terceros que no está especificada.
 
 ## 4. Impact analysis
 

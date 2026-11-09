@@ -8,11 +8,11 @@
 | Status | `Accepted` |
 | Date | 2026-10-08 |
 | Deciders | Owner del proyecto (usuario) |
-| Affects | SPEC-006 §4/§17, DES-006, ARCH §4/§6 |
+| Affects | SPEC-006 §4/§17, ARCH §4/§6 |
 
 ## 1. Context
 
-SPEC-006 deja como decisión de DES-006 el mecanismo IPC por el que un juego con
+SPEC-006 deja abierto el mecanismo IPC por el que un juego con
 SDK Twinpad anuncia su presencia al Servidor PC (opciones: named pipe de Windows,
 socket localhost, pipe anónimo al proceso hijo). También quedó abierta la forma
 del SDK v1 (lenguaje/runtimes). El server ya tiene un framing NDJSON probado

@@ -5,7 +5,7 @@
 | ID | REQ-002 |
 | Title | Pairing PC–celular vía QR |
 | Version | 0.1.0 |
-| Status | `Draft` |
+| Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Vinculación PC ↔ celular (pairing mediante QR)" |

@@ -24,7 +24,7 @@ android {
         release {
             isMinifyEnabled = false
             // Firma con clave debug SOLO para pruebas locales instalables;
-            // la distribución pública exige keystore propio (ver TODO.md).
+            // la distribución pública exige keystore propio.
             signingConfig = signingConfigs.getByName("debug")
         }
     }

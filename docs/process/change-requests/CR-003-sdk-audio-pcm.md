@@ -15,7 +15,7 @@
 
 | Field | Value |
 |---|---|
-| Document(s) changed | SPEC-005, SPEC-006, REQ-006, DES-006 (si se asigna) |
+| Document(s) changed | SPEC-005, SPEC-006, REQ-006 |
 | Sections | SPEC-005 §3/§4/§7; SPEC-006 §4/§7/§9; SDK API |
 | Current version → new version | SPEC-005 1.0.0 → 1.1.0; SPEC-006 1.0.0 → 1.1.0; REQ-006 0.1.0 → 0.2.0 |
 
@@ -37,7 +37,6 @@ El binario del servidor actualmente genera un seno sintético de 440 Hz de forma
 | SPEC-005 | Sí | Origen, IPC separado, cola drop-old y prioridad de video | Actualizado a 1.1.0 |
 | SPEC-006 | Sí | Segunda conexión localhost de audio y ciclo de vida | Actualizado a 1.1.0 |
 | ARCH | Sí | SDK → Server por IPC separado; salida de sesión prioriza video | Sin cambio de límites: contrato reflejado en SPEC-005/006 |
-| DES-006 | Posible | El diseño IPC/SDK necesitará detalles | Crear o actualizar DES después de acordar el contrato |
 | TEST | Sí | TEST-036 (contrato/SDK/server), TEST-037 (audio session/prioridad) |
 | Code | Sí | Core protocol, SDK source callback, listener audio, cola drop-old y session writer prioritization |
 | Data / migrations | No | No hay almacenamiento persistente | Ninguna |

@@ -15,12 +15,12 @@
 
 | ID | Title | Priority | Status | Implemented by | File |
 |---|---|---|---|---|---|
-| REQ-001 | Servidor PC persistente y empaquetado | Must | `Draft` | - | [REQ-001-pc-server-standalone.md](REQ-001-pc-server-standalone.md) |
-| REQ-002 | Pairing PC–celular vía QR | Must | `Draft` | - | [REQ-002-pairing-pc.md](REQ-002-pairing-pc.md) |
-| REQ-003 | Emulación Gamepad Bluetooth HID nativo | Must | `Draft` | - | [REQ-003-bluetooth-hid.md](REQ-003-bluetooth-hid.md) |
-| REQ-004 | Segunda pantalla vía framebuffer al celular | Must | `Draft` | - | [REQ-004-second-screen-video.md](REQ-004-second-screen-video.md) |
-| REQ-005 | Transmisión de video y audio | Must | `Draft` | - | [REQ-005-stream-video-audio.md](REQ-005-stream-video-audio.md) |
-| REQ-006 | Integración vía SDK Twinpad (plugin modelo B) | Must | `Draft` | - | [REQ-006-plugin-sdk.md](REQ-006-plugin-sdk.md) |
+| REQ-001 | Servidor PC persistente y empaquetado | Must | `Implemented` | SPEC-010 (CR-061) | [REQ-001-pc-server-standalone.md](REQ-001-pc-server-standalone.md) |
+| REQ-002 | Pairing PC–celular vía QR | Must | `Implemented` | SPEC-001, SPEC-002, SPEC-009 | [REQ-002-pairing-pc.md](REQ-002-pairing-pc.md) |
+| REQ-003 | Emulación Gamepad Bluetooth HID nativo | Must | `Implemented` | SPEC-004 | [REQ-003-bluetooth-hid.md](REQ-003-bluetooth-hid.md) |
+| REQ-004 | Segunda pantalla vía framebuffer al celular | Must | `Implemented` | SPEC-003 | [REQ-004-second-screen-video.md](REQ-004-second-screen-video.md) |
+| REQ-005 | Transmisión de video y audio | Must | `Implemented` | SPEC-003, SPEC-005 | [REQ-005-stream-video-audio.md](REQ-005-stream-video-audio.md) |
+| REQ-006 | Integración vía SDK Twinpad (plugin modelo B) | Must | `Implemented` | SPEC-006 | [REQ-006-plugin-sdk.md](REQ-006-plugin-sdk.md) |
 | REQ-007 | Config externa para juegos no integrados (plugin modelo C) | Should | `Draft` | - | [REQ-007-plugin-config.md](REQ-007-plugin-config.md) |
 | REQ-008 | Controles táctiles configurables en la app | Should | `Draft` | - | [REQ-008-touch-controls.md](REQ-008-touch-controls.md) |
 

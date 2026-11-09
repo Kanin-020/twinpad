@@ -49,7 +49,7 @@ Sin este cambio, la integración de Dusklight no puede cumplir ni el contrato de
 | SPEC-003 | no | El wire de video ya es H.264 (CR-014); Dusklight se limita a cumplirlo | none |
 | SPEC-004 | no | `input_report` sin cambios; el mapeo ya existe | none |
 | ARCH | yes | Añadir el adaptador Dusklight junto al de Cemu (componente, fronteras y fallo) | Update §2/§3/§6 |
-| DES-004 | partial | Sirve de referencia, pero el host Dusklight tiene su propio ciclo de dispositivo | Nueva sección o DES-006 |
+| DES-004 | partial | Sirve de referencia, pero el host Dusklight tiene su propio ciclo de dispositivo | Nueva sección en DES-004 o un DES nuevo |
 | TEST | yes | Casos de dispositivo (auto-selección, liberación, persistencia) y de video H.264 por el relay | Reservar IDs y registrar filas |
 | Code | yes | `integrations/dusklight`: encoder H.264, publicación con metadata, entrada especial «Twinpad» en `controller_config`, selección/liberación y persistencia. Servidor y app sin cambios | PR en el fork |
 | Data / migrations | yes | Nueva clave de configuración local de Dusklight (dispositivo por puerto) | Default que no altere configuraciones existentes |

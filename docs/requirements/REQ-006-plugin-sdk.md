@@ -5,7 +5,7 @@
 | ID | REQ-006 |
 | Title | Integración vía SDK Twinpad (modelo B) |
 | Version | 0.3.0 |
-| Status | `Draft` |
+| Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Integración por plugin (SDK Twinpad)" y CTX-C7 |

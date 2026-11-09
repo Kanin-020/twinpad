@@ -5,7 +5,7 @@
 | ID | REQ-004 |
 | Title | Segunda pantalla con framebuffer hacia Android |
 | Version | 0.2.0 |
-| Status | `Draft` |
+| Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Transmisión de una segunda pantalla desde la PC al celular" |
