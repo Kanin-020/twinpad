@@ -34,6 +34,10 @@ impl ksni::Tray for TwinpadTray {
         "Twinpad Servidor PC — activo".to_string()
     }
 
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        vec![provisional_icon()]
+    }
+
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
             title: "Twinpad Servidor PC".to_string(),
@@ -109,6 +113,33 @@ impl ksni::Tray for TwinpadTray {
     }
 }
 
+/// Icono provisional de la bandeja: círculo sólido generado en código hasta
+/// tener el arte definitivo. ARGB32 en orden de bytes de red (SNI).
+fn provisional_icon() -> ksni::Icon {
+    const SIZE: i32 = 32;
+    let center = (SIZE as f32 - 1.0) / 2.0;
+    let radius = SIZE as f32 / 2.0 - 1.0;
+    let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let inside = dx * dx + dy * dy <= radius * radius;
+            let pixel: [u8; 4] = if inside {
+                [0xFF, 0x1E, 0x88, 0xE5]
+            } else {
+                [0, 0, 0, 0]
+            };
+            data.extend_from_slice(&pixel);
+        }
+    }
+    ksni::Icon {
+        width: SIZE,
+        height: SIZE,
+        data,
+    }
+}
+
 /// Navegadores con modo app (flag `--app`), en orden de prelación. Es el
 /// motor del flag `--app` (Chrome, Edge, Brave, Chromium): no se espera de
 /// Firefox (sin modo app) y le toca el fallback `xdg-open`.
@@ -125,6 +156,11 @@ const APP_MODE_BROWSERS: &[&str] = &[
 /// ventana propia sin barra de direcciones ni pestañas sobre el mismo
 /// HTML de loopback; sin flags extra para no perturbar el perfil del
 /// usuario.
+///
+/// Seguridad: no hay shell (`Command` pasa cada argumento como argv). `program`
+/// sale solo de las listas constantes de navegadores, y `url` siempre es
+/// `http://127.0.0.1:<puerto>/` construida internamente; ningún dato externo
+/// llega a este comando.
 fn build_app_window_command(program: &str, url: &str) -> std::process::Command {
     let mut command = std::process::Command::new(program);
     command.arg(format!("--app={url}"));

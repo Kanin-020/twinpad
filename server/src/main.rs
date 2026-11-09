@@ -65,6 +65,12 @@ fn main() {
         .unwrap_or(twinpad_server::webui::PORT);
 
     let Ok(listener) = TcpListener::bind(("0.0.0.0", port)) else {
+        // Ya hay un servidor en marcha (p. ej. al volver a abrir el AppImage):
+        // solo se abre su interfaz local y este proceso termina sin error.
+        if webui_responds(webui_port) {
+            twinpad_server::tray::open_app_window(webui_port);
+            std::process::exit(0);
+        }
         eprintln!("Twinpad: no se pudo abrir el puerto {port}; ¿está en uso?");
         std::process::exit(1);
     };
@@ -412,6 +418,10 @@ fn main() {
     }
     while !shutdown.load(Ordering::Acquire) {
         let stream = loop {
+            // La parada (tray/webui) debe cortar también la espera de conexiones.
+            if shutdown.load(Ordering::Acquire) {
+                break None;
+            }
             match listener.accept() {
                 Ok((stream, _)) => {
                     stream.set_nonblocking(false).ok();
@@ -926,6 +936,27 @@ fn main() {
 /// CR-074: el par `0/0` pasa sin clamp como centinela de NATIVO (el drawer
 /// «Nativa» lo envía y Cemu lo resuelve a la dimensión del DRC); un valor
 /// mixto con un solo 0 también deja el 0 intacto (el adaptador resetea ambos).
+/// Sondeo rápido de la interfaz local: ¿ya hay un servidor respondiendo HTTP?
+fn webui_responds(port: u16) -> bool {
+    use std::io::{Read, Write};
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_millis(500),
+    ) else {
+        return false;
+    };
+    stream.set_read_timeout(Some(Duration::from_secs(1))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(1))).ok();
+    if stream
+        .write_all(b"GET /qr HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut head = [0u8; 5];
+    matches!(stream.read(&mut head), Ok(n) if n == 5 && &head == b"HTTP/")
+}
+
 fn parse_video_config(
     line: &str,
     current: twinpad_server::video::VideoConfig,

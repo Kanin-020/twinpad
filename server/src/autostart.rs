@@ -9,15 +9,58 @@ use std::path::PathBuf;
 
 /// Contenido del desktop entry. `Terminal=false`: el server arranca sin
 /// ventana de consola; el QR vive en la página de gestión (CR-061) y/o en
-/// el tray.
-const DESKTOP_ENTRY: &str = "[Desktop Entry]\n\
+/// el tray. `Exec` apunta a la ruta real del binario (AppImage incluido),
+/// no a un nombre resuelto por `PATH`.
+fn desktop_entry(exec: &str) -> String {
+    format!(
+        "[Desktop Entry]\n\
 Type=Application\n\
 Name=Twinpad Servidor PC\n\
 Comment=Servidor Twinpad: acepta sesiones de Pairing en segundo plano (CR-061, SPEC-010 W5)\n\
-Exec=twinpad-server\n\
+Exec={exec}\n\
 Terminal=false\n\
 Categories=Utility;\n\
-StartupNotify=false\n";
+StartupNotify=false\n"
+    )
+}
+
+/// Escapa una ruta para el campo `Exec` (spec de desktop entries): va entre
+/// comillas dobles si tiene espacios o caracteres reservados, y `%` se
+/// duplica para no ser tratado como código de campo.
+fn escape_exec(path: &str) -> String {
+    let reserved = path.contains([' ', '"', '`', '$', '\\', '\t']);
+    let mut out = String::new();
+    if reserved {
+        out.push('"');
+    }
+    for c in path.chars() {
+        if matches!(c, '"' | '`' | '$' | '\\') && reserved {
+            out.push('\\');
+        }
+        if c == '%' {
+            out.push('%');
+        }
+        out.push(c);
+    }
+    if reserved {
+        out.push('"');
+    }
+    out
+}
+
+/// Ruta ejecutable del servidor para el autoarranque: la del AppImage si
+/// se lanza desde uno (`$APPIMAGE`), y si no, el binario en ejecución.
+fn server_exec_path() -> String {
+    std::env::var("APPIMAGE")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .map(|p| p.display().to_string())
+        })
+        .unwrap_or_else(|| APP_ID.to_string())
+}
 
 /// Identificador del archivo de entrada (W5: siempre el mismo nombre → una
 /// sola entrada por usuario repetido idempotente).
@@ -78,7 +121,8 @@ pub fn install_under(config_base: &std::path::Path) -> Result<(), AutostartError
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(AutostartError::Io)?;
     }
-    fs::write(&path, DESKTOP_ENTRY).map_err(AutostartError::Io)
+    let exec = escape_exec(&server_exec_path());
+    fs::write(&path, desktop_entry(&exec)).map_err(AutostartError::Io)
 }
 
 /// Enlace con la config real del usuario (los tests usan `_under`).
@@ -135,9 +179,25 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&entry).unwrap(), first);
         // El entry declara cómo ha de lanzarse el proceso.
         assert!(first.contains("[Desktop Entry]"));
-        assert!(first.contains("Exec=twinpad-server"));
+        assert!(first.contains(&format!("Exec={}", escape_exec(&server_exec_path()))));
+        assert!(!first.contains("Exec=twinpad-server\n"));
         assert!(first.contains("Terminal=false"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Rutas con espacios o caracteres reservados quedan entrecomilladas y
+    /// escapadas; `%` se duplica.
+    #[test]
+    fn escape_exec_quotes_and_escapes_reserved_chars() {
+        assert_eq!(
+            escape_exec("/opt/Twinpad.AppImage"),
+            "/opt/Twinpad.AppImage"
+        );
+        assert_eq!(
+            escape_exec("/home/a b/Twin pad.AppImage"),
+            "\"/home/a b/Twin pad.AppImage\""
+        );
+        assert_eq!(escape_exec("/x/100%.AppImage"), "/x/100%%.AppImage");
     }
 
     /// TEST-0137 (CR-061, SPEC-010 W5): remove elimina el entry y quitar sin

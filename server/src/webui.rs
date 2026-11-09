@@ -87,6 +87,17 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
         return RequestOutcome::Served;
     };
     let request = String::from_utf8_lossy(&buf[..read]);
+    if !is_local_request(&request) {
+        // S1: otra web (DNS rebinding, Origin ajeno o cross-site) no puede
+        // leer la página ni disparar `/stop` o `/qr/rotate`.
+        respond(
+            stream,
+            "403 Forbidden",
+            "text/plain; charset=utf-8",
+            "Petición no local.",
+        );
+        return RequestOutcome::Served;
+    }
     let Some(request_line) = request.lines().next() else {
         return RequestOutcome::Served;
     };
@@ -98,6 +109,17 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
         return RequestOutcome::Served;
     }
     let path = path.split('?').next().unwrap_or(path);
+    if matches!(path, "/stop" | "/qr/rotate") && !has_action_header(&request) {
+        // S1 (CSRF): las acciones que cambian estado exigen una cabecera que
+        // un enlace o <img> de otra web no puede enviar sin preflight CORS.
+        respond(
+            stream,
+            "403 Forbidden",
+            "text/plain; charset=utf-8",
+            "Falta X-Twinpad-Action.",
+        );
+        return RequestOutcome::Served;
+    }
     match path {
         "/" => {
             let page = render_page(deps);
@@ -161,6 +183,49 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
             RequestOutcome::Served
         }
     }
+}
+
+/// S1 (SPEC-010 W6): ¿la petición viene de la propia página local? Exige
+/// `Host` loopback (sin esto un dominio resuelto a 127.0.0.1 leería la página),
+/// `Origin` loopback si existe, y `Sec-Fetch-Site` none/same-origin si existe
+/// (bloquea `<img src=…/stop>` de otra web). Clientes no-navegador (Decky)
+/// envían `Host` y ninguna de las otras dos.
+fn is_local_request(request: &str) -> bool {
+    let mut host = None;
+    let mut origin = None;
+    let mut fetch_site = None;
+    for line in request.lines().skip(1) {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match name.trim().to_ascii_lowercase().as_str() {
+            "host" => host = Some(value),
+            "origin" => origin = Some(value),
+            "sec-fetch-site" => fetch_site = Some(value),
+            _ => {}
+        }
+    }
+    host.is_some_and(loopback_host_port)
+        && origin.is_none_or(|o| o.strip_prefix("http://").is_some_and(loopback_host_port))
+        && fetch_site.is_none_or(|s| matches!(s, "none" | "same-origin"))
+}
+
+/// Cabecera personalizada que exigen las acciones (`/stop`, `/qr/rotate`).
+fn has_action_header(request: &str) -> bool {
+    request.lines().skip(1).any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("x-twinpad-action") && value.trim() == "1"
+        })
+    })
+}
+
+/// `127.0.0.1[:puerto]` o `localhost[:puerto]`.
+fn loopback_host_port(host_port: &str) -> bool {
+    let host = host_port
+        .rsplit_once(':')
+        .map_or(host_port, |(name, _)| name);
+    matches!(host, "127.0.0.1" | "localhost")
 }
 
 fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str) {
@@ -388,6 +453,46 @@ mod tests {
         assert!(response.contains("/stop"));
     }
 
+    /// S1: peticiones de otra web (Host ajeno, Origin ajeno o cross-site) se
+    /// rechazan con 403 y no activan la parada ni rotan el QR.
+    #[test]
+    fn foreign_web_requests_are_rejected_without_side_effects() {
+        let listener = loopback_listener();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let deps = test_deps(Arc::clone(&shutdown));
+        for request in [
+            "GET /stop HTTP/1.1\r\nHost: evil.example\r\n\r\n",
+            "GET /stop HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: http://evil.example\r\n\r\n",
+            "GET /stop HTTP/1.1\r\nHost: 127.0.0.1\r\nSec-Fetch-Site: cross-site\r\n\r\n",
+            "GET /qr/rotate HTTP/1.1\r\nHost: evil.example\r\n\r\n",
+            // S1 anti-CSRF: sin la cabecera de acción tampoco se para ni rota.
+            "GET /stop HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            "GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+        ] {
+            let response = response_of_forbidden(&listener, &deps, request);
+            assert!(response.starts_with("HTTP/1.1 403"), "{request}");
+        }
+        assert!(!shutdown.load(Ordering::Acquire));
+    }
+
+    #[cfg(test)]
+    fn response_of_forbidden(listener: &TcpListener, deps: &UiDeps, request: &str) -> String {
+        let addr = listener.local_addr().unwrap();
+        let sender = std::thread::spawn({
+            let request = request.to_string();
+            move || {
+                let mut stream = TcpStream::connect(addr).unwrap();
+                stream.write_all(request.as_bytes()).unwrap();
+                let mut buf = Vec::new();
+                let _ = stream.read_to_end(&mut buf);
+                String::from_utf8_lossy(&buf).into_owned()
+            }
+        });
+        let outcome = tail_once(listener, deps);
+        assert!(matches!(outcome, RequestOutcome::Served));
+        sender.join().unwrap()
+    }
+
     /// TEST-0136 (CR-061, SPEC-010 W4): `GET /stop` responde 200 y activa el
     /// flag compartido de parada con gracia.
     #[test]
@@ -398,7 +503,7 @@ mod tests {
         let response = response_of(
             &listener,
             &deps,
-            "GET /stop HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            "GET /stop HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Twinpad-Action: 1\r\n\r\n",
         );
         assert!(response.starts_with("HTTP/1.1 200 OK"));
         assert!(shutdown.load(Ordering::Acquire));
@@ -437,8 +542,12 @@ mod tests {
         let listener = loopback_listener();
         let deps = test_deps(Arc::new(AtomicBool::new(false)));
         let response_of = |request: &str| response_of(&listener, &deps, request);
-        let first = response_of("GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
-        let second = response_of("GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        let first = response_of(
+            "GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Twinpad-Action: 1\r\n\r\n",
+        );
+        let second = response_of(
+            "GET /qr/rotate HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Twinpad-Action: 1\r\n\r\n",
+        );
         assert!(first.starts_with("HTTP/1.1 200 OK"));
         assert!(second.starts_with("HTTP/1.1 200 OK"));
         // Cada llamada rota: tokens distintos en el JSON (W9 manual).

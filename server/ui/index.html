@@ -72,7 +72,7 @@
 
           <section class="panel">
             <h2 class="panel__title">Control</h2>
-            <a class="btn btn--ghost" href="/stop">Detener servidor</a>
+            <button class="btn btn--ghost" id="stop-server" type="button">Detener servidor</button>
             <p class="panel__note">
               La parada termina el proceso; las sesiones activas observan el fin
               por su canal de control (SPEC-001 §4.3 HB6).
@@ -112,7 +112,9 @@
           }
           inFlight = true;
           try {
-            var response = await fetch(endpoint);
+            var response = await fetch(endpoint, {
+              headers: { "X-Twinpad-Action": "1" },
+            });
             if (!response.ok) {
               throw new Error("sin QR fresco (" + response.status + ")");
             }
@@ -142,6 +144,13 @@
             // W9 manual: rotación forzada de token (no una mera reconsulta).
             refreshQr("/qr/rotate");
           });
+
+        // Parada desde la página: cabecera X-Twinpad-Action (S1, anti-CSRF).
+        document.getElementById("stop-server").addEventListener("click", function () {
+          fetch("/stop", { headers: { "X-Twinpad-Action": "1" } }).then(function () {
+            document.body.innerHTML = "<p>Servidor Twinpad detenido.</p>";
+          });
+        });
 
         // Copia del URI vigente (W2b: casilla copiable). Acción 100 % local.
         document.getElementById("copy-uri").addEventListener("click", function () {
