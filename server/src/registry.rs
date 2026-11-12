@@ -71,11 +71,16 @@ impl SessionRegistry {
     /// Registra una sesión establecida y retiene su stream (medio de
     /// escritura; la lectura la sigue haciendo el hilo del cliente).
     pub fn insert(&self, session: ActiveSession, stream: TcpStream) -> bool {
-        let was_new = lock_or_reset(&self.streams)
-            .insert(session.session_id, stream)
-            .is_none();
+        let previous = lock_or_reset(&self.streams).insert(session.session_id, stream);
+        // HB7 (SPEC-001 §4.3): el socket de control anterior de esta sesión
+        // deja de escribir (sus pings) al aceptarse la reanudación. El
+        // shutdown actúa sobre el socket subyacente, así que también corta
+        // el emisor de ping y el lector de la conexión vieja.
+        if let Some(old) = &previous {
+            let _ = old.shutdown(std::net::Shutdown::Both);
+        }
         let _ = session; // los campos quedan disponibles para UI/logs futuros
-        was_new
+        previous.is_none()
     }
 
     /// CR-056: registra la credencial media activa de la sesión; al

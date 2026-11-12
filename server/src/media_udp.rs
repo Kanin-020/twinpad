@@ -314,7 +314,7 @@ fn relay_udp_session(
     // crédito lleno (1 s del cap) para no estrangular las AU pequeñas de
     // derecho tras el join.
     let mut token_last_ms = deps.congestion.now_ms();
-    let mut token_bytes: u64 = u64::from(deps.congestion.effective_kbps().max(10_000)) * 125;
+    let mut token_bytes: u64 = u64::from(deps.congestion.effective_kbps().max(1_000)) * 125;
     let mut dropped_by_rate: u64 = 0;
     let mut drop_log_ms: u64 = 0;
     loop {
@@ -420,7 +420,9 @@ fn relay_udp_session(
         // kbps configurados). Piso del crédito: 10 000 kbps aunque el
         // `configured` declare menos (§8.4: nunca supera el bitrate).
         let now_ms = deps.congestion.now_ms();
-        let kbps = u64::from(deps.congestion.effective_kbps().max(10_000));
+        // CR-101: el crédito sigue al bitrate configurado en Cemu (no a un
+        // piso fijo de 10 000 kbps), para no descartar AU reales.
+        let kbps = u64::from(deps.congestion.effective_kbps().max(1_000));
         let elapsed = now_ms.saturating_sub(token_last_ms);
         token_last_ms = now_ms;
         let cap_bytes = kbps * 125; // 1 s de crédito en bytes
