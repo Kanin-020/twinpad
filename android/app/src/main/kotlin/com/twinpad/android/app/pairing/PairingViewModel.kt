@@ -44,7 +44,7 @@ private const val GYRO_LOG_TAG = "TwinpadGyro"
  * Colaboradores del [PairingViewModel]. Los valores por defecto son las
  * instancias de producción; los tests pueden sustituir cualquiera.
  */
-data class PairingCollaborators(
+internal data class PairingCollaborators(
     val machine: PairingStateMachine = PairingStateMachine(),
     val network: TcpPairingClient = TcpPairingClient(),
     val streamMachine: com.twinpad.android.app.stream.StreamStateMachine =
@@ -54,6 +54,8 @@ data class PairingCollaborators(
     val gamepad: com.twinpad.android.app.hid.GamepadStateMachine =
         com.twinpad.android.app.hid.GamepadStateMachine(),
     val playback: AudioPlayback = AudioPlayback(),
+    /** CR-094: vinculaciones cifradas; producción usa Android Keystore. */
+    val linkStore: ((app: Application) -> com.twinpad.android.app.ui.PairingLinkStore)? = null,
     val streamStats: com.twinpad.android.app.stream.StreamStats =
         com.twinpad.android.app.stream.StreamStats(),
     /** CR-057 (SPEC-009): resuelve el `s` del QR antes de abrir TCP — IP
@@ -74,7 +76,7 @@ data class PairingCollaborators(
  * Alimenta la máquina con eventos y ejecuta sus [Effect]s: permisos,
  * conexión TCP y señales de cámara para la Activity.
  */
-class PairingViewModel(
+internal class PairingViewModel(
     app: Application,
     collaborators: PairingCollaborators = PairingCollaborators(),
 ) : AndroidViewModel(app) {
@@ -86,7 +88,16 @@ class PairingViewModel(
     private val playback = collaborators.playback
     val streamStats = collaborators.streamStats
     private val rumblePlayer = RumblePlayer(app)
-    private val selection = PairingSelectionState()
+    private val linkStore =
+        collaborators.linkStore?.invoke(app) ?: com.twinpad.android.app.ui.PairingLinkStore(app) // CR-094
+    private val savedLinks =
+        SavedLinksController(
+            machine = machine,
+            network = network,
+            linkStore = linkStore,
+            currentState = { _uiState.value },
+            feed = { feed(it) },
+        )
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para
      * preservar la cadena base_fn de los patches (SPEC-003/CR-002). */
@@ -104,11 +115,7 @@ class PairingViewModel(
      * switcher (ADR-009). */
     private val gamepadSwitcher =
         GamepadBtSwitcher(
-            app,
-            gamepad,
-            viewModelScope,
             { _uiState.value is PairingUiState.Linked },
-            { _btPermissionRequests.tryEmit(Unit) },
         )
 
     /** Efectos que la Activity ejecuta (permiso, apertura/cierre de cámara). */
@@ -158,14 +165,15 @@ class PairingViewModel(
             setMediaTransport = { isUdp -> _mediaTransport.value = isUdp },
         )
 
-    /** Juegos compatibles vivos (SPEC-006 §5): lista publicada por el server. */
-    private val _availableGames =
-        MutableStateFlow<List<com.twinpad.android.app.wire.GameInfo>>(emptyList())
-    val availableGames: StateFlow<List<com.twinpad.android.app.wire.GameInfo>> = _availableGames
-
-    /** Plugin confirmado para esta sesión (SPEC-006). */
-    private val _selectedGameId = MutableStateFlow<String?>(null)
-    val selectedGameId: StateFlow<String?> = _selectedGameId
+    /** Juegos compatibles y selección del plugin (SPEC-006 §5). */
+    private val games: GameSelectionController =
+        GameSelectionController(
+            network = network,
+            clearMediaForSelectionChange = { clearMediaForSelectionChange() },
+        )
+    val availableGames: StateFlow<List<com.twinpad.android.app.wire.GameInfo>> = games.availableGames
+    val selectedGameId: StateFlow<String?> = games.selectedGameId
+    val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = games.selectionRequest
 
     /** CR-038: demanda vigente del video de cámara emitida por Cemu
      * (`camera_request`); gobernada por el uso real del juego (HLE
@@ -197,14 +205,9 @@ class PairingViewModel(
     private val _hostMetrics = MutableStateFlow<com.twinpad.android.app.wire.HostMetrics?>(null)
     val hostMetrics: StateFlow<com.twinpad.android.app.wire.HostMetrics?> = _hostMetrics
 
-    private val _selectionRequest =
-        MutableSharedFlow<List<com.twinpad.android.app.wire.GameInfo>>(extraBufferCapacity = 1)
-    val selectionRequest: SharedFlow<List<com.twinpad.android.app.wire.GameInfo>> = _selectionRequest
-
-    /** Estado del stream de audio (SPEC-005 §5) para la vista. */
-    private val _audioState =
-        MutableStateFlow(com.twinpad.android.app.audio.AudioState.INACTIVE)
-    val audioState: StateFlow<com.twinpad.android.app.audio.AudioState> = _audioState
+    /** Audio del stream (SPEC-005 §5), ver [AudioSessionController]. */
+    private val audio = AudioSessionController(audioMachine, playback, streamStats)
+    val audioState: StateFlow<com.twinpad.android.app.audio.AudioState> = audio.audioState
 
     init {
         // Las líneas de sesión (video: 30 líneas/s de ~350 KB) se procesan
@@ -229,7 +232,9 @@ class PairingViewModel(
                         feed(PairingEvent.WireMessage(line))
                     }
                     _uiState.value is PairingUiState.Linked -> onStreamLine(line) // SPEC-003: tráfico de sesión
-                    else -> feed(PairingEvent.WireMessage(line))
+                    else -> {
+                        feed(PairingEvent.WireMessage(line))
+                    }
                 }
             }
         }
@@ -243,10 +248,7 @@ class PairingViewModel(
                 if (streamStatus != _streamState.value.state) {
                     _streamState.value = _streamState.value.copy(state = streamStatus)
                 }
-                val audioStatus = audioMachine.tick(now)
-                if (audioStatus != _audioState.value) {
-                    _audioState.value = audioStatus
-                }
+                audio.tick(now)
             }
         }
     }
@@ -260,9 +262,12 @@ class PairingViewModel(
         }
         // La ruta rápida separa `type` sin parsear payloads grandes de medios.
         when (lineType(line)) {
-            "games_available" -> GameListCodec.decode(line)?.let(::handleGamesAvailable)
-            "game_selected" -> GameListCodec.selectedGameId(line)?.let(::confirmGameSelection)
-            "audio_start", "audio_chunk", "audio_stop" -> handleAudioLine(line)
+            "games_available" -> {
+                val decoded = GameListCodec.decode(line)
+                decoded?.let(games::onGamesAvailable)
+            }
+            "game_selected" -> GameListCodec.selectedGameId(line)?.let(games::onGameSelected)
+            "audio_start", "audio_chunk", "audio_stop" -> audio.handleLine(line, lineType(line))
             "stream_start", "stream_stop" -> handleStreamControlLine(line)
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
@@ -295,9 +300,7 @@ class PairingViewModel(
 
     private fun onSessionDisconnected() {
         clearStreamSession()
-        _availableGames.value = emptyList()
-        _selectedGameId.value = null
-        selection.clear()
+        games.clear()
         feed(PairingEvent.WireMessage(null))
     }
 
@@ -305,9 +308,7 @@ class PairingViewModel(
         mediaSession.clearForSessionEnd()
         streamMachine.reset()
         _streamState.value = com.twinpad.android.app.stream.StreamUiState()
-        audioMachine.reset()
-        playback.stop()
-        _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
+        audio.reset()
         streamStats.reset()
         rumblePlayer.play(RumbleMessage(ByteArray(0)))
         // CR-087: la próxima sesión vuelve a anunciar la clase de resolución.
@@ -319,21 +320,6 @@ class PairingViewModel(
         // sesión que acaba de terminar (el server deja de emitir al cortar).
         _hostMetrics.value = null
         _mediaTransport.value = null
-    }
-
-    private fun handleAudioLine(line: String) {
-        if (audioMachine.onLine(line, System.currentTimeMillis())) {
-            _audioState.value = audioMachine.state
-            when (lineType(line)) {
-                "audio_start", "audio_stop" -> playback.stop()
-                "audio_chunk" -> playback.drain(audioMachine.drainPending())
-            }
-        }
-        if (lineType(line) == "audio_chunk") {
-            streamStats.onAudioChunkReceived(line.length)
-        } else {
-            streamStats.onAudio(line.length)
-        }
     }
 
     private fun handleStreamControlLine(line: String) {
@@ -357,75 +343,20 @@ class PairingViewModel(
 
     fun attachMediaSurface(surface: android.view.Surface?) = mediaSession.attachSurface(surface)
 
-    /** Solicita la fuente seleccionada; medios previos se limpian al confirmarse. */
-    fun selectGame(gameId: String) {
-        if (_availableGames.value.none { it.gameId == gameId }) return
-        sendGameSelection(gameId)
-    }
-
-    private fun handleGamesAvailable(games: List<com.twinpad.android.app.wire.GameInfo>) {
-        _availableGames.value = games
-        val pendingId = selection.requestedGameId
-        if (pendingId != null && GameListCodec.retainedSelection(pendingId, games) == null) {
-            selection.pending = false
-            selection.requestedGameId = null
-        }
-        val selected = _selectedGameId.value
-        val retained = GameListCodec.retainedSelection(selected, games)
-        if (selected != null && retained == null) {
-            _selectedGameId.value = null
-            clearMediaForSelectionChange()
-        }
-
-        when {
-            games.isEmpty() -> selection.automaticGameId = null
-            games.size == 1 -> {
-                selection.automaticGameId = games.single().gameId
-                if (selected != selection.automaticGameId && selection.requestedGameId != selection.automaticGameId) {
-                    sendGameSelection(selection.automaticGameId!!)
-                }
-            }
-            else -> {
-                selection.automaticGameId = null
-                if (GameListCodec.needsExplicitSelection(games, selection.requestedGameId)) {
-                    _selectionRequest.tryEmit(games)
-                }
-            }
-        }
-    }
-
-    private fun sendGameSelection(gameId: String) {
-        selection.requestedGameId = gameId
-        selection.pending = true
-        network.send(GameListCodec.selectionLine(gameId))
-    }
-
-    private fun confirmGameSelection(gameId: String) {
-        if (!selection.pending || selection.requestedGameId != gameId) return
-        val previous = _selectedGameId.value
-        if (previous != gameId) clearMediaForSelectionChange()
-        _selectedGameId.value = gameId
-        selection.pending = false
-        selection.requestedGameId = null
-    }
+    /** Solicita la fuente seleccionada (ver [GameSelectionController]). */
+    fun selectGame(gameId: String) = games.select(gameId)
 
     private fun clearMediaForSelectionChange() {
         mediaSession.clearForSessionEnd()
         streamMachine.reset()
         _streamState.value = com.twinpad.android.app.stream.StreamUiState()
-        resetAudioSession()
+        audio.reset()
         // CR-038/035: sin sesión no hay demanda vigente que gobierne la
         // cámara ni el micrófono del teléfono. CR-044: idem el teclado.
         _cameraRequested.value = false
         _micRequested.value = false
         _keyboardRequested.value = null
         _mediaTransport.value = null
-    }
-
-    private fun resetAudioSession() {
-        audioMachine.reset()
-        playback.stop()
-        _audioState.value = com.twinpad.android.app.audio.AudioState.INACTIVE
     }
 
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
@@ -454,7 +385,7 @@ class PairingViewModel(
      * LAN si la sesión está Linked, si no el canal BT si está operativo;
      * en H0 los controles no envían (§6). El `seq` lo asigna la máquina
      * del gamepad (R2). */
-    fun setAudioVolume(volume: Float) = playback.setVolume(volume)
+    fun setAudioVolume(volume: Float) = audio.setVolume(volume)
 
     fun onGamepadInput(report: com.twinpad.android.app.wire.InputReport) {
         val updated = gamepad.onElementChanged(report)
@@ -466,15 +397,9 @@ class PairingViewModel(
                         "accel=${motion.accel.joinToString(",")} gyro=${motion.gyro.joinToString(",")}",
                 )
             }
-            // CR-059: transporte según HandoverPolicy (SPEC-004 §8.3).
-            val linked = _uiState.value is PairingUiState.Linked
-            when (gamepadSwitcher.route(linked)) {
-                com.twinpad.android.app.hid.InputTransport.LAN ->
-                    network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
-
-                com.twinpad.android.app.hid.InputTransport.BT -> gamepadSwitcher.sendOverBt(updated)
-
-                com.twinpad.android.app.hid.InputTransport.NONE -> Unit // H0: no envía
+            // Gamepad sólo por LAN: sin sesión Linked no se envía (H0).
+            if (_uiState.value is PairingUiState.Linked) {
+                network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
             }
         }
     }
@@ -498,21 +423,40 @@ class PairingViewModel(
     /** La app fue a segundo plano (SPEC-002 §8.3): aborto limpio. */
     fun onAppBackgrounded() = feed(PairingEvent.AppBackgrounded)
 
+    /** Vinculaciones guardadas, para la columna de dispositivos. */
+    internal fun savedLinks(): List<com.twinpad.android.app.ui.SavedLink> = savedLinks.all()
+
+    /** Identificador de la vinculación actualmente conectada (si la hay). */
+    fun activeSessionId(): String? = (_uiState.value as? PairingUiState.Linked)?.sessionId
+
+    /** Conecta a un dispositivo guardado (fila activa): reanuda con `pair_resume`. */
+    fun connectSavedLink(sessionId: String) = savedLinks.connect(sessionId)
+
+    /** Olvida un dispositivo guardado (fila inactiva). */
+    fun forgetSavedLink(sessionId: String) = savedLinks.forget(sessionId)
+
+    /** CR-094: Desconectar (sesión activa): cierra la sesión sin olvidar el
+     * dispositivo; queda en la lista para volver a conectarlo. */
+    fun onDisconnectRequested() {
+        network.disconnect()
+        feed(PairingEvent.Cancelled)
+    }
+
     private fun feed(event: PairingEvent) {
         val effects = machine.onEvent(event)
-        val previous = _uiState.value
         _uiState.value = machine.state
         if (_uiState.value is PairingUiState.Linked) {
             // CR-055 HB5: en U4 el watchdog de silencio (15 s sin ninguna línea)
             // declara la conexión terminada; el pong mantiene viva la sesión.
             network.armSessionWatchdog()
+            savedLinks.remember(_uiState.value as PairingUiState.Linked) // CR-094
         }
         // CR-056 (U6): el temporizador de reanudación vive mientras U6.
         scheduleResumeLoop()
         armGamepadChannel()
         // CR-059: el switcher decide arranque y liberación con histéresis
         // (caída de sesión, handshake fallido sin Wi-Fi, regreso a LAN).
-        gamepadSwitcher.onUiState(previous, _uiState.value)
+        gamepadSwitcher.onUiState(_uiState.value)
         effects.forEach(executeEffect)
     }
 
@@ -550,21 +494,14 @@ class PairingViewModel(
      * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
     private val armGamepadChannel: () -> Unit = {
         val linked = _uiState.value is PairingUiState.Linked
-        val route = gamepadSwitcher.route(linked)
-        if (gamepad.state != com.twinpad.android.app.hid.GamepadState.OFFLINE) {
-            if (route == com.twinpad.android.app.hid.InputTransport.NONE) {
-                gamepad.onChannelDown() // §6 H1→H0: los controles dejan de enviar
+        if (gamepad.state == com.twinpad.android.app.hid.GamepadState.OFFLINE) {
+            if (linked) {
+                gamepad.onChannelReady()?.let {
+                    network.send(com.twinpad.android.app.wire.InputCodec.encode(it))
+                }
             }
-        } else {
-            when (route) {
-                com.twinpad.android.app.hid.InputTransport.LAN ->
-                    gamepad.onChannelReady()?.let { network.send(com.twinpad.android.app.wire.InputCodec.encode(it)) }
-
-                com.twinpad.android.app.hid.InputTransport.BT ->
-                    gamepad.onChannelReady()?.let { gamepadSwitcher.sendOverBt(it) }
-
-                com.twinpad.android.app.hid.InputTransport.NONE -> Unit // H0: no envía
-            }
+        } else if (!linked) {
+            gamepad.onChannelDown() // §6 H1→H0: sin LAN los controles dejan de enviar
         }
     }
 
@@ -601,6 +538,12 @@ class PairingViewModel(
             is Effect.StartCamera, is Effect.StopCamera, is Effect.ShowError ->
                 _cameraEffects.tryEmit(effect)
         }
+    }
+
+    init {
+        // CR-094: reconexión automática al abrir la app. Va al final de la clase:
+        // `feed` usa los lambdas de arriba, que deben estar inicializados antes.
+        savedLinks.resumeLast() // CR-094: reanuda la última vinculación guardada
     }
 
     override fun onCleared() {

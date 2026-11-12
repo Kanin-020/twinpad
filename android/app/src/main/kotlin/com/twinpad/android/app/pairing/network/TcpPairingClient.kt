@@ -39,6 +39,14 @@ class TcpPairingClient(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lineChannel = Channel<String?>(capacity = Channel.UNLIMITED)
     private val pendingWrites = Channel<String>(capacity = Channel.UNLIMITED)
+
+    private companion object {
+        /** Tipos que el servidor acepta antes de `pair_ack` (handshake). Cualquier
+         * otro tipo, como `input_report`, `video_config` o `game_select`, se
+         * rechaza con E4 y no se escribe. */
+        val HANDSHAKE_TYPES = listOf("pair_request", "pair_proof", "pair_resume")
+    }
+
     private var readerJob: Job? = null
     private var writerJob: Job? = null
     private var socket: Socket? = null
@@ -53,6 +61,11 @@ class TcpPairingClient(
      * llegaba DESPUÉS de que el lector ya estaba bloqueado en `readLine`
      * con el timeout armado, y el `SocketTimeoutException` mataba la sesión. */
     private val sessionMode = AtomicBoolean(false)
+
+    /** Socket cuyo `pair_ack` ya llegó. Atado al socket (no un booleano global)
+     * para que el lector de un intento viejo no habilite el tráfico del nuevo. */
+    @Volatile
+    private var handshakeSocket: Socket? = null
 
     /** Líneas del servidor; `null` = conexión terminada. */
     val lines: Flow<String?> = lineChannel.receiveAsFlow()
@@ -116,6 +129,7 @@ class TcpPairingClient(
             // de silencio del heartbeat (CR-055 HB5).
             runCatching { s.soTimeout = sessionSilenceTimeoutMs }
             sessionMode.set(true)
+            handshakeSocket = s
         }
         lineChannel.trySend(line)
     }
@@ -137,6 +151,20 @@ class TcpPairingClient(
                 try {
                     val writer = BufferedWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8))
                     for (line in pendingWrites) {
+                        // Escritor de un intento ya reemplazado: no consume la línea
+                        // (sería escrita en un socket muerto). La devuelve a la cola
+                        // para el escritor del intento vigente.
+                        if (socket !== s) {
+                            pendingWrites.trySend(line)
+                            break
+                        }
+                        // Tráfico de sesión viejo (gamepad, video_config) nunca se escribe
+                        // antes de pair_ack: el servidor exige pair_resume como primera
+                        // línea y responde E4 a cualquier otra.
+                        val isHandshake = HANDSHAKE_TYPES.any { line.contains("\"type\":\"$it\"") }
+                        if (handshakeSocket !== s && !isHandshake) {
+                            continue
+                        }
                         writer.write(line)
                         writer.write("\n")
                         writer.flush()
@@ -183,6 +211,7 @@ class TcpPairingClient(
         socket = null
         connectedHost = null
         sessionMode.set(false)
+        handshakeSocket = null
         while (true) {
             if (pendingWrites.tryReceive().getOrNull() == null) break
         }
@@ -198,6 +227,7 @@ class TcpPairingClient(
             socket = null
             connectedHost = null
             sessionMode.set(false)
+            handshakeSocket = null
             while (true) {
                 if (pendingWrites.tryReceive().getOrNull() == null) break
             }

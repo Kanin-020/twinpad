@@ -1,7 +1,6 @@
 package com.twinpad.android.app.ui
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -25,7 +24,6 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
-import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -69,6 +67,8 @@ private const val PROFILE_UNLOADED = "\u0000unloaded"
  */
 class PairingActivity : AppCompatActivity() {
     private lateinit var viewModel: PairingViewModel
+    private lateinit var panelFragment: PairingFragment
+    private lateinit var sessionFragment: SessionFragment
     private lateinit var cameraController: PairingCameraController
     private lateinit var micController: PairingMicController
     private lateinit var keyboardOverlay: KeyboardOverlayController
@@ -122,7 +122,8 @@ class PairingActivity : AppCompatActivity() {
                 width: Int,
                 height: Int,
             ) {
-                viewModel.attachMediaSurface(holder.surface)
+                // La misma Surface sigue válida entre cambios de tamaño: no
+                // se reinicia el canal de medios (CR-100).
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -144,8 +145,8 @@ class PairingActivity : AppCompatActivity() {
 
     /** Aplica el modo de escalado CR-025: letterbox en `contain`, relleno en `expand`. */
     private fun applyVideoScale(settings: AndroidSettings) {
-        val container = findViewById<ViewGroup>(R.id.video_surface_container)
-        val video = findViewById<SurfaceView>(R.id.video_view)
+        val container = sessionView<ViewGroup>(R.id.video_surface_container)
+        val video = sessionView<SurfaceView>(R.id.video_view)
         container.post {
             val (videoWidth, videoHeight) =
                 effectiveVideoDims(
@@ -205,16 +206,6 @@ class PairingActivity : AppCompatActivity() {
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             viewModel.onCameraPermissionResult(granted)
-        }
-
-    /** CR-059: permiso del rol HID Bluetooth (gamepad por BT como alternativa
-     * completa/failover). Se pide junto al de la cámara al iniciar el
-     * emparejamiento y también en caliente cuando el failover lo demanda;
-     * si se deniega, el canal BT queda deshabilitado y la app informa como
-     * estado (SPEC-004 §8.3, ADR-009). */
-    private val btPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            viewModel.onBluetoothPermissionResult(granted)
         }
 
     /** CR-035: permiso del micrófono bajo demanda; al concederlo se reevalúa
@@ -302,8 +293,21 @@ class PairingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        hideSystemBars()
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
         setContentView(R.layout.activity_pairing)
+        // CR-097 paso 1: el panel de conexión vive en PairingFragment.
+        panelFragment = PairingFragment(onPanelReady = ::onPanelReady)
+        sessionFragment = SessionFragment(onSessionReady = ::onSessionReady)
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.pairing_fragment_container, panelFragment)
+                .replace(R.id.saved_devices_container, SavedDevicesFragment())
+                .replace(R.id.session_container, sessionFragment)
+                .commitNow()
+        }
         viewModel = ViewModelProvider(this, PairingViewModel.factory(application))[PairingViewModel::class.java]
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
@@ -315,6 +319,24 @@ class PairingActivity : AppCompatActivity() {
             PairingMicController(this) { line ->
                 viewModel.sendSessionLine(line)
             }
+        observeCameraEffects()
+    }
+
+    /**
+     * CR-097: el panel de conexión existe desde onViewCreated del fragmento.
+     * Sólo entonces se cablean sus botones y se empieza a observar el estado,
+     * porque renderState usa las vistas del panel.
+     */
+    private fun onPanelReady() {
+        wireViews()
+        observeStates()
+    }
+
+    /**
+     * CR-097 paso 3: la vista de sesión existe desde onViewCreated del fragmento.
+     * Aquí se crean los controladores que buscan vistas de sesión.
+     */
+    private fun onSessionReady() {
         keyboardOverlay =
             KeyboardOverlayController(this) { line ->
                 viewModel.sendSessionLine(line)
@@ -322,40 +344,68 @@ class PairingActivity : AppCompatActivity() {
         drawer = SettingsDrawerController(this, drawerHost)
         gaugePanel = WaitingGaugePanel(this)
         metricsSlider = MetricsSliderController(this)
-        wireViews()
-        findViewById<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
-        findViewById<View>(R.id.video_surface_container).addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        sessionView<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
+        sessionView<View>(R.id.video_surface_container).addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             applyVideoScale(drawer.load())
         }
         drawer.applyPersistedSettings()
-        observeCameraEffects()
-        observeBtPermissionRequests.invoke()
+        sessionView<ImageButton>(R.id.btn_settings).setOnClickListener {
+            findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
+        }
         observeMicDemand()
         observeKeyboardDemand()
-        observeStates()
+        drawer.bind()
+        attachProfileSurface()
+        // Se suscribe aquí: StateFlow emite el valor actual, y la vista ya existe.
+        lifecycleScope.launch {
+            viewModel.streamState.collectLatest { state ->
+                applyStreamState(state)
+            }
+        }
+    }
+
+    /** Busca una vista de la sesión, que vive en [SessionFragment]. */
+    private fun <T : View> sessionView(id: Int): T {
+        return sessionFragment.requireView().findViewById<T>(id)
+    }
+
+    /** Busca una vista del panel de conexión, que vive en [PairingFragment]. */
+    private fun <T : View> panelView(id: Int): T {
+        return panelFragment.requireView().findViewById<T>(id)
     }
 
     /** Cablea cada View a su evento del ViewModel. */
     private fun wireViews() {
-        findViewById<Button>(R.id.btn_scan).setOnClickListener {
+        panelView<Button>(R.id.btn_scan).setOnClickListener {
             viewModel.onEvent(PairingEvent.ScanRequested)
         }
         // CR-060 (SPEC-002 §8.4): el payload textual que la PC ya imprime
         // junto al QR se escribe/pega aquí; misma ruta que el QR sin cámara.
-        findViewById<Button>(R.id.btn_typed_code).setOnClickListener {
+        panelView<Button>(R.id.btn_typed_code).setOnClickListener {
             showTypedCodeDialog()
         }
-        findViewById<Button>(R.id.btn_cancel).setOnClickListener {
+        panelView<Button>(R.id.btn_cancel).setOnClickListener {
             viewModel.onEvent(PairingEvent.Cancelled)
         }
-        findViewById<Button>(R.id.btn_retry).setOnClickListener {
-            viewModel.onEvent(PairingEvent.Retry)
+        panelView<Button>(R.id.btn_disconnect).setOnClickListener {
+            viewModel.onDisconnectRequested() // CR-094
         }
-        findViewById<ImageButton>(R.id.btn_settings).setOnClickListener {
-            findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
+        panelView<Button>(R.id.btn_retry).setOnClickListener {
+            viewModel.onEvent(PairingEvent.Retry)
         }
         findViewById<Button>(R.id.btn_close_drawer).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
+        }
+        findViewById<Button>(R.id.btn_drawer_connection).setOnClickListener {
+            findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
+            // CR-097: sólo cambia de vista; la sesión sigue viva en segundo plano.
+            connectionTabs.toggleFromDrawer()
+        }
+        findViewById<Button>(R.id.btn_tab_new).setOnClickListener {
+            connectionTabs.show(connectionView = false)
+        }
+        findViewById<Button>(R.id.btn_tab_list).setOnClickListener {
+            connectionTabs.show(connectionView = true)
         }
     }
 
@@ -477,11 +527,6 @@ class PairingActivity : AppCompatActivity() {
                 applyLinkedState(state)
             }
         }
-        lifecycleScope.launch {
-            viewModel.streamState.collectLatest { state ->
-                applyStreamState(state)
-            }
-        }
         observeSelectedGame()
         lifecycleScope.launch {
             viewModel.selectionRequest.collectLatest { games ->
@@ -515,8 +560,6 @@ class PairingActivity : AppCompatActivity() {
                 }
             }
         }
-        drawer.bind()
-        attachProfileSurface()
     }
 
     /** U4/Linked: config de stream una vez por sesión (CR-074). Función-
@@ -545,7 +588,7 @@ class PairingActivity : AppCompatActivity() {
             applyVideoScale(drawer.load())
         }
         val streaming = state.state == StreamState.STREAMING
-        findViewById<View>(R.id.drc_content).isVisible = streaming
+        sessionView<View>(R.id.drc_content).isVisible = streaming
         // CR-079: la vista de espera CR-076 ahora tiene dos modos (fullscreen
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)
@@ -553,8 +596,8 @@ class PairingActivity : AppCompatActivity() {
     }
 
     private fun renderHudChip() {
-        val chip = findViewById<TextView>(R.id.hud_chip)
-        val stageLine = findViewById<TextView>(R.id.hud_stage)
+        val chip = sessionView<TextView>(R.id.hud_chip)
+        val stageLine = sessionView<TextView>(R.id.hud_stage)
         if (!hudVisible) {
             chip.isVisible = false
             stageLine.isVisible = false
@@ -590,7 +633,7 @@ class PairingActivity : AppCompatActivity() {
      * Función-propiedad para mantener el recuento de funciones bajo el
      * umbral de detekt. */
     private val renderHudStageDetails = { metrics: VideoStageStatsMessage? ->
-        val details = findViewById<TextView>(R.id.hud_stage_details)
+        val details = sessionView<TextView>(R.id.hud_stage_details)
         if (!advancedMetricsVisible) {
             details.isVisible = false
         } else {
@@ -612,7 +655,7 @@ class PairingActivity : AppCompatActivity() {
             surface.showControls = controlsVisible
             surface.setNintendoFaceLayout(nintendoFaceDistribution)
             surfaceRef = surface
-            findViewById<ViewGroup>(R.id.surface_container).addView(
+            sessionView<ViewGroup>(R.id.surface_container).addView(
                 surface,
                 ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
             )
@@ -671,36 +714,60 @@ class PairingActivity : AppCompatActivity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
-    private fun sessionSurfaceWithPhysicalGamepad(): ProfileSurface? =
-        surfaceRef?.takeIf { viewModel.uiState.value is PairingUiState.Linked }
-
-    private fun isGamepadSource(source: Int): Boolean =
-        source and InputDevice.SOURCE_GAMEPAD != 0 || source and InputDevice.SOURCE_JOYSTICK != 0
-
     /** Visibilidad global de error/reintento y del botón de código tipeado
      * (U1 idle → U5 failure, SPEC-002 §6). Función-propiedad para mantener
      * el recuento de funciones bajo el umbral de detekt. */
     private val applyFailureAndTypedCodeVisibility: (PairingUiState) -> Unit = { state ->
-        val txtError = findViewById<TextView>(R.id.txt_error)
+        val txtError = panelView<TextView>(R.id.txt_error)
         txtError.text =
             if (state is PairingUiState.Failure) getString(state.error.resId()) else ""
         txtError.isVisible = state is PairingUiState.Failure
-        findViewById<View>(R.id.btn_retry).isVisible = state is PairingUiState.Failure
-        findViewById<View>(R.id.btn_typed_code).isVisible = state == PairingUiState.Idle
+        panelView<View>(R.id.btn_retry).isVisible = state is PairingUiState.Failure
+        panelView<View>(R.id.btn_typed_code).isVisible = state == PairingUiState.Idle
     }
 
-    /** U1 idle → U5 failure: visibilidad de cada sección (SPEC-002 §6). */
+    /** U1 idle → U5 failure: visibilidad de cada sección (SPEC-002 §6).
+     * Dispositivos guardados a la derecha. Un toque expande la fila.
+     * Activo: muestra «Desconectar». Inactivo: muestra «Olvidar». */
+    private val savedDevices by lazy {
+        SavedDevicesRenderer(
+            activity = this,
+            container = findViewById(R.id.saved_devices_container),
+            viewModel = viewModel,
+            rerender = { renderSavedDevicesNow() },
+        )
+    }
+
+    /** Vuelve a pintar la lista de guardados con el estado actual. */
+    private val renderSavedDevicesNow: () -> Unit = {
+        savedDevices.render(viewModel.uiState.value)
+    }
+
+    /** CR-097: pestañas y drawer que alternan entre conexión nueva y lista. */
+    private val connectionTabs by lazy {
+        ConnectionTabsController(
+            activity = this,
+            viewModel = viewModel,
+            panelView = { panelFragment.requireView() },
+            renderState = ::renderState,
+        )
+    }
+
     private fun renderState(state: PairingUiState) {
-        val session = findViewById<View>(R.id.session_view)
-        val title = findViewById<View>(R.id.pairing_title)
-        val btnScan = findViewById<View>(R.id.btn_scan)
-        val preview = findViewById<PreviewView>(R.id.camera_preview)
-        val txtStatus = findViewById<TextView>(R.id.txt_status)
-        val btnCancel = findViewById<View>(R.id.btn_cancel)
+        savedDevices.render(state)
+        connectionTabs.renderSwitch(state, sessionLinked = state is PairingUiState.Linked)
+        // CR-097: con sesión activa el panel no muestra Escanear ni Desconectar;
+        // Desconectar vive en la fila de la conexión activa (columna de guardados).
+        // Reconectando no hay vista de sesión: el panel ofrece Desconectar.
+        panelView<View>(R.id.btn_disconnect).isVisible = state is PairingUiState.Reconnecting
+        val title = panelView<View>(R.id.pairing_title)
+        val btnScan = panelView<View>(R.id.btn_scan)
+        val preview = panelView<PreviewView>(R.id.camera_preview)
+        val txtStatus = panelView<TextView>(R.id.txt_status)
+        val btnCancel = panelView<View>(R.id.btn_cancel)
         applyFailureAndTypedCodeVisibility(state)
         when (state) {
             PairingUiState.Idle -> {
-                session.isVisible = false
                 title.isVisible = true
                 btnScan.isVisible = true
                 preview.isVisible = false
@@ -709,7 +776,6 @@ class PairingActivity : AppCompatActivity() {
                 SessionForegroundService.stop(this@PairingActivity)
             }
             PairingUiState.Scanning -> {
-                session.isVisible = false
                 title.isVisible = true
                 btnScan.isVisible = false
                 preview.isVisible = true
@@ -718,7 +784,6 @@ class PairingActivity : AppCompatActivity() {
                 cameraController.bind(preview, this as LifecycleOwner)
             }
             PairingUiState.Handshaking -> {
-                session.isVisible = false
                 preview.isVisible = false
                 txtStatus.text = getString(R.string.pairing_handshaking)
                 btnCancel.isVisible = true
@@ -727,14 +792,23 @@ class PairingActivity : AppCompatActivity() {
                 // CR-056 (U6, SPEC-001 §8.2): sesión retenida en el server;
                 // la app reanuda sin QR. El video del server también puede
                 // seguir vivo (SPEC-003 §3: retención viva).
-                session.isVisible = true
+                // Sin video ni métricas durante el reintento: pantalla inicial
+                // con el aviso, para no quedar en una vista de sesión vacía.
+                title.isVisible = true
+                btnScan.isVisible = false
                 preview.isVisible = false
                 txtStatus.text = getString(R.string.pairing_reconnecting)
                 btnCancel.isVisible = true
                 SessionForegroundService.start(this@PairingActivity)
             }
             is PairingUiState.Linked -> {
-                session.isVisible = true
+                // Con la vista de conexión elegida, el panel muestra la pantalla
+                // inicial mientras la sesión sigue viva en segundo plano.
+                // CR-097: con conexión activa no se ofrece Escanear; Desconectar
+                // está en la fila de la columna de guardados.
+                title.isVisible = connectionTabs.showingConnectionView
+                btnScan.isVisible = false
+                txtStatus.text = if (connectionTabs.showingConnectionView) getString(R.string.pairing_linked) else ""
                 preview.isVisible = false
                 btnCancel.isVisible = false
                 // El servicio en primer plano impide que el sistema mate
@@ -742,7 +816,10 @@ class PairingActivity : AppCompatActivity() {
                 SessionForegroundService.start(this@PairingActivity)
             }
             is PairingUiState.Failure -> {
-                session.isVisible = false
+                // Sesión perdida: volver a la pantalla inicial (vincular o ver guardados).
+                title.isVisible = true
+                btnScan.isVisible = true
+                preview.isVisible = false
                 txtStatus.text = ""
                 btnCancel.isVisible = false
                 SessionForegroundService.stop(this@PairingActivity)
@@ -756,16 +833,6 @@ class PairingActivity : AppCompatActivity() {
             viewModel.cameraEffects.collect { effect ->
                 when (effect) {
                     is Effect.RequestCamera -> {
-                        if (
-                            ContextCompat.checkSelfPermission(
-                                this@PairingActivity,
-                                Manifest.permission.BLUETOOTH_CONNECT,
-                            ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            // CR-059: se lanza primero; la cámara lo hace
-                            // cuando el diálogo BT se cierra.
-                            btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                        }
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                     is Effect.StartCamera -> cameraController.start()
@@ -776,32 +843,27 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** CR-059: el failover necesita el permiso BT en caliente (sesión caída);
-     * muestra el diálogo del SO aunque el emparejamiento ya haya terminado.
-     * (Lambda: detekt TooManyFunctions.) */
-    private val observeBtPermissionRequests: () -> Unit = {
-        lifecycleScope.launch {
-            viewModel.btPermissionRequests.collect {
-                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            }
-        }
+    /** Superficie de perfil sólo con sesión viva (usada por el gamepad físico). */
+    private val sessionSurfaceWithPhysicalGamepad: () -> ProfileSurface? = {
+        surfaceRef?.takeIf { viewModel.uiState.value is PairingUiState.Linked }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideSystemBars()
-    }
-
-    private fun hideSystemBars() {
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (hasFocus) {
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                hide(WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        hideSystemBars()
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
         motionController.reset()
         registerSensor(rotationVector, orientationListener)
         registerSensor(sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), accelerationListener)
@@ -833,7 +895,7 @@ class PairingActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        findViewById<SurfaceView>(R.id.video_view).holder.removeCallback(mediaSurfaceCallback)
+        sessionView<SurfaceView>(R.id.video_view).holder.removeCallback(mediaSurfaceCallback)
         // CR-077: el monitor de FPS del Gamepad no debe sobrevivir a la Activity.
         gaugePanel.stopDeviceMonitor()
         viewModel.attachMediaSurface(null)
@@ -898,6 +960,8 @@ fun com.twinpad.android.app.core.PairingError.resId(): Int =
             R.string.pairing_error_invalid_qr
         com.twinpad.android.app.core.PairingError.CameraDenied ->
             R.string.pairing_error_camera_denied
-        com.twinpad.android.app.core.PairingError.SessionEnded ->
-            R.string.pairing_session_ended
+        com.twinpad.android.app.core.PairingError.SessionEnded -> R.string.pairing_session_ended
     }
+
+private fun isGamepadSource(source: Int): Boolean =
+    source and InputDevice.SOURCE_GAMEPAD != 0 || source and InputDevice.SOURCE_JOYSTICK != 0

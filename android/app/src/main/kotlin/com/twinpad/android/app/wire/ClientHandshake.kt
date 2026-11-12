@@ -13,7 +13,7 @@ class ClientHandshake private constructor(
     private val tokenStr: String,
     private val requestLine: String,
 ) {
-    private var sessionKey: ByteArray? = null
+    private var sessionKey: ByteArray? = null // fijada en onPairChallenge o resumeWith
 
     companion object {
         /** SPEC-001 §7 pasos 2–5: valida el token del QR y produce `pair_request`. */
@@ -22,6 +22,10 @@ class ClientHandshake private constructor(
             val request = HandshakeMessage.Request(schema = SCHEMA, token = tokenStr)
             return Pair(ClientHandshake(tokenStr, HandshakeCodec.encode(request)), request)
         }
+
+        /** CR-094: reanudación con la clave guardada (sin QR): `pair_resume` la usa como prueba. */
+        fun resumeWith(sessionKey: ByteArray): ClientHandshake =
+            ClientHandshake(tokenStr = "", requestLine = "").also { it.sessionKey = sessionKey }
     }
 
     /** SPEC-001 §7 paso 8: challenge → proof, con transcript idéntico al core. */

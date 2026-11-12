@@ -21,12 +21,8 @@ enum class InputTransport {
  * canal BT, liberación con histéresis) la gobierna el conmutador de la app.
  */
 object HandoverPolicy {
-    /** Histéresis (ms): al volver la LAN, se libera el canal BT solo si la sesión
-     * sigue Linked pasados 5 s (evita reinicios del perfil en cortes breves). */
-    const val BT_RELEASE_HYSTERESIS_MS: Long = 5_000L
-
-    /** Ruta del transporte del gamepad: la LAN tiene prioridad; si cayó y el
-     * canal BT está operativo, hay failover a Bluetooth; sin ninguno, H0. */
+    /** Ruta del transporte del gamepad (CR-098): LAN si la sesión está Linked;
+     * si no, canal BT HID si está operativo; sin ninguna, H0. */
     fun route(
         lanLinked: Boolean,
         btReady: Boolean,

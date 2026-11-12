@@ -39,6 +39,24 @@ import java.util.concurrent.TimeUnit
 class PairingViewModelTest {
     private val app: Application = ApplicationProvider.getApplicationContext()
 
+    /** Store en memoria: evita Android Keystore (no disponible en la JVM de test). */
+    private val memoryStore: (Application) -> com.twinpad.android.app.ui.PairingLinkStore = {
+        object : com.twinpad.android.app.ui.PairingLinkStore(it) {
+            private val links = mutableListOf<com.twinpad.android.app.ui.SavedLink>()
+
+            override fun loadAll() = links.toList()
+
+            override fun save(link: com.twinpad.android.app.ui.SavedLink) {
+                links.removeAll { existing -> existing.sessionId == link.sessionId }
+                links.add(link)
+            }
+
+            override fun remove(sessionId: String) {
+                links.removeAll { existing -> existing.sessionId == sessionId }
+            }
+        }
+    }
+
     /** nonce/token/session_id con longitudes exactas de SPEC-001 §4.1/§4.2. */
     private val nonceStr = "A".repeat(43)
     private val sessionId = "BQUFBQUFBQUFBQUFBQUFBQ"
@@ -46,7 +64,7 @@ class PairingViewModelTest {
     @Test
     fun usesInjectedPairingMachineForCameraFlow() {
         val machine = PairingStateMachine()
-        val viewModel = PairingViewModel(app, PairingCollaborators(machine = machine))
+        val viewModel = PairingViewModel(app, PairingCollaborators(machine = machine, linkStore = memoryStore))
 
         // Sin permiso concedido la máquina pide la cámara y se queda en Idle.
         viewModel.onEvent(PairingEvent.ScanRequested)
@@ -61,7 +79,7 @@ class PairingViewModelTest {
     @Test
     fun exposesInjectedStreamStats() {
         val stats = StreamStats()
-        val viewModel = PairingViewModel(app, PairingCollaborators(streamStats = stats))
+        val viewModel = PairingViewModel(app, PairingCollaborators(streamStats = stats, linkStore = memoryStore))
 
         assertSame(stats, viewModel.streamStats)
     }
@@ -81,7 +99,8 @@ class PairingViewModelTest {
         Dispatchers.setMain(main)
         try {
             val machine = PairingStateMachine()
-            val viewModel = PairingViewModel(app, PairingCollaborators(machine = machine))
+            val viewModel =
+                PairingViewModel(app, PairingCollaborators(machine = machine, linkStore = memoryStore))
 
             val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
             server.soTimeout = 10_000

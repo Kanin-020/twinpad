@@ -111,6 +111,25 @@ class PairingStateMachine {
 
     fun sessionKeyOrNull(): ByteArray? = client?.sessionKeyOrNull()
 
+    /** CR-094: puerto del último servidor conectado (para guardar la vinculación). */
+    fun lastConnectPort(): Int = lastConnect?.second ?: 0
+
+    /** CR-094: al abrir la app, reanuda la vinculación guardada sin QR. Entra en
+     * U6 (Reconectando) con el mismo session_id y clave; el temporizador de la VM
+     * envía `pair_resume`. Solo desde Idle. */
+    fun resumeFromLink(
+        sessionId: String,
+        sessionKey: ByteArray,
+        addr: String,
+        port: Int,
+    ): Boolean {
+        if (state != PairingUiState.Idle) return false
+        client = ClientHandshake.resumeWith(sessionKey)
+        lastConnect = addr to port
+        state = PairingUiState.Reconnecting(sessionId)
+        return true
+    }
+
     /** Avanza la máquina y devuelve los comandos a ejecutar en orden. */
     fun onEvent(event: PairingEvent): List<Effect> {
         val current = state
@@ -264,6 +283,9 @@ class PairingStateMachine {
                         else -> emptyList()
                     }
                 }
+            // CR-094: Desconectar cierra la sesión activa y vuelve a Idle; el
+            // dispositivo queda guardado en la lista (no se olvida).
+            is PairingEvent.Cancelled -> cancelAttempt(from = state)
             else -> emptyList()
         }
 

@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CR-097 paso 3: vista de sesion (video, metricas, HUD, teclado, ajustes) en SessionFragment. -->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/session_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent">
+
+    <FrameLayout
+        android:id="@+id/drc_content"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <FrameLayout
+            android:id="@+id/video_surface_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <SurfaceView
+                android:id="@+id/video_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/second_screen_active" />
+        </FrameLayout>
+    </FrameLayout>
+
+    <!-- CR-079: slider de gauges — la MISMA retícula 2×2 de la ventana
+         de espera (CR-076 v3, única instancia en la jerarquía). Sin
+         stream es la vista frontal fullscreen opaca (cubre el
+         Framebuffer residual); en STREAMING se ancla abajo como hoja
+         arrastrable SOBRE el video (nace abierta, CR-079). Declarado
+         tras surface_container para ganar el toque en el drag. -->
+    <com.twinpad.android.app.ui.MetricsSliderContainer
+        android:id="@+id/metrics_slider"
+        android:visibility="gone"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <LinearLayout
+            android:id="@+id/metrics_sheet"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/design_void_canvas"
+            android:orientation="vertical">
+
+            <!-- CR-079 v4: el asa vive ARRIBA de la hoja (decisión del
+                 owner). Así el plegado real es posible: la hoja baja y
+                 solo queda el asa visible en el borde inferior. -->
+            <View
+                android:id="@+id/metrics_handle"
+                android:visibility="gone"
+                android:layout_width="72dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="10dp"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/bg_metrics_handle" />
+
+            <!-- CR-079 v8 (prueba del owner): la franja del asa queda
+                 TRANSPARENTE — el fondo Charcoal vive SOLO en el
+                 contenido (la retícula); plegado se ve
+                 únicamente el asa, nunca una banda de fondo. -->
+            <LinearLayout
+                android:id="@+id/metrics_content"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <LinearLayout
+                    android:id="@+id/gauge_grid"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <!-- CR-086: cuatro anillos compactos GPU · CPU · RAM · VRAM -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1"
+                        android:orientation="horizontal">
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_gpu"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            app:ringColor="@color/metrics_ring_gpu" />
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_cpu"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            app:ringColor="@color/metrics_ring_cpu" />
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_ram"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            app:ringColor="@color/metrics_ring_ram" />
+
+                        <com.twinpad.android.app.ui.GaugeView
+                            android:id="@+id/gauge_vram"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            app:ringColor="@color/metrics_ring_vram" />
+                    </LinearLayout>
+
+                    <!-- CR-086: FPS grande a la izquierda (sin anillo) y
+                         stats de temperatura CPU · GPU a la derecha -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_marginTop="2dp"
+                        android:layout_weight="1"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="3"
+                            android:background="@drawable/bg_metric_card"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/txt_fps_value"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/design_cloud_white"
+                                android:textSize="40sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/metrics_fps"
+                                android:textColor="@color/design_quiet_slate"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="3"
+                            android:background="@drawable/bg_metric_card"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/metrics_cpu"
+                                    android:textColor="@color/design_quiet_slate"
+                                    android:textSize="10sp" />
+
+                                <TextView
+                                    android:id="@+id/txt_cpu_temp"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:textColor="@color/design_cloud_white"
+                                    android:textSize="20sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/metrics_gpu"
+                                    android:textColor="@color/design_quiet_slate"
+                                    android:textSize="10sp" />
+
+                                <TextView
+                                    android:id="@+id/txt_gpu_temp"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:textColor="@color/design_cloud_white"
+                                    android:textSize="20sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </com.twinpad.android.app.ui.MetricsSliderContainer>
+
+    <FrameLayout
+        android:id="@+id/surface_container"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/hud_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:background="@drawable/bg_hud_chip"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:textColor="@android:color/white"
+        android:textSize="12sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- CR-053: etapas del pipeline de video del Plugin (HUD). -->
+    <TextView
+        android:id="@+id/hud_stage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="8dp"
+        android:layout_marginTop="2dp"
+        android:background="@drawable/bg_hud_chip"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:textColor="@android:color/white"
+        android:textSize="11sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/hud_chip" />
+
+    <!-- CR-075: detalles del HUD (HW/transporte/resoluciones). -->
+    <TextView
+        android:id="@+id/hud_stage_details"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="8dp"
+        android:layout_marginTop="2dp"
+        android:background="@drawable/bg_hud_chip"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:textColor="@android:color/white"
+        android:textSize="11sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/hud_stage" />
+
+    <!-- Declarado DESPUÉS de surface_container: el HUD queda encima
+         de la superficie táctil (sin esto, el halo del trigger_l
+         tapaba al botón y su toque lo absorbía la superficie). -->
+    <ImageButton
+        android:id="@+id/btn_settings"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_margin="8dp"
+        android:background="@drawable/touch_button"
+        android:contentDescription="@string/settings_title"
+        android:src="@drawable/ic_settings"
+        android:tint="@color/design_quiet_slate"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- CR-044: overlay del teclado del juego; el IME del teléfono
+         reemplaza al teclado del juego (ese overlay no se dibuja
+         mientras Twinpad esté conectado). -->
+    <LinearLayout
+        android:id="@+id/keyboard_overlay"
+        android:visibility="gone"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@color/keyboard_overlay_background"
+        android:orientation="vertical"
+        android:padding="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <EditText
+            android:id="@+id/keyboard_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/keyboard_hint"
+            android:imeOptions="actionDone"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:maxLines="1" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_keyboard_cancel"
+                style="@style/Widget.Twinpad.Button.Filled"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@android:string/cancel" />
+
+            <Button
+                android:id="@+id/btn_keyboard_accept"
+                style="@style/Widget.Twinpad.Button.Filled"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@android:string/ok" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

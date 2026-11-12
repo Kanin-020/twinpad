@@ -93,6 +93,13 @@ class BluetoothHidGamepad(context: Context) {
         cancelConnectRetry()
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
         val profile = hidProfile
+        if (profile != null) {
+            try {
+                profile.unregisterApp()
+            } catch (e: SecurityException) {
+                // BLUETOOTH_CONNECT sin conceder: no hay registro que liberar.
+            }
+        }
         if (adapter != null && profile != null) {
             adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, profile)
         }

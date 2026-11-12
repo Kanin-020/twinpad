@@ -175,7 +175,10 @@ internal class PairingMediaSession(
         }
 
     private fun connectIfReady() {
-        val connection = connectionParameters() ?: return
+        val connection = connectionParameters()
+        if (connection == null) {
+            return
+        }
         val connectionGeneration = generation.incrementAndGet()
         lastPresentedFrameNumber = null
         lastReceivedFrameNumber = null

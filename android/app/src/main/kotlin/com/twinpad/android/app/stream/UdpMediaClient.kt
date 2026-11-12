@@ -431,7 +431,7 @@ internal class UdpMediaClient(
                 if (unit == null) continue
                 onAccessUnit(unit)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // El caller reporta el estado INTERRUPTED/INACTIVE; ningún
             // datagrama no autenticado se entrega jamás (§4.1).
         } finally {
