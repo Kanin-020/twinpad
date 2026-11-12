@@ -47,6 +47,10 @@ pub struct UiDeps {
     pub video_config: Box<dyn Fn() -> (u32, u32, u32) + Send + Sync>,
     /// Flag compartido de parada con gracia (W4).
     pub shutdown: Arc<AtomicBool>,
+    /// Carpeta de datos fija (SPEC-010), solo informativa en la página.
+    pub data_dir: Box<dyn Fn() -> String + Send + Sync>,
+    /// Revoca un dispositivo emparejado por su session_id (base64url); `false` si no existía (CR-094).
+    pub revoke_device: Box<dyn Fn(&str) -> bool + Send + Sync>,
 }
 
 pub(crate) enum RequestOutcome {
@@ -82,11 +86,32 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
         // Sin contestar: la página no existe fuera del propio PC (W6).
         return RequestOutcome::Served;
     }
-    let mut buf = [0u8; MAX_REQUEST_BYTES];
-    let Ok(read) = stream.read(&mut buf) else {
+    // S2: leer hasta el fin de cabeceras (una petición puede llegar
+    // fragmentada); el timeout de lectura acota la espera.
+    let mut buf = Vec::with_capacity(1024);
+    let mut chunk = [0u8; 1024];
+    while buf.len() < MAX_REQUEST_BYTES && !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+    }
+    if buf.is_empty() {
         return RequestOutcome::Served;
-    };
-    let request = String::from_utf8_lossy(&buf[..read]);
+    }
+    // Leer el cuerpo hasta Content-Length, por si llega en otro paquete.
+    if let Some(header_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+        let body_len = content_length(&buf[..header_end])
+            .unwrap_or(0)
+            .min(MAX_REQUEST_BYTES);
+        while buf.len() < header_end + 4 + body_len {
+            match stream.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            }
+        }
+    }
+    let request = String::from_utf8_lossy(&buf);
     if !is_local_request(&request) {
         // S1: otra web (DNS rebinding, Origin ajeno o cross-site) no puede
         // leer la página ni disparar `/stop` o `/qr/rotate`.
@@ -104,11 +129,36 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("");
+    let path = path.split('?').next().unwrap_or(path);
+    if method == "POST" && path == "/devices/revoke" {
+        // CR-094: revoca un dispositivo emparejado (solo con cabecera de acción, S1).
+        if !has_action_header(&request) {
+            respond(
+                stream,
+                "403 Forbidden",
+                "text/plain; charset=utf-8",
+                "Falta X-Twinpad-Action.",
+            );
+            return RequestOutcome::Served;
+        }
+        let body = request.split("\r\n\r\n").nth(1).unwrap_or("");
+        let id = form_value(body, "id").unwrap_or_default();
+        if (deps.revoke_device)(&id) {
+            respond(stream, "204 No Content", "text/plain; charset=utf-8", "");
+        } else {
+            respond(
+                stream,
+                "404 Not Found",
+                "text/plain; charset=utf-8",
+                "Dispositivo no encontrado.",
+            );
+        }
+        return RequestOutcome::Served;
+    }
     if method != "GET" {
         respond(stream, "405 Method Not Allowed", "text/plain", "Solo GET.");
         return RequestOutcome::Served;
     }
-    let path = path.split('?').next().unwrap_or(path);
     if matches!(path, "/stop" | "/qr/rotate") && !has_action_header(&request) {
         // S1 (CSRF): las acciones que cambian estado exigen una cabecera que
         // un enlace o <img> de otra web no puede enviar sin preflight CORS.
@@ -185,6 +235,38 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
     }
 }
 
+/// Valor de un campo `application/x-www-form-urlencoded` (`+` y `%XX`).
+fn form_value(body: &str, key: &str) -> Option<String> {
+    body.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        (name == key).then(|| percent_decode(value))
+    })
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+                match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                    Some(byte) => {
+                        out.push(byte);
+                        i += 2;
+                    }
+                    None => out.push(b'%'),
+                }
+            }
+            other => out.push(other),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// S1 (SPEC-010 W6): ¿la petición viene de la propia página local? Exige
 /// `Host` loopback (sin esto un dominio resuelto a 127.0.0.1 leería la página),
 /// `Origin` loopback si existe, y `Sec-Fetch-Site` none/same-origin si existe
@@ -212,6 +294,17 @@ fn is_local_request(request: &str) -> bool {
 }
 
 /// Cabecera personalizada que exigen las acciones (`/stop`, `/qr/rotate`).
+/// Valor de `Content-Length` en las cabeceras (CR-093: lectura completa del cuerpo POST).
+fn content_length(headers: &[u8]) -> Option<usize> {
+    String::from_utf8_lossy(headers).lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case("content-length")
+            .then(|| value.trim().parse().ok())
+            .flatten()
+    })
+}
+
 fn has_action_header(request: &str) -> bool {
     request.lines().skip(1).any(|line| {
         line.split_once(':').is_some_and(|(name, value)| {
@@ -257,11 +350,12 @@ pub fn render_page(deps: &UiDeps) -> String {
     PAGE_TEMPLATE
         .replace("__PAGE_STYLE__", PAGE_STYLE)
         .replace("__QR_SVG__", &qr_svg)
-        .replace("__URI__", &uri)
+        .replace("__URI__", &html_escape(&uri))
         .replace("__TTL_CLOCK__", &mmss(ttl_ms))
         .replace("__TTL_MS__", &ttl_ms.to_string())
         .replace("__SESSIONS__", &sessions.to_string())
         .replace("__GAMES__", &games_list)
+        .replace("__DATA_DIR__", &html_escape(&(deps.data_dir)()))
         .replace("__WIDTH__", &width.to_string())
         .replace("__HEIGHT__", &height.to_string())
         .replace("__BITRATE__", &bitrate.to_string())
@@ -278,6 +372,15 @@ fn qr_payload(uri: &str, ttl_ms: u64) -> Option<String> {
         uri_json = json_string(uri),
         svg_json = json_string(&svg),
     ))
+}
+
+/// Escapa `& < > " '` para insertar texto en contenido HTML (W2).
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Escape JSON mínimo (ENG §6: sin dependencias nuevas): el SVG contiene
@@ -395,6 +498,8 @@ pub(crate) fn test_deps(shutdown: Arc<AtomicBool>) -> UiDeps {
         session_count: Box::new(|| 2),
         games: Box::new(|| vec!["cemu".to_string()]),
         video_config: Box::new(|| (1920, 1080, 30000)),
+        data_dir: Box::new(|| "/tmp/twinpad".to_string()),
+        revoke_device: Box::new(|_| false),
         // Rotación simulada: cada llamada emite un token DISTINTO (la
         // semántica real de invalidación la ejercita TEST-0148).
         rotate_uri: Box::new({
@@ -440,7 +545,8 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200 OK"));
         // W8: el MISMO token en la casilla copiable y asentado como QR.
         assert!(response.contains("<textarea readonly"));
-        assert!(response.contains("&t=eW8tMTE1YQ"));
+        // W2: el `&` del URI va escapado como `&amp;` dentro del textarea.
+        assert!(response.contains("&amp;t=eW8tMTE1YQ"));
         assert!(response.contains("<svg xmlns="));
         assert!(response.contains("viewBox="));
         // W2c/d: estado del server y configs de video.

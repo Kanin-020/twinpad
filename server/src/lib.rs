@@ -10,6 +10,8 @@
 
 pub mod audio;
 pub mod autostart;
+pub mod data_dir;
+pub mod device_store;
 pub mod game_media;
 pub mod games;
 pub mod heartbeat;

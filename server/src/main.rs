@@ -96,7 +96,14 @@ fn main() {
         }
         Err(error) => eprintln!("Twinpad: interfaz local del QR no disponible: {error}"),
     }
-    let registry = Arc::new(twinpad_server::registry::SessionRegistry::new());
+    // CR-094: dispositivos emparejados persistidos en la carpeta de datos (CR-093).
+    let registry = Arc::new(match twinpad_server::data_dir::current_dir() {
+        Ok(dir) => twinpad_server::registry::SessionRegistry::with_device_store(&dir),
+        Err(error) => {
+            eprintln!("Twinpad: sin carpeta de datos; los dispositivos no se recordarán: {error}");
+            twinpad_server::registry::SessionRegistry::new()
+        }
+    });
 
     // CR-056 (SPEC-001 §8.2): barre las ligaduras retenidas; la vencida se
     // destruye (exigirá re-scan de QR). Tick de 1 s, sin sondeo activo en
@@ -348,6 +355,10 @@ fn main() {
                 let (issued, remaining_ms) = ui_rotate_store.rotate_qr();
                 (issued.qr_uri, remaining_ms)
             }),
+            revoke_device: {
+                let revoke_registry = Arc::clone(&ui_registry);
+                Box::new(move |id| revoke_registry.revoke_device(id)) // CR-094
+            },
             session_count: Box::new(move || ui_registry.len()),
             games: Box::new(move || ui_games.list().into_iter().map(|g| g.game_id).collect()),
             video_config: Box::new(move || {
@@ -363,6 +374,12 @@ fn main() {
                     .unwrap_or((0, 0, 0))
             }),
             shutdown: Arc::clone(&shutdown),
+            // Carpeta de datos fija (SPEC-010).
+            data_dir: Box::new(|| {
+                twinpad_server::data_dir::current_dir()
+                    .map(|dir| dir.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            }),
         };
         match TcpListener::bind(("127.0.0.1", webui_port)) {
             Ok(webui_listener) => {
@@ -501,6 +518,7 @@ fn main() {
                     // y cortaría el relay del teléfono conectado.
                     if !resumed {
                         registry_ref.insert_active_key(session_id, session_key);
+                        registry_ref.remember_device(session_id, session_key); // CR-094
                     }
 
                     if session_alive {

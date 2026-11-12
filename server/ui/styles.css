@@ -233,6 +233,30 @@ body {
   color: var(--color-misted-slate);
 }
 
+.panel__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px var(--spacing-16);
+  font-family: var(--font-inter);
+  font-size: var(--text-nav);
+  line-height: var(--leading-nav);
+  color: var(--color-cloud-white);
+  background-color: var(--color-void-canvas);
+  border: 1px solid var(--color-slate-edge);
+  border-radius: var(--radius-buttons);
+}
+
+.panel__input:focus-visible {
+  outline: 2px solid var(--color-signal-violet);
+  outline-offset: 2px;
+}
+
+.panel__form {
+  display: grid;
+  gap: var(--spacing-16);
+  width: 100%;
+}
+
 .panel__note {
   margin: 0;
   font-size: var(--text-caption);

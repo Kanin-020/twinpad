@@ -20,10 +20,20 @@ impl crate::session::ControlRetention for SessionRegistry {
                 // será rechazado y el estado de media se destruye ya.
                 self.destroy_media_state(session_id);
             }
-            Some(retained)
-        } else {
-            None
+            return Some(retained);
         }
+        // CR-094: dispositivo registrado en disco → reanudación sin límite de 60 s.
+        let devices = self.devices.as_ref()?;
+        let (sid, sk) = devices
+            .load()
+            .ok()?
+            .into_iter()
+            .find(|(sid, _)| sid == session_id)?;
+        Some(RetainedSession {
+            session_id: sid,
+            session_key: sk,
+            retained_since_ms: now_ms,
+        })
     }
 }
 
@@ -60,12 +70,58 @@ pub struct SessionRegistry {
     /// CR-056 (SPEC-001 §8.2): ligaduras retenidas tras la caída del socket
     /// de control, con su ventana de 60 000 ms (estado de sesión S4).
     retained: Mutex<HashMap<SessionId, RetainedSession>>,
+    /// CR-094: dispositivos emparejados persistidos en disco (carpeta de datos).
+    devices: Option<crate::device_store::DeviceStore>,
 }
 
 impl SessionRegistry {
     /// Registro vacío.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// CR-094: registro con dispositivos persistidos en `dir`.
+    pub fn with_device_store(dir: &std::path::Path) -> Self {
+        Self {
+            devices: Some(crate::device_store::DeviceStore::new(dir)),
+            ..Self::default()
+        }
+    }
+
+    /// CR-094: revoca un dispositivo: lo quita del almacén en disco y cierra su sesión viva.
+    /// `false` si el id no es válido o no estaba registrado.
+    pub fn revoke_device(&self, session_id_b64: &str) -> bool {
+        let Ok(session_id) = twinpad_core::resume::session_id_from_b64(session_id_b64) else {
+            return false;
+        };
+        let Some(devices) = self.devices.as_ref() else {
+            return false;
+        };
+        let mut all = devices.load().unwrap_or_default();
+        let before = all.len();
+        all.retain(|(sid, _)| *sid != session_id);
+        if all.len() == before {
+            return false;
+        }
+        if let Err(error) = devices.save(&all) {
+            eprintln!("Twinpad: no se pudo revocar el dispositivo: {error}");
+            return false;
+        }
+        self.remove(&session_id);
+        true
+    }
+
+    /// CR-094: guarda el dispositivo recién emparejado (sin el token del QR).
+    pub fn remember_device(&self, session_id: SessionId, session_key: SessionKey) {
+        let Some(devices) = self.devices.as_ref() else {
+            return;
+        };
+        let mut all = devices.load().unwrap_or_default();
+        all.retain(|(sid, _)| *sid != session_id);
+        all.push((session_id, session_key));
+        if let Err(error) = devices.save(&all) {
+            eprintln!("Twinpad: no se pudo guardar el dispositivo: {error}");
+        }
     }
 
     /// Registra una sesión establecida y retiene su stream (medio de

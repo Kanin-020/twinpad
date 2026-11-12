@@ -89,9 +89,9 @@ impl ksni::Tray for TwinpadTray {
                                 if estado { "activado" } else { "desactivado" }
                             );
                         }
-                        Err(error) => eprintln!(
-                            "Twinpad: no se pudo cambiar el autoarranque: {error} (E5)."
-                        ),
+                        Err(error) => {
+                            eprintln!("Twinpad: no se pudo cambiar el autoarranque: {error} (E5).")
+                        }
                     }
                 }),
                 ..Default::default()
@@ -115,20 +115,28 @@ impl ksni::Tray for TwinpadTray {
 
 /// Icono provisional de la bandeja: círculo sólido generado en código hasta
 /// tener el arte definitivo. ARGB32 en orden de bytes de red (SNI).
+/// Icono de contraste dual: relleno blanco con borde oscuro grueso. Se ve
+/// tanto sobre barras oscuras (GNOME/Wayland) como claras, porque el borde
+/// contrasta con el fondo claro y el relleno con el oscuro.
 fn provisional_icon() -> ksni::Icon {
     const SIZE: i32 = 32;
+    const FILL: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
+    const RING: [u8; 4] = [0xFF, 0x1A, 0x1A, 0x1A];
     let center = (SIZE as f32 - 1.0) / 2.0;
     let radius = SIZE as f32 / 2.0 - 1.0;
+    let ring_inner = radius - 4.0;
     let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
         for x in 0..SIZE {
             let dx = x as f32 - center;
             let dy = y as f32 - center;
-            let inside = dx * dx + dy * dy <= radius * radius;
-            let pixel: [u8; 4] = if inside {
-                [0xFF, 0x1E, 0x88, 0xE5]
-            } else {
+            let dist_sq = dx * dx + dy * dy;
+            let pixel: [u8; 4] = if dist_sq > radius * radius {
                 [0, 0, 0, 0]
+            } else if dist_sq >= ring_inner * ring_inner {
+                RING
+            } else {
+                FILL
             };
             data.extend_from_slice(&pixel);
         }
@@ -182,7 +190,7 @@ const FALLBACK_OPENERS: &[&[&str]] = &[
 /// PyGObject — WebKitGTK 4.1 real, SIN chrome de navegador ni pestañas.
 /// El script se pasa con `-c` y el URL llega por argv[1] (sin
 /// interpolación en el código). reqs del HOST Fedora Workstation:
-/// python3-gobject + webkit2gtk4.1 (preinstalados; sin dependeuerzas).
+/// python3-gobject + webkit2gtk4.1 (preinstalados; sin dependencias).
 const HOST_WEBVIEW_SCRIPT: &str = r#"import sys
 import gi
 gi.require_version("WebKit2", "4.1")
@@ -191,6 +199,7 @@ from gi.repository import WebKit2, Gtk
 
 window = Gtk.Window(title="Twinpad Servidor PC")
 window.set_default_size(880, 980)
+window.maximize()
 view = WebKit2.WebView()
 view.load_uri(sys.argv[1])
 window.add(view)

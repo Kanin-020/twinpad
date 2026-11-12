@@ -22,8 +22,7 @@
       <header class="page-header">
         <h1 class="page-header__title">Twinpad Servidor PC — activo</h1>
         <p class="page-header__hint">
-          Panel de vinculación y estado, servido solo en 127.0.0.1
-          (SPEC-010 §5 W6).
+          Panel de vinculación y estado, disponible solo en este equipo.
         </p>
       </header>
 
@@ -67,15 +66,14 @@
             <p class="panel__row">
               Video del Plugin: __WIDTH__×__HEIGHT__ a __BITRATE__ kbps
             </p>
-            <p class="panel__note">(CR-058: el degradador nunca supera este target).</p>
+            <p class="panel__note">El ajuste automático nunca supera este valor.</p>
           </section>
 
           <section class="panel">
             <h2 class="panel__title">Control</h2>
             <button class="btn btn--ghost" id="stop-server" type="button">Detener servidor</button>
             <p class="panel__note">
-              La parada termina el proceso; las sesiones activas observan el fin
-              por su canal de control (SPEC-001 §4.3 HB6).
+              La parada termina el servidor; las sesiones activas se desconectan.
             </p>
           </section>
         </div>

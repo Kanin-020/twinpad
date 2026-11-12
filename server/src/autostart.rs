@@ -122,7 +122,10 @@ pub fn install_under(config_base: &std::path::Path) -> Result<(), AutostartError
         fs::create_dir_all(dir).map_err(AutostartError::Io)?;
     }
     let exec = escape_exec(&server_exec_path());
-    fs::write(&path, desktop_entry(&exec)).map_err(AutostartError::Io)
+    // A1: escribir a un temporal y renombrar, para no dejar un entry truncado.
+    let tmp = path.with_extension("desktop.tmp");
+    fs::write(&tmp, desktop_entry(&exec)).map_err(AutostartError::Io)?;
+    fs::rename(&tmp, &path).map_err(AutostartError::Io)
 }
 
 /// Enlace con la config real del usuario (los tests usan `_under`).
