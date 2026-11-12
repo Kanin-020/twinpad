@@ -123,6 +123,31 @@ class PairingStateMachineTest {
         assertEquals(PairingUiState.Linked(sessionId), m.state)
     }
 
+    // ---- TEST-0193 — CR-056 fix (SPEC-001 §8.2): un tick de reintento no cierra
+    // un pair_resume en vuelo; sin esto el servidor ve EOF + join UDP nuevo ----
+
+    @Test
+    fun `resume tick does not restart an attempt still awaiting pair_ack`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+        m.onEvent(PairingEvent.ResumeTick(elapsedMs = 2_000))
+
+        val effects = m.onEvent(PairingEvent.ResumeTick(elapsedMs = 4_000))
+        assertTrue(effects.isEmpty())
+        assertEquals(PairingUiState.Reconnecting(sessionId), m.state)
+    }
+
+    @Test
+    fun `resume tick retries after the in-flight attempt drops`() {
+        val m = linkedMachine()
+        m.onEvent(PairingEvent.WireMessage(null))
+        m.onEvent(PairingEvent.ResumeTick(elapsedMs = 2_000))
+        m.onEvent(PairingEvent.WireMessage(null))
+
+        val effects = m.onEvent(PairingEvent.ResumeTick(elapsedMs = 4_000))
+        assertTrue(effects.any { it is Effect.Connect })
+    }
+
     @Test
     fun `resume window expiry forces rescan with session ended`() {
         val m = linkedMachine()

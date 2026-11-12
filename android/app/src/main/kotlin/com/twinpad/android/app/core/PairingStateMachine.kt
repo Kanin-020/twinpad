@@ -106,6 +106,9 @@ class PairingStateMachine {
      * MISMO host:port sin re-escanear (§8.2). */
     private var lastConnect: Pair<String, Int>? = null
 
+    /** Intento de `pair_resume` enviado y aún sin `pair_ack` ni caída (U6). */
+    private var attemptInFlight: Boolean = false
+
     /** Error previo recordado para "reintentar" desde U1 (SPEC-002 §6). */
     private var priorError: PairingError? = null
 
@@ -303,14 +306,20 @@ class PairingStateMachine {
             is PairingEvent.ResumeTick ->
                 if (event.elapsedMs > resumeWindowMs) {
                     state = PairingUiState.Failure(PairingError.SessionEnded)
+                    attemptInFlight = false
                     client = null
                     listOf(Effect.Disconnect, Effect.ShowError(PairingError.SessionEnded))
+                } else if (attemptInFlight) {
+                    // Intento previo sin respuesta aún: cerrarlo y abrir otro
+                    // dispara un EOF en el servidor y un join UDP nuevo.
+                    emptyList()
                 } else {
                     val (addr, port) =
                         lastConnect
                             ?: return failAttempt(PairingError.SessionEnded)
                     val resumeLine = buildResumeLine(current.sessionId)
                     state = PairingUiState.Reconnecting(current.sessionId)
+                    attemptInFlight = true
                     listOf(
                         Effect.Disconnect,
                         Effect.Connect(addr, port),
@@ -327,13 +336,17 @@ class PairingStateMachine {
      * altera la máquina (el próximo `ResumeTick` reintenta). */
     private fun onReconnectingWire(line: String?): List<Effect> =
         when (line) {
-            null -> emptyList() // intento en vuelo cayó: el próximo tick reintenta
+            null -> {
+                attemptInFlight = false // intento en vuelo cayó: el próximo tick reintenta
+                emptyList()
+            }
             else ->
                 try {
                     when (val msg = HandshakeCodec.decode(line)) {
                         is HandshakeMessage.Ack -> {
                             // §8.2: el mismo session_id retenido.
                             state = PairingUiState.Linked(msg.sessionId)
+                            attemptInFlight = false
                             emptyList()
                         }
                         is HandshakeMessage.Error ->
@@ -384,6 +397,7 @@ class PairingStateMachine {
     /** Aborta el intento y libera los recursos activos (SPEC-002 §8.2/§8.3). */
     private fun cancelAttempt(from: PairingUiState): List<Effect> {
         state = PairingUiState.Idle
+        attemptInFlight = false
         client = null
         priorError = null
         return when (from) {
@@ -394,6 +408,7 @@ class PairingStateMachine {
 
     private fun failAttempt(error: PairingError): List<Effect> {
         state = PairingUiState.Failure(error)
+        attemptInFlight = false
         client = null
         return listOf(Effect.Disconnect, Effect.ShowError(error))
     }
