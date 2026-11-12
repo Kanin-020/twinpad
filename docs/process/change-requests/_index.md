@@ -4,12 +4,14 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-093 |
+| CR | CR-100 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-094 | Vinculación Android–Servidor persistente (registro cifrado de dispositivos, reconexión sin QR) y desconexión de dispositivo | SPEC-001 R2/§8.2, REQ-002 AC-4, SPEC-002, SPEC-010 | Approved (2026-11-11) | Buffy (agente) | [CR-094-persistent-android-pairing.md](CR-094-persistent-android-pairing.md) |
+| CR-093 | Primera ejecución del Servidor PC: carpeta de datos elegible y visible en la UI local (SPEC-010 §2) | SPEC-010, DES-005 | Applied (2026-11-11) | Buffy (agente) | [CR-093-server-first-run-data-folder.md](CR-093-server-first-run-data-folder.md) |
 | CR-062 | Transporte UDP para video/audio con FEC y degradación por pérdida (evita head-of-line de TCP bajo pérdida real de paquetes; fallback al TCP media existente) | SPEC-003, SPEC-005, DES-001/002, ARCH | Open (2026-11-02) | Buffy (agente) | [CR-062-udp-media-transport-fec.md](CR-062-udp-media-transport-fec.md) |
 | CR-059 | Canal de inputs redundante por Bluetooth HID (fallback de red, handover por heartbeat/NFR-002; ADR-009 creeado). Paso 1 (módulo hid + handover) code-merged; paso 2 (banco físico) PENDIENTE: stack MIUI no emite el intento L2CAP del rol HID Device (evidencia en CR §8) | SPEC-004, ADR-007, ADR-003, ADR-009 | Open (paso 2 pendiente) | Buffy (agente) | [CR-059-bt-hid-fallback.md](CR-059-bt-hid-fallback.md) |
 | CR-080 | Corte del streaming con el server vivo: el teléfono suspende su receptor de medios | SPEC-003 §14, código Android/server (camino media UDP) | Open (provisorio) | Buffy (agente) | [CR-080-stream-cut-server-alive-phone-suspends.md](CR-080-stream-cut-server-alive-phone-suspends.md) |
@@ -18,6 +20,9 @@
 ## Approved / in execution
 
 | ID | Title | Targets | Decided | File |
+| CR-099 | Reanudación de sesión (`pair_resume`) estable: heartbeat y relay UDP tras reconectar | SPEC-001 1.4.0 (§4.3 HB7, §8.2), SPEC-003 1.16.0 (§4.4, §8.5) | 2026-11-12 | [CR-099-session-resume-heartbeat-relay-recovery.md](CR-099-session-resume-heartbeat-relay-recovery.md) |
+| CR-100 | Resume conserva el stream de la selección de juego hasta que el teléfono lo consume | SPEC-001 1.5.0, SPEC-003 1.17.0 (propuesto) | 2026-11-12 | [CR-100-resume-keeps-stream-after-game-select.md](CR-100-resume-keeps-stream-after-game-select.md) |
+| CR-101 | El tope de tasa del relay UDP (CR-083, 10 000 kbps) descarta AU no-IDR mientras Cemu produce ~13,5 Mbps; el teléfono recibe ~24 fps con cortes (Applied 2026-11-12, verificación en vivo pendiente) | código server (`media_udp.rs`, `media.rs`), SPEC-003 §4.3 si cambia el contrato, TEST-0168 | 2026-11-12 | [CR-101-udp-relay-rate-cap-drops-video.md](CR-101-udp-relay-rate-cap-drops-video.md) |
 | CR-091 | Dusklight como host Twinpad: «Twinpad» como opción propia en Ajustes → Controles → «Device», auto-seleccionada al conectar (inputs solo a ese puerto; liberación y restauración al desconectar; `game.twinpadInputPort` persistido) y Segunda pantalla publicada como H.264 Annex B con `ts_capture_us`/`idr` en lugar de JPEG | CTX §4, ARCH §2/§3/§6, SPEC-006 §3/§7, DES del host, código `integrations/dusklight`, traceability (TEST-0185/0186) | 2026-11-06 | [CR-091-dusklight-host-and-device.md](CR-091-dusklight-host-and-device.md) |
 | CR-092 | Dusklight: la auto-selección del puerto 1 exige que esté libre (sin desalojar mando SDL ni teclado; la elección manual en Device sí libera el puerto), el host consume el táctil del `input_report` (`touch_x`/`touch_y`/`touch_pressed`) traduciéndolo a gestos de su capa táctil local, y aplica `video_config` (resolución escalada nearest-neighbor con `0/0` = nativo y bitrate clampeado a 1.000–30.000, IDR al reconfigurar) con encoder en slices paralelos para sostener la tasa | SPEC-006 §7 (R14), código `integrations/dusklight` (`Core/TwinpadProtocol`, `Video/TwinpadH264`, `Channels/TwinpadTouch`, `TwinpadHooks`, `dualscreen.cpp`), traceability (TEST-0187/0188, TEST-0186 actualizado) | Applied (2026-11-06) | Buffy (agente) | [CR-092-dusklight-port-touch-video-config.md](CR-092-dusklight-port-touch-video-config.md) |
 | CR-085 | Medidor en T (referencia `reference/AYN-Thor-18.jpg`): fila superior de ANILLOS GPU · CPU · RAM y fila inferior con FPS EN GRANDE a la izquierda (texto sin anillo) + stats a la derecha; dato nuevo — TEMP CPU y GPU reales del PC (hwmon: k10temp/zenpower/coretemp y amdgpu/nvidia/nouveau, máx de `temp*_input`) + % ventilador del GPU (`pwm1/pwm1_max`, techo PCI 255); wire `host_metrics` gana 3 campos omitibles (autoridad temporal de SPEC-006 §4, compatible con la v1); TEST-0175/0176/0177; v2 (banco): anillos con color por gauge + letra menor y busy de GPU escaneado en todas las tarjetas (TEST-0178; FAN pendiente del listado hwmon del owner) | core (`game.rs`), server (`host_metrics.rs`), app (`HostMetricsCodec.kt`, `WaitingGaugePanel.kt`, layout `activity_pairing.xml`, `bg_metric_card`, strings), SPEC-002 §R22/SPEC-006 §4 (nota), traceability | Applied (2026-11-05) | Buffy (agente) | [CR-085-gauge-t-layout-temp-fan.md](CR-085-gauge-t-layout-temp-fan.md) |
@@ -123,6 +128,6 @@
 
 | Metric | Value |
 |---|---|
-| Open | 4 |
+| Open | 5 |
 | Median time open → applied | ≤1 día (CR-036: 2026-10-28 → 2026-10-29) |
-| Last reviewed | 2026-11-09 |
+| Last reviewed | 2026-11-12 |

@@ -7,13 +7,13 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
 | Realized by | DES-001 (núcleo puro implementado en `core/`; adaptadores TCP/servidor pendientes) |
 | Verified by | TEST-001 … TEST-009, TEST-0120 … TEST-0130 (registrados en `testing/traceability.md`) |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-12 |
 
 ## 1. Purpose
 
@@ -101,6 +101,7 @@ Reglas del heartbeat:
 - **HB4:** si el Servidor no acepta ningún `pong` válido durante 15 000 ms, declara la sesión caída: transición S3→S1 (§6) con los mismos side effects que un corte de conexión, incluido el cierre de su canal media asociado (invariante «Pairing activo» de SPEC-003).
 - **HB5:** si la app no recibe ninguna línea del Servidor durante 15 000 ms estando en S3, declara la sesión caída: transición S3→S1 (§6), idéntica a un corte de conexión.
 - **HB6:** la expiración del heartbeat no emite `pair_error` ni ningún código E (§9): su comportamiento observable es el de un corte de conexión.
+- **HB7 (CR-099):** el heartbeat es estado POR SOCKET. Tras un `pair_resume` aceptado (§8.2) el Servidor reinicia el contador de `ping` en 0, descarta el último pong aceptado y rearma el watchdog HB4 desde cero sobre el socket nuevo; la app hace lo mismo con HB5. Ningún valor de `t` ni de pong del socket anterior se acepta en el nuevo.
 
 ## 5. Outputs
 
@@ -162,6 +163,8 @@ En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expir
 - **Trigger:** se pierde el socket de control (S3→S4): corte de red, app suspendida o router; SST sin revocación del emparejamiento.
 - **Flow (lado servidor):** al caer el socket el servidor entra la ligadura (`session_id` + `session_key`) en retención por `RETENTION_MS` = 60 000 ms. Durante la ventana admite `pair_resume` (§4.2): verifica en tiempo constante `proof = HMAC-SHA256(session_key, "twinpad.v1 resume" ‖ session_id ‖ nonce_c)`; aceptado → re-admite la sesión y responde `pair_ack` con el MISMO `session_id` (el canal media ya anclado a ese `session_id` sigue usable). Reintentos ilimitados dentro de la ventana; cada `pair_resume` aceptado conserva el `session_id` retenido sin reemplazarlo.
 - **Flow (lado app):** la app conserva `session_id` y `session_key` en memoria mientras la ventana viva y reintenta `pair_resume` con `nonce_c` fresco (delay 2 000 ms entre reintentos, primer intento inmediato). Ventana vencida → "Sesión terminada" (requiere re-scan del QR).
+- **Primera línea del socket (CR-099):** en un socket nuevo, la primera línea SOLO puede ser `pair_request`, `pair_proof` o `pair_resume`. Cualquier otro `type` como primera línea → `pair_error` E4 y cierre.
+- **Estado tras reanudar (CR-099):** tras `pair_ack` de reanudación el heartbeat arranca de cero (HB7). El canal media UDP se re-enlaza con un nuevo JOIN (SPEC-003 §4.4) antes de contar el silencio de medios; hasta entonces el silencio UDP no dispara el fallback de §8.5 de SPEC-003 ni cierra la sesión.
 - **Result:** reanudación sin re-escanear el QR ni re-derivar credenciales media; `pair_error` E3 ante ligadura desconocida, retención expirada o `proof` inválido, sin desglosar la causa al cliente.
 
 ### 8.3 Revocación del emparejamiento
@@ -307,6 +310,8 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | CR-056: retención y destrucción de la ligadura a los 60 000 ms | TEST-0128, TEST-0129 |
 | CR-056: `pair_resume` válido y rechazado (proof, session_id, expiración) | TEST-0128, TEST-0129 |
 | CR-056: app — corte de control en S3 → reintento automático ≤ 60 s sin QR | TEST-0130 |
+| CR-099 HB7: tras `pair_resume` el heartbeat reinicia en el socket nuevo (contador, último pong, HB4/HB5) | TEST-0189 |
+| CR-099 §8.2: primera línea de socket nueva limitada a `pair_request`/`pair_proof`/`pair_resume`; otra → E4 | TEST-0190 |
 
 ## 17. Open questions
 
@@ -333,5 +338,6 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 0.3.0 | 2026-10-07 | Twinpad team | OQ-2 resuelta: primitivas HKDF-SHA256 + HMAC-SHA256 definitivas; Status → `In review` |
 | 1.1.0 | 2026-11-01 | Buffy (agente) | CR-055: heartbeat `ping`/`pong` en S3 (§4.3, HB1–HB6) con expiración de sesión zombi; TEST-0120/0121/0122 |
 | 1.2.0 | 2026-11-01 | Buffy (agente) | CR-056: reanudación del canal de control — estado S4, mensaje `pair_resume` (§4.2) con proof sobre "twinpad.v1 resume", retención 60 000 ms y `session_id` preservado; TEST-0128/0129/0130 |
+| 1.4.0 | 2026-11-12 | Buffy (agente) | CR-099: HB7 (heartbeat por socket, reinicio tras `pair_resume`); §8.2 primera línea de socket nueva limitada y estado tras reanudar; TEST-0189/0190 |
 | 1.3.0 | 2026-11-01 | Buffy (agente) | CR-057: §4.1 nota de resolución mDNS de `twinpad.local.` (SPEC-009) |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |

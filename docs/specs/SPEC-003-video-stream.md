@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.15.0 |
+| Version | 1.16.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
 | Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132, TEST-0138, TEST-0139, TEST-0140, TEST-0162, TEST-0163, TEST-0164 |
-| Last updated | 2026-11-02 |
+| Last updated | 2026-11-12 |
 
 ## 1. Purpose
 
@@ -73,6 +73,8 @@ Canal **unidireccional Servidor→Android** por datagramas UDP al mismo `media_p
 **Recepción (Android):** ventana anti-replay de 256 datagramas por join: se acepta todo `seq` no visto previamente con `seq > watermark` o `watermark − seq < 256`; fuera de ventana o repetido → descartado silencioso (el canal NO cierra). Ensamblado por `au_id` con tope de 4 AUs pendientes y `frag_total ≤ 3 073` (plano máximo de §4.3); una AU pendiente se abandona cuando el `seq` corriente supera en ≥ 256 el `seq` de su primer fragmento. Datagrama inválido (GCM/flags/framing) → descartado silencioso; NUNCA se entrega una AU no autenticada al decoder. La entrega respeta latest-frame-wins de §4.3: una AU ensamblada con `fn`/`ts_capture_us` no estrictamente creciente se descarta sin entregar.
 
 **Dueño del relay:** por sesión hay UN solo dueño del relay, decidido por recencia de eventos: un JOIN válido toma la propiedad UDP (y solicita IDR, CR-051); un handshake TCP §4.2 válido la devuelve a TCP (también con IDR). Entre eventos de propiedad, solo el dueño vigente escribe datagramas. Reenviar el mismo JOIN (keepalive) NO cambia la propiedad ni solicita IDR. El cierre/revocación del Pairing (R8) elimina el canal UDP y el de TCP simultáneamente.
+
+**Reanudación (CR-099):** tras un `pair_resume` aceptado (SPEC-001 §8.2), el canal UDP previo queda sin dueño y NO se reutiliza: el teléfono debe emitir un JOIN nuevo (`join_nonce` nuevo, clave derivada nueva) con el `session_id` reanudado. Hasta recibir ese JOIN aceptado, el Servidor no cuenta silencio UDP como pérdida ni dispara el fallback de §8.5, y el relay no cuenta el binding del nonce anterior (su expiración de 10 000 ms se mide desde el nuevo JOIN). El JOIN nuevo toma la propiedad del canal y solicita IDR (CR-051).
 
 **Señal de pérdida (R11):** el `last_seq` de los JOIN vigentes alimenta la MISMA escalera de R10: por ventana de 2 000 ms el Servidor cuenta `P` = datagramas de datos enviados y `D` = huecos estimados (`seq_corriente − last_seq_recibido`, acotado ≥ 0, solo con keepalive fresco ≤ 5 s; sin señal no se ingiere). Umbrales e histéresis idénticos a R10 (§4.3). Cada keepalive del mismo nonce refresca el binding y deja una línea de log en el Servidor (CR-081). **Expiración del binding (CR-081):** si durante 10 000 ms no llega ningún JOIN/keepalive autenticado del canal vigente, el relay del Servidor cesa de emitir (con log) y libera el canal; el siguiente JOIN válido reabre con IDR. Un socket del teléfono muerto no deja al relay disparando datagramas a un puerto sin dueño ni rastro.
 
@@ -149,6 +151,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 
 - **Trigger:** el teléfono emitió JOIN (§4.4) y no recibe NINGÚN datagrama autenticado individual por UDP en 900 ms (señal por datagrama de CR-081; paired en retención o Pairing activo).
 - **Flow:** el teléfono cierra el socket UDP, deja de enviar keepalives y sigue la ruta TCP existente de §4.2 (conexión, HMAC, subclave nueva, IDR). El Servidor, al autenticar ese TCP, toma la propiedad del relay (recencia, §4.4) y suspende el envío UDP. La recuperación de UDP tras un fallback exige un ciclo nuevo de reconexión media (§8.2): el teléfono vuelve a intentar JOIN al reiniciar el transporte.
+- **Reanudación (CR-099):** tras `pair_resume` aceptado (SPEC-001 §8.2) el 900 ms de §4.4 se cuenta desde el JOIN nuevo, no desde el socket de control; un JOIN del nonce anterior tras la reanudación se descarta.
 - **Result:** un solo dueño envía; ninguna AU duplicada llega al decoder; la pérdida del canal UDP se comporta igual que la pérdida del TCP media (V2 → reconexión).
 
 ## 9. Errors
@@ -258,6 +261,7 @@ Una implementación cumple este SPEC si y solo si honra §3–§14 y pasa las ve
 | R11: primitivas UDP puras — JOIN/HMAC, derivación de clave, envelope GCM, anti-replay 256, ensamblado por AU y reconstrucción por FEC XOR (falta 1 → recupera; falta 0/≥2 → discontinuidad) | TEST-0138 |
 | R11: integración server — JOIN toma dueño (IDR), keepalive no, TCP handshake devuelve dueño, datagramas solo del dueño; pérdida por `last_seq` alimenta la escalera R10 | TEST-0139 |
 | R11: cliente Android — watchdog 900 ms con fallback al cliente TCP vigente; ventana anti-replay y ensamblado idénticos a core | TEST-0140 |
+| CR-099: tras `pair_resume` el JOIN UDP nuevo toma el dueño (IDR); el silencio UDP previo no cuenta ni dispara §8.5; el JOIN del nonce anterior se descarta | TEST-0191 |
 
 ## 17. Open questions
 
@@ -279,6 +283,7 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.8.0 | 2026-10-27 | Product owner (CR-027) | `video_config` admite y reenvía `bitrate_kbps` (1.000–30.000, default 8.000); trigger §8.1 incluye el cambio de bitrate |
+| 1.16.0 | 2026-11-12 | Buffy (agente) | CR-099: §4.4 re-JOIN UDP tras `pair_resume` (nonce nuevo, propiedad e IDR, silencio previo no cuenta); §8.5 reanudación; TEST-0191 |
 | 1.15.0 | 2026-11-05 | Buffy (agente, CR-081) | Watchdog del fallback §8.5 por datagramas autenticados (no AU completas); expiración del binding del relay UDP (10 s sin keepalive → salida con log) y log del refresco por keepalive (§4.4); §8.5 alineado |
 | 1.9.0 | 2026-10-28 | Product owner (CR-029) | FPS unlimited: sin pacing ni tope 30/60; `stream_start.fps` metadata 0–255 (`0` = unlimited); `video_config` sin fps |
 | 1.10.0 | 2026-10-28 | Product owner (CR-030) | `video_config` reenvía w/h a Cemu; el DRC se escala (nearest, sin upscale) antes del encode; trigger §8.1 define el escalado |

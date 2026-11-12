@@ -41,7 +41,7 @@ El Android device debe presentarse ante el PC Host como un Gamepad HID estándar
 
 ## 6. Acceptance criteria
 
-- [ ] AC-1: Dado el celular vinculado, cuando se abre el panel de controles de juego del SO de la PC, entonces el celular aparece como gamepad conectado.
+- [ ] AC-1: Dado el celular vinculado, cuando se abre el panel de controles de juego del SO de la PC, entonces el celular aparece como gamepad conectado. Los inputs del gamepad viajan únicamente por el canal Bluetooth HID (CR-096); la LAN no transporta el gamepad ni como respaldo y, sin canal BT operativo, el gamepad no envía.
 - [ ] AC-2: Dado el gamepad visible, cuando el usuario presiona un botón táctil en la app, entonces el juego recibe el input correspondiente.
 - [ ] AC-3: Dado un juego que emite rumble, cuando dispara el evento de vibración, entonces el celular vibra.
 

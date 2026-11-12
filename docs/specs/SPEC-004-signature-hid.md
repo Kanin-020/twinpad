@@ -46,12 +46,12 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 | `touch_x`, `touch_y` | integer (uint16) | posición normalizada sobre la imagen DRC, 0…65535; al soltar se conserva la última coordenada | yes |
 | `touch_pressed` | boolean | true mientras hay contacto con la imagen DRC | yes |
 
-Canal: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007) y/o el canal Bluetooth HID nativo (CR-059, ADR-009). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado, no al gamepad del sistema operativo.
+Canal: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007) y/o el canal Bluetooth HID nativo (CR-059, ADR-009). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado. Los inputs del gamepad viajan únicamente por el canal Bluetooth HID (CR-096, §8.3); la sesión LAN no transporta el gamepad ni como respaldo. El Servidor PC no crea gamepad virtual del sistema operativo.
 
 Transporte Bluetooth HID nativo (CR-059, ADR-009): el teléfono expone el gamepad al SO del PC vía HID Device role (BluetoothHidDevice, descriptor del Report Map §2), que Windows lista como gamepad estándar SIN software adicional; los elementos del mando (standes, D-pad, 12 botones, triggers L2/R2) llegan al juego por el HID del sistema.
 
 - **Modo alternativo completo:** sin Wi-Fi el canal BT HID permite jugar (el Servidor PC no participa); touch DRC e inercia NO viajan por BT y la Segunda pantalla/audio no están disponibles (ADR-002: el enlace BT clásico no soporta SPEC-003/SPEC-005).
-- **Failover automático:** cuando la sesión LAN declara HB5/expiry (CR-055) y el canal BT HID está operativo, los reportes conmutan a la ruta BT sin re-pairing; al volver `Linked`, la ruta LAN retoma el envío y el perfil BT se libera tras histéresis de 5 s.
+- **Sin failover LAN (CR-096):** el gamepad no depende de la sesión LAN; con HB5/expiry (CR-055) los reportes siguen por BT HID mientras el canal esté operativo, sin re-pairing.
 - Touch DRC, muestras inerciales y rumble siguen siendo únicamente de la ruta LAN/SDK; extender el descriptor HID con ellos exige otro CR. El adaptador Cemu mapea A/B/X/Y, L1/R1, L3/R3 y Start/Select a sus controles homónimos; ignora los dos botones extra; L2/R2 activan ZL/ZR cuando su valor es >0; sticks, D-pad y touch se mapean directamente. Android captura TYPE_ACCELEROMETER y TYPE_GYROSCOPE a SENSOR_DELAY_GAME; cada actualización de sensor produce un reporte con las muestras más recientes de ambos sensores y `timestamp_us` igual al máximo timestamp monotónico de esos eventos, convertido de nanosegundos a microsegundos. `motion` se omite hasta disponer de una muestra válida de ambos sensores; si falta cualquiera de ellos, el estado anterior se invalida y se envía sin `motion`. Cada snapshot enviado contiene muestras finitas y completas. Cemu integra únicamente timestamps estrictamente crecientes; si el intervalo supera 200 ms, no integra esa muestra. Al aplicar el snapshot al VPAD Player 1 de Twinpad, Android envía accel `(y, -z, x)` y gyro `(-y, -z, x)` ya en el marco AndroidDSU de referencia landscape, exclusivo de la orientación landscape fija de la app (CR-022, CR-037); Cemu convierte unidades (gyro ×0.9, accel ×9.8066/100) y alimenta `WiiUMotionHandler` con accel Y/Z negadas y gyro sin cambios, igual que su ruta DSU; su salida fusionada actualiza los datos de movimiento del VPAD. La ruta local de movimiento Cemu permanece activa cuando Twinpad no es el input seleccionado. El monitor Android puede mostrar orientación local del sensor; el monitor Cemu muestra la muestra recibida y el resultado VPAD fusionado. CR-021 supersede la interpretación de orientación absoluta y la ganancia VPAD 0.5× de CR-019.
 
 ## 5. Outputs
@@ -60,7 +60,7 @@ Transporte Bluetooth HID nativo (CR-059, ADR-009): el teléfono expone el gamepa
 |---|---|---|
 | Input en el juego | el elemento cambiado se refleja en el juego como input del gamepad estándar | cada `input_report` válido |
 | Rumble | la app hace vibrar el teléfono con intensidad/duración del evento | el juego dispara rumble (REQ-003 AC-3) |
-| Gamepad visible | el SO de la PC lista el gamepad mientras exista sesión/vínculo (ruta LAN) o el canal HID BT esté conectado (ruta Bluetooth) | REQ-003 AC-1, ADR-009 |
+| Gamepad visible | el SO de la PC lista el gamepad mientras el canal HID BT esté conectado (CR-096) | REQ-003 AC-1, ADR-009 |
 
 ## 6. States
 
@@ -100,17 +100,17 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 - **Flow:** el evento viaja en sentido PC → app por el canal HID (output report estándar del gamepad).
 - **Result:** el teléfono vibra con la intensidad/duración pedida; los inputs siguen fluyendo durante la vibración.
 
-### 8.3 Failover / alternativa urgente por Bluetooth HID (CR-059, ADR-009)
+### 8.3 Canal Bluetooth HID como único transporte del gamepad (CR-096; CR-059, ADR-009)
 
-- **Trigger falta:** la sesión LAN sale de `Linked` (HB5/expiry CR-055) con el
-  canal HID Bluetooth operativo, o el usuario entra en modo sin Wi-Fi y el
-  canal BT está listo.
-- **Flow:** la app conmuta el envío de los reportes con `seq` en curso a la
-  ruta BT (sin re-pairing; touch/inercia quedan excluidos). Al volver la LAN
-  `Linked`, retoma la ruta LAN y libera el perfil BT con histéresis de 5 s.
-- **Result:** el juego nunca pierde el mando aunque la Wi-Fi esté caída; la
-  Segunda pantalla y el audio quedan como indisponibles (ADR-002), no como
-  error.
+- **Trigger:** la app arranca el canal BT HID al entrar en sesión LAN `Linked`,
+  o ante un handshake fallido sin Wi-Fi (`Failure`), si el canal no está operativo.
+- **Flow:** los reportes del gamepad se envían únicamente por la ruta BT
+  (sin re-pairing; touch/inercia quedan excluidos). La sesión LAN no transporta
+  el gamepad ni como respaldo. Sin canal BT operativo, el gamepad está en H0 y
+  no envía.
+- **Result:** el gamepad sale sólo por Bluetooth HID; la Segunda pantalla y el
+  audio siguen por la LAN cuando hay sesión, y quedan indisponibles sin ella
+  (ADR-002), no como error.
 
 ## 9. Errors
 
