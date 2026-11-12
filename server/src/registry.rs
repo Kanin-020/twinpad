@@ -154,6 +154,18 @@ impl SessionRegistry {
         }
     }
 
+    /// CR-100: en un resume, reinstala la credencial media si la retención
+    /// venció y `destroy_media_state` la borró. No toca una credencial viva
+    /// (CR-056: reemplazarla cortaría el relay del teléfono conectado).
+    pub fn restore_active_key_if_missing(&self, session_id: SessionId, key: SessionKey) {
+        let mut keys = self
+            .keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        keys.entry(session_id)
+            .or_insert_with(|| (Arc::new(key), Arc::new(AtomicBool::new(true))));
+    }
+
     /// Devuelve la clave y el estado de vida del Pairing para el listener media.
     pub fn media_credential(
         &self,
@@ -455,5 +467,23 @@ mod tests {
         assert_eq!(&buf_a, b"{\"ping\":1}\n");
         assert_eq!(&buf_b, b"{\"ping\":1}\n");
         let _ = (sid_a, sid_b);
+    }
+
+    #[test]
+    fn restore_active_key_if_missing_reinstalls_only_when_absent() {
+        let registry = SessionRegistry::new();
+        let (sid, sess) = session(9);
+        let (server_side, _client) = loopback_pair();
+        registry.insert(sess, server_side);
+        // CR-100: sin credencial (retención vencida), el resume la reinstala.
+        registry.restore_active_key_if_missing(sid, SessionKey([1; 32]));
+        let (first, first_alive) = registry.media_credential(&sid).unwrap();
+        assert_eq!(first.0, [1; 32]);
+        assert!(first_alive.load(Ordering::Acquire));
+        // Con credencial viva, no la reemplaza (CR-056): la bandera sigue viva.
+        registry.restore_active_key_if_missing(sid, SessionKey([2; 32]));
+        let (second, second_alive) = registry.media_credential(&sid).unwrap();
+        assert_eq!(second.0, [1; 32]);
+        assert!(second_alive.load(Ordering::Acquire));
     }
 }

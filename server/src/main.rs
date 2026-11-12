@@ -519,6 +519,9 @@ fn main() {
                     if !resumed {
                         registry_ref.insert_active_key(session_id, session_key);
                         registry_ref.remember_device(session_id, session_key); // CR-094
+                    } else {
+                        // CR-100: si la retención venció, la credencial media ya no existe.
+                        registry_ref.restore_active_key_if_missing(session_id, session_key);
                     }
 
                     if session_alive {

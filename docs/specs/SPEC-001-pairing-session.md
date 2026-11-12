@@ -7,7 +7,7 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 1.4.0 |
+| Version | 1.5.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
@@ -165,6 +165,7 @@ En S3 el heartbeat de §4.3 (HB1–HB6) está activo en ambos extremos; su expir
 - **Flow (lado app):** la app conserva `session_id` y `session_key` en memoria mientras la ventana viva y reintenta `pair_resume` con `nonce_c` fresco (delay 2 000 ms entre reintentos, primer intento inmediato). Ventana vencida → "Sesión terminada" (requiere re-scan del QR).
 - **Primera línea del socket (CR-099):** en un socket nuevo, la primera línea SOLO puede ser `pair_request`, `pair_proof` o `pair_resume`. Cualquier otro `type` como primera línea → `pair_error` E4 y cierre.
 - **Estado tras reanudar (CR-099):** tras `pair_ack` de reanudación el heartbeat arranca de cero (HB7). El canal media UDP se re-enlaza con un nuevo JOIN (SPEC-003 §4.4) antes de contar el silencio de medios; hasta entonces el silencio UDP no dispara el fallback de §8.5 de SPEC-003 ni cierra la sesión.
+- **Credencial media (CR-100):** si la retención venció y la credencial media ya fue destruida, el resume aceptado la reinstala con la `session_key` recuperada, para que el relay UDP acepte el JOIN nuevo. Si la credencial sigue viva, no se reemplaza (CR-056).
 - **Result:** reanudación sin re-escanear el QR ni re-derivar credenciales media; `pair_error` E3 ante ligadura desconocida, retención expirada o `proof` inválido, sin desglosar la causa al cliente.
 
 ### 8.3 Revocación del emparejamiento
@@ -338,6 +339,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 0.3.0 | 2026-10-07 | Twinpad team | OQ-2 resuelta: primitivas HKDF-SHA256 + HMAC-SHA256 definitivas; Status → `In review` |
 | 1.1.0 | 2026-11-01 | Buffy (agente) | CR-055: heartbeat `ping`/`pong` en S3 (§4.3, HB1–HB6) con expiración de sesión zombi; TEST-0120/0121/0122 |
 | 1.2.0 | 2026-11-01 | Buffy (agente) | CR-056: reanudación del canal de control — estado S4, mensaje `pair_resume` (§4.2) con proof sobre "twinpad.v1 resume", retención 60 000 ms y `session_id` preservado; TEST-0128/0129/0130 |
+| 1.5.0 | 2026-11-12 | Buffy (agente) | CR-100: §8.2 reinstala la credencial media en un resume si falta tras vencer la retención |
 | 1.4.0 | 2026-11-12 | Buffy (agente) | CR-099: HB7 (heartbeat por socket, reinicio tras `pair_resume`); §8.2 primera línea de socket nueva limitada y estado tras reanudar; TEST-0189/0190 |
 | 1.3.0 | 2026-11-01 | Buffy (agente) | CR-057: §4.1 nota de resolución mDNS de `twinpad.local.` (SPEC-009) |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |

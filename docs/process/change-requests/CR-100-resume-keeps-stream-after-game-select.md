@@ -5,11 +5,11 @@
 | ID | CR-100 |
 | Title | Resume de sesión conserva el stream de la selección de juego hasta que el teléfono lo consume |
 | Type | Behavior change |
-| Status | Open |
+| Status | Approved |
 | Author | Buffy (agente) |
 | Created | 2026-11-12 |
-| Decided | - |
-| Decided by | - |
+| Decided | 2026-11-12 |
+| Decided by | Jesús Álvarez (usuario) |
 
 ## 1. Target
 
@@ -21,24 +21,22 @@
 
 ## 2. Requested change
 
-> Pendiente de redactar con el texto exacto tras confirmar la causa (ver §3).
+Un resume que acepta la sesión debe dejar disponible la credencial media para el relay UDP (8425), aunque la retención haya vencido y `destroy_media_state` la haya borrado. Si la credencial falta, se reinstala desde la clave recuperada; si ya existe viva, no se reemplaza (CR-056).
 
 **Current:**
 
 ```text
-En un resume, el servidor reenvía games_available y acepta game_select, pero el teléfono
-no recibe game_selected ni stream_start en ninguno de los intentos probados. El segundo
-pair_resume puede ser rechazado con E1 antes de que el primero consuma game_selected.
+Tras un resume aceptado, si la retención ya había vencido (`destroy_media_state` borró la
+credencial media), `insert_active_key` se omite porque `resumed=true`. El relay UDP (8425)
+rechaza cada JOIN con `sin_clave` y no llega vídeo ni input.
 ```
 
 **Proposed:**
 
 ```text
-El teléfono intenta abrir el canal de medios (8425) en cuanto coinciden las tres
-condiciones: stream_start recibido, superficie de salida adjunta y estado Linked.
-Si la superficie llega después de stream_start, el intento se lanza al adjuntarla.
-Si stream_start llega después de la superficie, el intento se lanza en onStreamStart.
-No hay cambio de wire ni de servidor.
+Tras un resume aceptado, si la credencial media falta, el servidor la reinstala con la
+clave de sesión recuperada (`restore_active_key_if_missing`). Si ya existe, no se toca.
+No hay cambio de wire.
 ```
 
 ## 3. Motivation
@@ -78,9 +76,11 @@ Causa confirmada anterior: en `onStreamStart`, `scheduleReconnect()` sale en su 
 
 ## 6. Decision
 
-- **Outcome:** pendiente
-- **Rationale:** pendiente
-- **Rollout:** pendiente
+- **Outcome:** aprobado. El servidor reinstala la credencial media en un resume si falta (`restore_active_key_if_missing`), en vez de dejar al relay sin clave (`udp join sin_clave`) tras expirar la retención.
+- **Rationale:** tras una desconexión con retención vencida, el resume se aceptaba pero el relay UDP rechazaba todos los `JOIN` (`sin_clave`), así que no llegaban vídeo ni input. Evidencia: `/tmp/twinpad-server.log` tras `Retención expirada: 1 fijadura(s) destruida(s)`.
+- **Rollout:** el binario `twinpad-server` se reinstala y la app reconecta; no hay cambio de wire.
+
+> Nota: la parte de Android (`surfaceChanged` y reintento de conexión de medios, Option A) ya está commiteada en `74ddbf65` y no forma parte de este cambio de servidor.
 
 ## 7. Execution checklist
 

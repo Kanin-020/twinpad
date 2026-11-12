@@ -4,7 +4,7 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.16.0 |
+| Version | 1.17.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
@@ -283,6 +283,7 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.8.0 | 2026-10-27 | Product owner (CR-027) | `video_config` admite y reenvía `bitrate_kbps` (1.000–30.000, default 8.000); trigger §8.1 incluye el cambio de bitrate |
+| 1.17.0 | 2026-11-12 | Buffy (agente) | CR-100: la credencial media se reinstala tras un resume aceptado si la retención venció (SPEC-001 §8.2); sin cambio wire |
 | 1.16.0 | 2026-11-12 | Buffy (agente) | CR-099: §4.4 re-JOIN UDP tras `pair_resume` (nonce nuevo, propiedad e IDR, silencio previo no cuenta); §8.5 reanudación; TEST-0191 |
 | 1.15.0 | 2026-11-05 | Buffy (agente, CR-081) | Watchdog del fallback §8.5 por datagramas autenticados (no AU completas); expiración del binding del relay UDP (10 s sin keepalive → salida con log) y log del refresco por keepalive (§4.4); §8.5 alineado |
 | 1.9.0 | 2026-10-28 | Product owner (CR-029) | FPS unlimited: sin pacing ni tope 30/60; `stream_start.fps` metadata 0–255 (`0` = unlimited); `video_config` sin fps |
