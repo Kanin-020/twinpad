@@ -373,9 +373,9 @@ impl SessionRegistry {
     }
 }
 
-// ENG §6: unwrap permitido solo en tests.
+// ENG §6: unwrap/expect permitidos solo en tests.
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use std::net::TcpListener;

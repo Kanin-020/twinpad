@@ -539,10 +539,7 @@ impl GameRegistry {
     /// CR-106: reinicia el filtro de `seq` de input del plugin Cemu al
     /// seleccionar el juego. No se persiste: sin Cemu vivo no hay efecto.
     pub fn send_cemu_input_reset(&self) -> bool {
-        Self::write_line_to(
-            self.game_writer(Some("cemu")),
-            "{\"type\":\"input_reset\"}",
-        )
+        Self::write_line_to(self.game_writer(Some("cemu")), "{\"type\":\"input_reset\"}")
     }
 
     /// Entrega el snapshot inicial a un Plugin recién seleccionado.
