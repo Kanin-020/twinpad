@@ -66,6 +66,7 @@
     <!-- CR-032: título de grupo + interruptor de distribución de cara. -->
     <string name="settings_distribution">Distribución</string>
     <string name="settings_nintendo_distribution">Distribución Nintendo</string>
+    <string name="settings_sidebar_chord">Abrir ajustes con L1 + R1 + START</string>
     <!-- CR-090: el título de cámara pierde la mención a la integración (el
          dueño pidió no nombrarla en la app); el micrófono gana su propia
          sección justo encima, con el mismo patrón de interruptor. -->

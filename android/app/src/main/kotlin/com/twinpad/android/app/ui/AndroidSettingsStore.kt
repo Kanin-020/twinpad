@@ -45,6 +45,9 @@ data class AndroidSettings(
      * la ventana de espera aparece como hoja arrastrable sobre el video
      * (nace ABIERTA, decisión del owner); `false` = no se muestra. */
     val metricsSliderOverStream: Boolean = true,
+    /** Abre el drawer con la combinación L1 + R1 + START del mando físico
+     * durante la sesión. Desmarcado, la combinación no hace nada. */
+    val sidebarChord: Boolean = true,
 ) {
     /** CR-087: bitrate derivado de la resolución elegida (540p 10 Mbps,
      * 720p 15 Mbps, 1080p 20 Mbps), sin control de usuario en el drawer
@@ -112,6 +115,7 @@ internal class AndroidSettingsStore(context: Context) {
             metricsSourceHost = preferences.getBoolean(KEY_METRICS_SOURCE_HOST, true),
             metricsSliderOverStream =
                 preferences.getBoolean(KEY_METRICS_SLIDER_OVER_STREAM, true),
+            sidebarChord = preferences.getBoolean(KEY_SIDEBAR_CHORD, true),
         )
 
     fun save(settings: AndroidSettings) {
@@ -142,6 +146,7 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_ADVANCED_METRICS, settings.showAdvancedMetrics)
             .putBoolean(KEY_METRICS_SOURCE_HOST, settings.metricsSourceHost)
             .putBoolean(KEY_METRICS_SLIDER_OVER_STREAM, settings.metricsSliderOverStream)
+            .putBoolean(KEY_SIDEBAR_CHORD, settings.sidebarChord)
             .apply()
     }
 
@@ -161,5 +166,6 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_ADVANCED_METRICS = "show_advanced_metrics"
         const val KEY_METRICS_SOURCE_HOST = "metrics_source_host"
         const val KEY_METRICS_SLIDER_OVER_STREAM = "metrics_slider_over_stream"
+        const val KEY_SIDEBAR_CHORD = "sidebar_chord"
     }
 }

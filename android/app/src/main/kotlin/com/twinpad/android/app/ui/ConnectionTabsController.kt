@@ -44,10 +44,7 @@ internal class ConnectionTabsController(
     }
 
     /** Muestra una sola vista de conexión: sesión, panel o lista guardada. */
-    fun renderSwitch(
-        state: PairingUiState,
-        sessionLinked: Boolean,
-    ) {
+    fun renderSwitch(sessionLinked: Boolean) {
         if (sessionLinked && !wasLinked) {
             showingSession = true
         }

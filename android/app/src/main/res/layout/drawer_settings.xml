@@ -164,6 +164,13 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_nintendo_distribution" />
 
+        <!-- Abre el drawer con L1 + R1 + START del mando físico durante la sesión. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_sidebar_chord"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_sidebar_chord" />
+
         <!-- CR-090: sección del micrófono, justo ENCIMA de la de cámara y con
              su mismo patrón (título + interruptor). La captura sigue siendo
              bajo demanda: el interruptor se suma al juego seleccionado y a

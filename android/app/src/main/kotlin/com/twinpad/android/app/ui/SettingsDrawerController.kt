@@ -86,6 +86,7 @@ internal class SettingsDrawerController(
         activity.findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
         activity.findViewById<SwitchMaterial>(R.id.switch_nintendo_distribution).isChecked =
             settings.nintendoDistribution
+        activity.findViewById<SwitchMaterial>(R.id.switch_sidebar_chord).isChecked = settings.sidebarChord
         host.onHudRestored(settings.showHud)
         host.onControlsToggled(settings.showControls)
         host.onNintendoDistributionToggled(settings.nintendoDistribution)
@@ -193,6 +194,11 @@ internal class SettingsDrawerController(
             .setOnCheckedChangeListener { _, checked ->
                 host.onNintendoDistributionToggled(checked)
                 persist { it.copy(nintendoDistribution = checked) }
+            }
+        // Combinación L1 + R1 + START para abrir el drawer durante la sesión.
+        activity.findViewById<SwitchMaterial>(R.id.switch_sidebar_chord)
+            .setOnCheckedChangeListener { _, checked ->
+                persist { it.copy(sidebarChord = checked) }
             }
         // CR-054: métricas por etapa del Plugin; el host re-renderiza el HUD.
         activity.findViewById<SwitchMaterial>(R.id.switch_advanced_metrics)

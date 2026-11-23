@@ -18,7 +18,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
-import com.google.android.material.chip.ChipGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
@@ -34,6 +33,7 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.chip.ChipGroup
 import com.twinpad.android.app.R
 import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
@@ -74,6 +74,11 @@ class PairingActivity : AppCompatActivity() {
     private lateinit var micController: PairingMicController
     private lateinit var keyboardOverlay: KeyboardOverlayController
     private lateinit var drawer: SettingsDrawerController
+
+    private val sidebarChord =
+        SidebarChord {
+            findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
+        }
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
@@ -309,7 +314,13 @@ class PairingActivity : AppCompatActivity() {
         sessionFragment =
             supportFragmentManager.findFragmentById(R.id.session_container) as? SessionFragment
                 ?: SessionFragment()
-        panelFragment.onPanelReady = ::onPanelReady
+        // El fragmento avisa cuando su vista existe: sólo entonces se cablean
+        // sus botones y se empieza a observar el estado, porque renderState usa
+        // las vistas del panel.
+        panelFragment.onPanelReady = {
+            wireViews()
+            observeStates()
+        }
         sessionFragment.onSessionReady = ::onSessionReady
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
@@ -322,7 +333,8 @@ class PairingActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             // Los fragmentos restaurados ya inflaron su vista (antes de existir
             // viewModel y de asignarles el callback): se cablean ahora.
-            onPanelReady()
+            wireViews()
+            observeStates()
             onSessionReady()
         }
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
@@ -336,16 +348,6 @@ class PairingActivity : AppCompatActivity() {
                 viewModel.sendSessionLine(line)
             }
         observeCameraEffects()
-    }
-
-    /**
-     * CR-097: el panel de conexión existe desde onViewCreated del fragmento.
-     * Sólo entonces se cablean sus botones y se empieza a observar el estado,
-     * porque renderState usa las vistas del panel.
-     */
-    private fun onPanelReady() {
-        wireViews()
-        observeStates()
     }
 
     /**
@@ -687,6 +689,9 @@ class PairingActivity : AppCompatActivity() {
      * códigos y ejes del mapper puro; la fusión con la superficie táctil
      * vive en [ProfileSurface]. Sin sesión linkeada no se consumen eventos. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isGamepadSource(event.source)) {
+            sidebarChord.onKey(event, enabled = ::drawer.isInitialized && drawer.load().sidebarChord)
+        }
         val surface =
             sessionSurfaceWithPhysicalGamepad()
                 ?.takeIf {
@@ -773,9 +778,28 @@ class PairingActivity : AppCompatActivity() {
         )
     }
 
+    private fun renderLinked() {
+        // Con la vista de conexión elegida, el panel muestra la pantalla
+        // inicial mientras la sesión sigue viva en segundo plano.
+        // CR-097: con conexión activa no se ofrece Escanear; Desconectar
+        // está en la fila de la columna de guardados.
+        // "Nueva conexión" con sesión viva: la máquina de estados no acepta
+        // escanear desde U4 (SPEC-002 §14), así que el botón QR no se ofrece.
+        panelView<View>(R.id.pairing_title).isVisible = connectionTabs.showingConnectionView
+        panelView<View>(R.id.btn_scan).isVisible = false
+        panelView<TextView>(R.id.txt_status).text =
+            if (connectionTabs.showingConnectionView) getString(R.string.pairing_linked) else ""
+        panelView<PreviewView>(R.id.camera_preview).isVisible = false
+        panelView<View>(R.id.btn_cancel).isVisible = false
+        panelView<View>(R.id.progress_pairing).isVisible = false
+        // El servicio en primer plano impide que el sistema mate
+        // el proceso al cambiar de app (el video sigue vivo).
+        SessionForegroundService.start(this@PairingActivity)
+    }
+
     private fun renderState(state: PairingUiState) {
         savedDevices.render(state)
-        connectionTabs.renderSwitch(state, sessionLinked = state is PairingUiState.Linked)
+        connectionTabs.renderSwitch(sessionLinked = state is PairingUiState.Linked)
         // CR-097: con sesión activa el panel no muestra Escanear ni Desconectar;
         // Desconectar vive en la fila de la conexión activa (columna de guardados).
         // Reconectando no hay vista de sesión: el panel ofrece Desconectar.
@@ -826,23 +850,7 @@ class PairingActivity : AppCompatActivity() {
                 btnCancel.isVisible = true
                 SessionForegroundService.start(this@PairingActivity)
             }
-            is PairingUiState.Linked -> {
-                // Con la vista de conexión elegida, el panel muestra la pantalla
-                // inicial mientras la sesión sigue viva en segundo plano.
-                // CR-097: con conexión activa no se ofrece Escanear; Desconectar
-                // está en la fila de la columna de guardados.
-                // "Nueva conexión" con sesión viva: la máquina de estados no acepta
-                // escanear desde U4 (SPEC-002 §14), así que el botón QR no se ofrece.
-                title.isVisible = connectionTabs.showingConnectionView
-                btnScan.isVisible = false
-                txtStatus.text = if (connectionTabs.showingConnectionView) getString(R.string.pairing_linked) else ""
-                preview.isVisible = false
-                btnCancel.isVisible = false
-                progress.isVisible = false
-                // El servicio en primer plano impide que el sistema mate
-                // el proceso al cambiar de app (el video sigue vivo).
-                SessionForegroundService.start(this@PairingActivity)
-            }
+            is PairingUiState.Linked -> renderLinked()
             is PairingUiState.Failure -> {
                 // Sesión perdida: volver a la pantalla inicial (vincular o ver guardados).
                 title.isVisible = true
