@@ -4,8 +4,8 @@ import android.app.Activity
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.twinpad.android.app.R
@@ -57,7 +57,7 @@ internal class MetricsSliderController(
     /** Transparente a 0 % (plegada) y sólido a 100 % (expandida). */
     private fun applySheetAlpha(slideOffset: Float) {
         val fraction = slideOffset.coerceIn(0f, 1f)
-        sheet.background?.mutate()?.alpha = (fraction * 255).toInt()
+        sheet.background?.mutate()?.alpha = (fraction * OPAQUE_ALPHA).toInt()
     }
 
     /** `true` en modo SHEET: el tick pinta los gauges. */
@@ -128,5 +128,6 @@ internal class MetricsSliderController(
 
     private companion object {
         const val PEEK_DP = 38f
+        const val OPAQUE_ALPHA = 255
     }
 }
