@@ -1,10 +1,13 @@
 package com.twinpad.android.app.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Base64
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 /** Vinculación guardada tras un emparejamiento (CR-094). */
@@ -22,13 +25,40 @@ internal data class SavedLink(
  * y para mostrar la lista de dispositivos guardados.
  */
 internal open class PairingLinkStore(context: Context) {
-    private val preferences by lazy {
+    private val appContext = context.applicationContext
+
+    /** `null` si el fichero cifrado no se puede descifrar (ver [openOrReset]). */
+    private val preferences by lazy { openOrReset() }
+
+    /**
+     * Abre las preferencias cifradas. Si el fichero es ilegible —clave del
+     * Keystore invalidada o `shared_prefs` restaurado por copia de seguridad sin
+     * su clave (`AEADBadTagException`)— se descarta y se empieza de cero: sin
+     * esto la app se caía al abrir (CR-094 lo lee en `init` del ViewModel).
+     * Coste: las vinculaciones se recuperan escaneando un QR nuevo.
+     */
+    private fun openOrReset(): SharedPreferences? {
+        try {
+            return create()
+        } catch (error: Exception) {
+            Log.w(TAG, "vinculaciones cifradas ilegibles: se descartan", error)
+        }
+        appContext.deleteSharedPreferences(PREFERENCES_NAME)
+        return try {
+            create()
+        } catch (error: Exception) {
+            Log.w(TAG, "no se pudo recrear el almacén de vinculaciones", error)
+            null
+        }
+    }
+
+    private fun create(): SharedPreferences {
         val masterKey =
-            MasterKey.Builder(context)
+            MasterKey.Builder(appContext)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
-        EncryptedSharedPreferences.create(
-            context,
+        return EncryptedSharedPreferences.create(
+            appContext,
             PREFERENCES_NAME,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
@@ -38,17 +68,28 @@ internal open class PairingLinkStore(context: Context) {
 
     /** Todas las vinculaciones guardadas, sin orden garantizado. */
     open fun loadAll(): List<SavedLink> {
-        val raw = preferences.getString(KEY_LINKS, null) ?: return emptyList()
-        val array = JSONArray(raw)
-        return (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            SavedLink(
-                sessionId = item.getString("session_id"),
-                sessionKey = Base64.decode(item.getString("session_key"), Base64.NO_WRAP),
-                addr = item.getString("server_addr"),
-                port = item.getInt("server_port"),
-                name = item.optString("name", ""),
-            )
+        val raw = preferences?.getString(KEY_LINKS, null) ?: return emptyList()
+        val array =
+            try {
+                JSONArray(raw)
+            } catch (error: JSONException) {
+                Log.w(TAG, "vinculaciones guardadas corruptas: se descartan", error)
+                return emptyList()
+            }
+        return (0 until array.length()).mapNotNull { index ->
+            try {
+                val item = array.getJSONObject(index)
+                SavedLink(
+                    sessionId = item.getString("session_id"),
+                    sessionKey = Base64.decode(item.getString("session_key"), Base64.NO_WRAP),
+                    addr = item.getString("server_addr"),
+                    port = item.getInt("server_port"),
+                    name = item.optString("name", ""),
+                )
+            } catch (error: JSONException) {
+                Log.w(TAG, "vinculación guardada corrupta: se omite", error)
+                null
+            }
         }
     }
 
@@ -75,10 +116,11 @@ internal open class PairingLinkStore(context: Context) {
                     .put("name", link.name),
             )
         }
-        preferences.edit().putString(KEY_LINKS, array.toString()).apply()
+        preferences?.edit()?.putString(KEY_LINKS, array.toString())?.apply()
     }
 
     private companion object {
+        const val TAG = "PairingLinkStore"
         const val PREFERENCES_NAME = "twinpad_pairing_link"
         const val KEY_LINKS = "links"
     }
