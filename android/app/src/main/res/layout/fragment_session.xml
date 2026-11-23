@@ -281,13 +281,15 @@
          tapaba al botón y su toque lo absorbía la superficie). -->
     <ImageButton
         android:id="@+id/btn_settings"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
         android:layout_margin="8dp"
-        android:background="@drawable/touch_button"
+        android:background="@drawable/bg_hud_chip"
+        android:padding="8dp"
+        android:scaleType="fitCenter"
         android:contentDescription="@string/settings_title"
         android:src="@drawable/ic_settings"
-        android:tint="@color/design_quiet_slate"
+        android:tint="@color/design_misted_slate"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
