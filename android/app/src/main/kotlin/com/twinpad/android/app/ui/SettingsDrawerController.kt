@@ -1,10 +1,11 @@
 package com.twinpad.android.app.ui
 
 import android.widget.RadioButton
-import android.widget.SeekBar
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.twinpad.android.app.R
+import kotlin.math.roundToInt
 
 /** Resoluciones seleccionables (16:9, CR-001). */
 private const val RES_W_960 = 960
@@ -17,7 +18,6 @@ private const val RES_W_1920 = 1920
 private const val RES_H_1080 = 1080
 
 private const val AUDIO_VOLUME_PERCENT_MAX = 100
-private const val JOG_WHEEL_PERCENT_SCALE = 100
 
 /** Efectos que exceden al drawer y ejecuta el host (PairingActivity). */
 internal interface SettingsDrawerHost {
@@ -81,7 +81,7 @@ internal class SettingsDrawerController(
             // CR-031: el default del drawer es 1080p.
             activity.findViewById<RadioButton>(R.id.resolution_1920x1080).isChecked = true
         }
-        activity.findViewById<SeekBar>(R.id.audio_volume_seek).progress = settings.audioVolumePercent
+        activity.findViewById<Slider>(R.id.audio_volume_seek).value = settings.audioVolumePercent.toFloat()
         activity.findViewById<SwitchMaterial>(R.id.switch_show_fps).isChecked = settings.showHud
         activity.findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
         activity.findViewById<SwitchMaterial>(R.id.switch_nintendo_distribution).isChecked =
@@ -161,28 +161,15 @@ internal class SettingsDrawerController(
 
     /** CR-001: el volumen del drawer persiste sin notificar al ViewModel. */
     private fun bindAudioVolumeSeek() {
-        val audioVolume = activity.findViewById<SeekBar>(R.id.audio_volume_seek)
-        audioVolume.max = AUDIO_VOLUME_PERCENT_MAX
-        audioVolume.progress = store.load().audioVolumePercent
-        audioVolume.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(
-                    bar: SeekBar,
-                    value: Int,
-                    fromUser: Boolean,
-                ) {
-                    if (fromUser) {
-                        val percent = if (bar.max == 0) 0 else value * JOG_WHEEL_PERCENT_SCALE / bar.max
-                        persist { it.copy(audioVolumePercent = percent) }
-                        host.updateAudioVolume(percent / AUDIO_VOLUME_PERCENT_MAX.toFloat())
-                    }
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar) = Unit
-
-                override fun onStopTrackingTouch(bar: SeekBar) = Unit
-            },
-        )
+        val audioVolume = activity.findViewById<Slider>(R.id.audio_volume_seek)
+        audioVolume.value = store.load().audioVolumePercent.toFloat()
+        audioVolume.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val percent = value.roundToInt().coerceIn(0, AUDIO_VOLUME_PERCENT_MAX)
+                persist { it.copy(audioVolumePercent = percent) }
+                host.updateAudioVolume(percent / AUDIO_VOLUME_PERCENT_MAX.toFloat())
+            }
+        }
     }
 
     /** Interruptores de visualización: HUD, giroscopio, controles,

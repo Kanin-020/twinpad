@@ -8,7 +8,7 @@
     android:id="@+id/drawer_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/design_charcoal_panel"
+    android:background="@color/design_steel_panel"
     android:fillViewport="true"
     android:overScrollMode="ifContentScrolls">
 
@@ -17,7 +17,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:paddingTop="24dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -101,11 +102,13 @@
             android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
-        <SeekBar
+        <com.google.android.material.slider.Slider
             android:id="@+id/audio_volume_seek"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="100" />
+            android:stepSize="1"
+            android:valueFrom="0"
+            android:valueTo="100" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -243,15 +246,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_show_gyro_monitor" />
-
-        <Button
-            android:id="@+id/btn_drawer_connection"
-            style="@style/Widget.Twinpad.Button.Filled"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:text="@string/settings_connection_view"
-            android:visibility="gone" />
 
         <Button
             android:id="@+id/btn_close_drawer"
