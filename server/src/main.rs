@@ -384,6 +384,16 @@ fn main() {
                     })
                     .unwrap_or((0, 0, 0))
             }),
+            // W5 también en la página: mismo desktop entry que el tray y el QAM.
+            autostart_on: Box::new(twinpad_server::autostart::is_installed),
+            set_autostart: Box::new(|enabled| {
+                let result = if enabled {
+                    twinpad_server::autostart::install()
+                } else {
+                    twinpad_server::autostart::remove().map(|_| ())
+                };
+                result.map_err(|error| error.to_string())
+            }),
             shutdown: Arc::clone(&shutdown),
             // Carpeta de datos fija (SPEC-010).
             data_dir: Box::new(|| {

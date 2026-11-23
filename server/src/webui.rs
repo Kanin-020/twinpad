@@ -51,6 +51,11 @@ pub struct UiDeps {
     pub data_dir: Box<dyn Fn() -> String + Send + Sync>,
     /// Revoca un dispositivo emparejado por su session_id (base64url); `false` si no existía (CR-094).
     pub revoke_device: Box<dyn Fn(&str) -> bool + Send + Sync>,
+    /// Estado del autoarranque XDG (W5): el MISMO desktop entry que conmutan
+    /// el menú del tray y el QAM de Decky.
+    pub autostart_on: Box<dyn Fn() -> bool + Send + Sync>,
+    /// Conmuta el autoarranque; `Err` con el mensaje de E5 (el estado no cambia).
+    pub set_autostart: Box<dyn Fn(bool) -> Result<(), String> + Send + Sync>,
 }
 
 pub(crate) enum RequestOutcome {
@@ -130,6 +135,32 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
     let method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("");
     let path = path.split('?').next().unwrap_or(path);
+    if method == "POST" && path == "/autostart" {
+        // W5 en la página: instala/elimina el desktop entry. Misma regla S1
+        // que el resto de acciones con efecto.
+        if !has_action_header(&request) {
+            respond(
+                stream,
+                "403 Forbidden",
+                "text/plain; charset=utf-8",
+                "Falta X-Twinpad-Action.",
+            );
+            return RequestOutcome::Served;
+        }
+        let body = request.split("\r\n\r\n").nth(1).unwrap_or("");
+        let enabled = form_value(body, "enabled").as_deref() == Some("1");
+        match (deps.set_autostart)(enabled) {
+            Ok(()) => respond(stream, "204 No Content", "text/plain; charset=utf-8", ""),
+            // E5: el fallo se devuelve a quien llama; el estado no cambia.
+            Err(error) => respond(
+                stream,
+                "500 Internal Server Error",
+                "text/plain; charset=utf-8",
+                &error,
+            ),
+        }
+        return RequestOutcome::Served;
+    }
     if method == "POST" && path == "/devices/revoke" {
         // CR-094: revoca un dispositivo emparejado (solo con cabecera de acción, S1).
         if !has_action_header(&request) {
@@ -340,6 +371,12 @@ pub fn render_page(deps: &UiDeps) -> String {
     let sessions = (deps.session_count)();
     let games = (deps.games)();
     let (width, height, bitrate) = (deps.video_config)();
+    let autostart_on = (deps.autostart_on)();
+    let (autostart_state, autostart_action, autostart_flag) = if autostart_on {
+        ("Activado", "Desactivar", "true")
+    } else {
+        ("Desactivado", "Activar", "false")
+    };
     let qr_svg = qr_svg(&uri)
         .unwrap_or_else(|| "<p>(QR no renderizable; usa el URI copiable de abajo)</p>".to_string());
     let games_list = if games.is_empty() {
@@ -359,6 +396,9 @@ pub fn render_page(deps: &UiDeps) -> String {
         .replace("__WIDTH__", &width.to_string())
         .replace("__HEIGHT__", &height.to_string())
         .replace("__BITRATE__", &bitrate.to_string())
+        .replace("__AUTOSTART_STATE__", autostart_state)
+        .replace("__AUTOSTART_ACTION__", autostart_action)
+        .replace("__AUTOSTART_ENABLED__", autostart_flag)
 }
 
 /// Carga del vencimiento (CR-073 W9): JSON con el URI vigente, los ms
@@ -486,6 +526,15 @@ pub(crate) fn response_of(listener: &TcpListener, deps: &UiDeps, request: &str) 
 }
 #[cfg(test)]
 pub(crate) fn test_deps(shutdown: Arc<AtomicBool>) -> UiDeps {
+    test_deps_with_autostart(shutdown, Arc::new(AtomicBool::new(false)))
+}
+
+/// Igual que `test_deps`, con un flag de autoarranque observable por el test.
+#[cfg(test)]
+pub(crate) fn test_deps_with_autostart(
+    shutdown: Arc<AtomicBool>,
+    autostart: Arc<AtomicBool>,
+) -> UiDeps {
     UiDeps {
         current_uri: Box::new(|| {
             // TTL fijo alto: el vencimiento real lo ejercita TokenStore
@@ -500,6 +549,14 @@ pub(crate) fn test_deps(shutdown: Arc<AtomicBool>) -> UiDeps {
         video_config: Box::new(|| (1920, 1080, 30000)),
         data_dir: Box::new(|| "/tmp/twinpad".to_string()),
         revoke_device: Box::new(|_| false),
+        autostart_on: {
+            let flag = Arc::clone(&autostart);
+            Box::new(move || flag.load(Ordering::Relaxed))
+        },
+        set_autostart: Box::new(move |enabled| {
+            autostart.store(enabled, Ordering::Release);
+            Ok(())
+        }),
         // Rotación simulada: cada llamada emite un token DISTINTO (la
         // semántica real de invalidación la ejercita TEST-0148).
         rotate_uri: Box::new({
@@ -660,5 +717,53 @@ mod tests {
         assert!(first.contains("eW8tMTE1YAQ"));
         assert!(second.contains("eW8tMTE1YBQ"));
         assert_ne!(first, second);
+    }
+
+    /// TEST-0193 (W5 en la página): `POST /autostart` exige la cabecera de
+    /// acción (S1) y conmuta el autoarranque; la página refleja el estado
+    /// vigente en texto y en el botón, sin recargar.
+    #[test]
+    fn autostart_toggle_requires_action_header_and_switches_state() {
+        let listener = loopback_listener();
+        let autostart = Arc::new(AtomicBool::new(false));
+        let deps =
+            test_deps_with_autostart(Arc::new(AtomicBool::new(false)), Arc::clone(&autostart));
+        let page_off = render_page(&deps);
+        assert!(page_off.contains(">Desactivado<"));
+        assert!(page_off.contains(">Activar<"));
+
+        // S1: sin cabecera de acción no hay efecto ni respuesta 2xx.
+        let denied = response_of(
+            &listener,
+            &deps,
+            "POST /autostart HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 9\r\n\r\nenabled=1",
+        );
+        assert!(denied.contains("403 Forbidden"), "{denied}");
+        assert!(!autostart.load(Ordering::Relaxed));
+
+        let accepted = response_of(
+            &listener,
+            &deps,
+            "POST /autostart HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Twinpad-Action: 1\r\n\
+Content-Length: 9\r\n\r\nenabled=1",
+        );
+        assert!(accepted.starts_with("HTTP/1.1 204"), "{accepted}");
+        assert!(autostart.load(Ordering::Relaxed));
+        let page_on = render_page(&deps);
+        assert!(page_on.contains(">Activado<"));
+        assert!(page_on.contains(">Desactivar<"));
+        assert!(page_on.contains("var autostartOn = true;"));
+        // Ningún token de plantilla queda sin sustituir.
+        assert!(!page_on.contains("__AUTOSTART"));
+
+        // Y vuelta: `enabled=0` elimina la entrada (idempotente).
+        let cleared = response_of(
+            &listener,
+            &deps,
+            "POST /autostart HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Twinpad-Action: 1\r\n\
+Content-Length: 9\r\n\r\nenabled=0",
+        );
+        assert!(cleared.starts_with("HTTP/1.1 204"), "{cleared}");
+        assert!(!autostart.load(Ordering::Relaxed));
     }
 }

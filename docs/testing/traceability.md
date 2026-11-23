@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0193 |
+| TEST | TEST-0194 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -112,6 +112,7 @@
 | REQ-001 | SPEC-010 | DES-005 | TEST-0146 | Passed (2026-11-04, host) | CR-073: test de integración `qr_renewal_endpoint_serves_fresh_uri_ttl_and_same_token_svg` (`server/src/webui.rs`) — `GET /qr` en loopback responde 200 `application/json` con el URI vigente, `ttl_ms` del token y el SVG del MISMO token (W8/W9, CR-073); fail-soft 503 sin SVG (W7) |
 | REQ-001 | SPEC-010 | DES-005 | TEST-0137 | Passed (2026-11-01, host) | CR-061: Tests de `autostart` (`server/src/autostart.rs`) — `install()` escribe el desktop entry, es idempotente (W5), `remove()` lo elimina y quitar sin entrada previa es no-op; hereda `XDG_CONFIG_HOME` con fallback `~/.config/autostart` |
 | REQ-001 | SPEC-010 | DES-005 | TEST-0141 | Passed (2026-11-02, host) | CR-063: Tests de ventana web del sistema (`server/src/tray.rs`) — `build_app_window_command` produce exactamente programa candidato + `--app=URL` (fallback navegador, W3) y la canasta `APP_MODE_BROWSERS` son motores Blink con modo app (sin Firefox, que pasa a la cascada de aperturas genéricas) |
+| REQ-001 | SPEC-010 | DES-005 | TEST-0193 | Passed (2026-11-23, host) | Autoarranque en la página (`server/src/webui.rs`, `server/ui/index.html`) — `POST /autostart` exige `X-Twinpad-Action` (403 sin ella, sin efecto), 204 con `enabled=1/0` conmuta `autostart::install/remove` y la página refleja «Activado/Desactivado» + botón y flag de JS, sin tokens de plantilla sin sustituir |
 | REQ-001 | SPEC-010 | DES-005 | TEST-0192 | Passed (2026-11-23, host) | Ruta publicada del binario (`server/src/data_dir.rs`) — `publish_server_path` escribe `server-path` en la carpeta de datos de forma atómica (sin temporal huérfano) y el plugin de Decky la usa como candidata para «Arrancar servidor» cuando no hereda `$APPIMAGE` |
 | REQ-008 | SPEC-008 | `-` | TEST-0143 | Passed (JVM, 2026-11-03) | CR-067: mapeo del desarrollador en `res/layout/profile_map.xml` (ConstraintLayout + `TwinpadControlView` con attrs `twinpadKind/twinpadLabel/twinpadHid`; edit con drag & drop de Android Studio) — `ProfileMapLayout.extract` infla/normaliza a 0…1/valida con el modelo (§9) en 7 tests JVM Robolectric: 15 controles canónicos, paridad ESTRUCTURAL con `defaultProfile()` (CR-069: posiciones/tamaños libres), rechazo de hid inválido/id duplicado/campo ausente/bounds fuera de rango |
 | REQ-008 | SPEC-008 | `-` | TEST-0144 | Passed (JVM, 2026-11-03) | CR-068: hitbox táctil = forma dibujada — `insideDrawnShape` (pura) captura dentro del círculo inscrito en los bounds (lado menor), el MISMO que pinta el renderer (botón/stick/D-pad); 4 tests JVM: centro/borde capturan, esquinas del rect quedan fuera, regla idéntica para los tres kinds |

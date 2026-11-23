@@ -71,6 +71,15 @@
 
           <section class="panel">
             <h2 class="panel__title">Control</h2>
+            <p class="panel__row">
+              Iniciar al arrancar el equipo:
+              <strong id="autostart-state">__AUTOSTART_STATE__</strong>
+            </p>
+            <button class="btn btn--ghost" id="autostart-toggle" type="button">__AUTOSTART_ACTION__</button>
+            <p class="panel__note" id="autostart-note">
+              Arranca el servidor al iniciar sesión (Desktop Mode; en Game Mode
+              SteamOS no ejecuta el autoarranque XDG).
+            </p>
             <button class="btn btn--ghost" id="stop-server" type="button">Detener servidor</button>
             <p class="panel__note">
               La parada termina el servidor; las sesiones activas se desconectan.
@@ -148,6 +157,50 @@
           fetch("/stop", { headers: { "X-Twinpad-Action": "1" } }).then(function () {
             document.body.innerHTML = "<p>Servidor Twinpad detenido.</p>";
           });
+        });
+
+        // Autoarranque (W5): el MISMO desktop entry que conmutan el menú del
+        // tray y el QAM de Decky. Si falla (E5), el estado no cambia y se ve
+        // el motivo en la misma tarjeta.
+        var autostartOn = __AUTOSTART_ENABLED__;
+        var autostartState = document.getElementById("autostart-state");
+        var autostartToggle = document.getElementById("autostart-toggle");
+        var autostartNote = document.getElementById("autostart-note");
+
+        function paintAutostart() {
+          autostartState.textContent = autostartOn ? "Activado" : "Desactivado";
+          autostartToggle.textContent = autostartOn ? "Desactivar" : "Activar";
+        }
+
+        autostartToggle.addEventListener("click", function () {
+          var next = !autostartOn;
+          autostartToggle.disabled = true;
+          fetch("/autostart", {
+            method: "POST",
+            headers: {
+              "X-Twinpad-Action": "1",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: "enabled=" + (next ? "1" : "0"),
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                return response.text().then(function (text) {
+                  throw new Error(text || "no se pudo cambiar el autoarranque");
+                });
+              }
+              autostartOn = next;
+              autostartNote.textContent =
+                "Arranca el servidor al iniciar sesión (Desktop Mode; en Game Mode " +
+                "SteamOS no ejecuta el autoarranque XDG).";
+              paintAutostart();
+            })
+            .catch(function (error) {
+              autostartNote.textContent = "No se pudo cambiar: " + error.message;
+            })
+            .finally(function () {
+              autostartToggle.disabled = false;
+            });
         });
 
         // Copia del URI vigente (W2b: casilla copiable). Acción 100 % local.
