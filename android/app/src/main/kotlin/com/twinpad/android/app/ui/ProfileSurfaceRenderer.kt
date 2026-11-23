@@ -74,7 +74,7 @@ internal class ProfileSurfaceRenderer(context: Context) {
         val alpha =
             when {
                 control.hid.isEmpty() -> DIMMED_ALPHA
-                index == state.draggingIndex -> PRESSED_ALPHA
+                index in state.activePointers.values -> PRESSED_ALPHA
                 else -> NORMAL_ALPHA
             }
         val frame = ControlFrame(canvas, index, control, state, width, height, alpha)
