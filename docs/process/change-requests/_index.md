@@ -4,12 +4,17 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-100 |
+| CR | CR-106 |
 
 ## Open / In review
 
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
+| CR-106 | Al seleccionar Cemu el servidor envía `input_reset` y el plugin reinicia el filtro de `seq` de input (reinicio de sesión sin reconexión del socket) | SPEC-006, SPEC-004 §9
+| CR-105 | El `framerate` de apertura del encoder es el presupuesto por frame del rate-control VAAPI: cadencia por mediana y recreación solo por deriva sostenida | SPEC-003 §3, REQ-004/005, DES-003 | Decided (2026-11-23) | Buffy (agente) | [CR-105-vaapi-rate-control-cadence-metadata.md](CR-105-vaapi-rate-control-cadence-metadata.md) |
+| CR-104 | El crédito del relay UDP sigue la demanda real del encoder (CR-101) y una AU descartada por crédito avanza el watermark de `latest` | SPEC-003 §4.4, REQ-004, DES-004 | Decided (2026-11-23) | Buffy (agente) | [CR-104-udp-credit-follows-encoder-demand.md](CR-104-udp-credit-follows-encoder-demand.md) |
+| CR-103 | Reanudar la sesión (`pair_resume`) debe reactivar el audio del juego (`audio_start`/`audio_chunk`) | SPEC-001 §8.2, SPEC-003 (audio), DES-001, REQ-002, TEST-XXX | Open (2026-11-20) | Buffy (agente) | [CR-103-resume-restarts-game-audio.md](CR-103-resume-restarts-game-audio.md) |
+| CR-102 | `pair_revoke`: mensaje app→servidor para revocar el registro persistente al pulsar «Desconectar dispositivo» (CR-094 §2.2) | SPEC-001 §4.2/§8.3/§12, REQ-002, SPEC-002, DES-001 | Open (2026-11-17) | Buffy (agente) | [CR-102-pair-revoke-message.md](CR-102-pair-revoke-message.md) |
 | CR-094 | Vinculación Android–Servidor persistente (registro cifrado de dispositivos, reconexión sin QR) y desconexión de dispositivo | SPEC-001 R2/§8.2, REQ-002 AC-4, SPEC-002, SPEC-010 | Approved (2026-11-11) | Buffy (agente) | [CR-094-persistent-android-pairing.md](CR-094-persistent-android-pairing.md) |
 | CR-093 | Primera ejecución del Servidor PC: carpeta de datos elegible y visible en la UI local (SPEC-010 §2) | SPEC-010, DES-005 | Applied (2026-11-11) | Buffy (agente) | [CR-093-server-first-run-data-folder.md](CR-093-server-first-run-data-folder.md) |
 | CR-062 | Transporte UDP para video/audio con FEC y degradación por pérdida (evita head-of-line de TCP bajo pérdida real de paquetes; fallback al TCP media existente) | SPEC-003, SPEC-005, DES-001/002, ARCH | Open (2026-11-02) | Buffy (agente) | [CR-062-udp-media-transport-fec.md](CR-062-udp-media-transport-fec.md) |
