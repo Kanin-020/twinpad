@@ -25,8 +25,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
@@ -240,7 +242,6 @@ class PairingViewModelTest {
         }
     }
 
-
     /**
      * TEST-0199 (parcial) — tras quedar Linked, si el servidor envía audio_start + audio_chunk,
      * la app transiciona audioState a PLAYING (no se descartan por estar INACTIVE).
@@ -260,31 +261,23 @@ class PairingViewModelTest {
             val uri = "twinpad://v1#s=127.0.0.1&p=${server.localPort}&t=$nonceStr"
             val done = CompletableFuture<Boolean>()
             val release = CompletableFuture<Boolean>()
-            val thread = Thread {
-                runCatching {
-                    server.accept().use { socket ->
-                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                        val writer = socket.getOutputStream()
-                        reader.readLine() // pair_request
-                        writer.write((encodeLine(HandshakeMessage.Challenge(nonceStr))).toByteArray())
-                        writer.flush()
-                        reader.readLine() // pair_proof
-                        writer.write((encodeLine(HandshakeMessage.Ack(sessionId))).toByteArray())
-                        writer.flush()
-                        Thread.sleep(200)
-                        writer.write("{\"type\":\"audio_start\",\"rate\":48000,\"channels\":1,\"sample_fmt\":\"s16le\"}\n".toByteArray())
-                        writer.flush()
-                        Thread.sleep(50)
-                        // 4 bytes PCM (2 samples s16le) en base64url: "AAAA" = 00 00 00 00
-                        // 4 bytes PCM a cero en base64url ("AAAAAA"): PCM s16le par.
-                        writer.write("{\"type\":\"audio_chunk\",\"seq\":1,\"ts\":0,\"data\":\"AAAAAA\"}\n".toByteArray())
-                        writer.flush()
-                        // Mantiene el socket abierto: un EOF reinicia el audio (A0).
-                        release.get(15, TimeUnit.SECONDS)
-                        done.complete(true)
-                    }
-                }.onFailure { done.completeExceptionally(it) }
-            }
+            val thread =
+                Thread {
+                    runCatching {
+                        server.accept().use { socket ->
+                            completeHandshake(socket)
+                            Thread.sleep(200)
+                            val writer = socket.getOutputStream()
+                            writer.writeLine(AUDIO_START_LINE)
+                            Thread.sleep(50)
+                            // 4 bytes PCM a cero en base64url ("AAAAAA"): PCM s16le par.
+                            writer.writeLine(AUDIO_CHUNK_LINE)
+                            // Mantiene el socket abierto: un EOF reinicia el audio (A0).
+                            release.get(15, TimeUnit.SECONDS)
+                            done.complete(true)
+                        }
+                    }.onFailure { done.completeExceptionally(it) }
+                }
             thread.isDaemon = true
             thread.start()
             viewModel.onEvent(PairingEvent.ScanRequested)
@@ -309,7 +302,6 @@ class PairingViewModelTest {
         }
     }
 
-
     /**
      * TEST-0199 (resume) — CR-056 / SPEC-001 §8.2: tras un corte con la sesión
      * retenida, `pair_resume` restablece Linked y el audio que envía el servidor
@@ -324,10 +316,12 @@ class PairingViewModelTest {
             val store: (Application) -> com.twinpad.android.app.ui.PairingLinkStore = {
                 object : com.twinpad.android.app.ui.PairingLinkStore(it) {
                     override fun loadAll() = links.toList()
+
                     override fun save(link: com.twinpad.android.app.ui.SavedLink) {
                         links.removeAll { existing -> existing.sessionId == link.sessionId }
                         links.add(link)
                     }
+
                     override fun remove(id: String) {
                         links.removeAll { existing -> existing.sessionId == id }
                     }
@@ -344,14 +338,7 @@ class PairingViewModelTest {
                     runCatching {
                         // Conexión 1: handshake normal y corte del servidor.
                         server.accept().use { socket ->
-                            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                            val writer = socket.getOutputStream()
-                            reader.readLine() // pair_request
-                            writer.write(encodeLine(HandshakeMessage.Challenge(nonceStr)).toByteArray())
-                            writer.flush()
-                            reader.readLine() // pair_proof
-                            writer.write(encodeLine(HandshakeMessage.Ack(sessionId)).toByteArray())
-                            writer.flush()
+                            completeHandshake(socket)
                             Thread.sleep(300)
                         }
                         // Conexión 2: pair_resume → pair_ack → audio del juego.
@@ -361,10 +348,8 @@ class PairingViewModelTest {
                             resumeLineSeen.complete(reader.readLine())
                             writer.write(encodeLine(HandshakeMessage.Ack(sessionId)).toByteArray())
                             writer.flush()
-                            writer.write("{\"type\":\"audio_start\",\"rate\":48000,\"channels\":1,\"sample_fmt\":\"s16le\"}\n".toByteArray())
-                            writer.flush()
-                            writer.write("{\"type\":\"audio_chunk\",\"seq\":1,\"ts\":0,\"data\":\"AAAAAA\"}\n".toByteArray())
-                            writer.flush()
+                            writer.writeLine(AUDIO_START_LINE)
+                            writer.writeLine(AUDIO_CHUNK_LINE)
                             release.get(20, TimeUnit.SECONDS)
                         }
                     }.onFailure { resumeLineSeen.completeExceptionally(it) }
@@ -378,13 +363,7 @@ class PairingViewModelTest {
             try {
                 val resumeLine = resumeLineSeen.get(30, TimeUnit.SECONDS)
                 assertTrue("la reanudación debe enviar pair_resume: $resumeLine", resumeLine.contains("pair_resume"))
-                runBlocking {
-                    withTimeout(15_000) {
-                        while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
-                            delay(20)
-                        }
-                    }
-                }
+                awaitAudioPlaying(viewModel)
                 assertEquals(PairingUiState.Linked(sessionId), viewModel.uiState.value)
                 assertEquals(com.twinpad.android.app.audio.AudioState.PLAYING, viewModel.audioState.value)
             } finally {
@@ -397,4 +376,39 @@ class PairingViewModelTest {
     }
 
     private fun encodeLine(msg: HandshakeMessage): String = HandshakeCodec.encode(msg) + "\n"
+
+    /** pair_request → challenge → pair_proof → pair_ack sobre [socket]. */
+    private fun completeHandshake(socket: Socket) {
+        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+        val writer = socket.getOutputStream()
+        reader.readLine() // pair_request
+        writer.write(encodeLine(HandshakeMessage.Challenge(nonceStr)).toByteArray())
+        writer.flush()
+        reader.readLine() // pair_proof
+        writer.write(encodeLine(HandshakeMessage.Ack(sessionId)).toByteArray())
+        writer.flush()
+    }
+
+    private fun OutputStream.writeLine(line: String) {
+        write(line.toByteArray())
+        flush()
+    }
+
+    /** Espera a que el audio del juego llegue a PLAYING. */
+    private fun awaitAudioPlaying(viewModel: PairingViewModel) {
+        runBlocking {
+            withTimeout(15_000) {
+                while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
+                    delay(20)
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val AUDIO_START_LINE =
+            "{\"type\":\"audio_start\",\"rate\":48000,\"channels\":1,\"sample_fmt\":\"s16le\"}\n"
+        const val AUDIO_CHUNK_LINE =
+            "{\"type\":\"audio_chunk\",\"seq\":1,\"ts\":0,\"data\":\"AAAAAA\"}\n"
+    }
 }
