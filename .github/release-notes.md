@@ -9,7 +9,7 @@ Esta release trae cuatro piezas. Cada una se instala por separado; abajo se expl
 | El server | `twinpad-server-<versión>-x86_64.AppImage` | PC con Linux x86_64 |
 | Cemu | `cemu-linux-x86_64-<tag>.tar.gz` | PC con Linux x86_64 |
 | Android | `twinpad-android-<versión>-debug-signed.apk` | Teléfono Android |
-| Decky | `integrations/decky-twinpad/` del repositorio | Steam Deck / SteamOS |
+| Decky | `decky-twinpad-<versión>.zip` | Steam Deck / SteamOS |
 
 ---
 
@@ -72,19 +72,14 @@ El firewall del PC debe permitir el tráfico entrante del teléfono en la red lo
 
 **Cómo configurarlo.**
 
-1. El plugin se compila desde el repositorio:
+1. Descarga `decky-twinpad-<versión>.zip` y extrae la carpeta `Twinpad`:
    ```bash
-   cd integrations/decky-twinpad
-   pnpm install
-   pnpm run build
+   unzip decky-twinpad-<versión>.zip
+   cp -r Twinpad ~/homebrew/plugins/
    ```
-2. Con Decky Loader en modo desarrollador, copia la carpeta a los plugins del usuario:
-   ```bash
-   cp -r . ~/homebrew/plugins/twinpad
-   ```
-3. Recarga Decky (`Ajustes → Decky → Recargar`). El plugin aparece como **Twinpad** en el menú de acceso rápido.
-4. El servidor debe correr **en el mismo dispositivo** que Decky: la página de gestión es solo local (loopback) y no se publica a la red. Si el binario no está en el `PATH`, indica su ruta con `TWINPAD_SERVER_BIN`; el puerto local se cambia con `TWINPAD_LOCAL_PORT`.
-5. El autoarranque del servidor funciona en modo escritorio; en modo juego SteamOS no ejecuta el autoarranque XDG, así que ahí hay que arrancarlo desde el propio panel.
+2. Recarga Decky (`Ajustes → Decky → Recargar`). El plugin aparece como **Twinpad** en el menú de acceso rápido.
+3. El servidor debe correr **en el mismo dispositivo** que Decky: la página de gestión es solo local (loopback) y no se publica a la red. Si el binario no está en el `PATH`, indica su ruta con `TWINPAD_SERVER_BIN`; el puerto local se cambia con `TWINPAD_LOCAL_PORT`.
+4. El autoarranque del servidor funciona en modo escritorio; en modo juego SteamOS no ejecuta el autoarranque XDG, así que ahí hay que arrancarlo desde el propio panel.
 
 ---
 
