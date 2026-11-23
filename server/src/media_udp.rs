@@ -294,6 +294,17 @@ fn rollover_window(
 
 /// Relay de una sesión: reenvía la AU más reciente (latest-frame-wins)
 /// mientras el canal sea el dueño vigente y el Pairing esté activo.
+/// CR-104: demanda real del encoder por ventana de 1 s, acotada a 3× el
+/// bitrate configurado (un pico de arranque no infla el crédito de forma
+/// permanente) y con decaimiento 1/8 por ventana cuando la demanda baja.
+fn next_demand_kbps(current: u64, measured: u64, configured: u64) -> u64 {
+    if measured > current {
+        measured.min(configured.saturating_mul(3))
+    } else {
+        current.saturating_sub(current / 8)
+    }
+}
+
 fn relay_udp_session(
     socket: Arc<UdpSocket>,
     registry: Arc<UdpChannelRegistry>,
@@ -317,6 +328,13 @@ fn relay_udp_session(
     let mut token_bytes: u64 = u64::from(deps.congestion.effective_kbps().max(1_000)) * 125;
     let mut dropped_by_rate: u64 = 0;
     let mut drop_log_ms: u64 = 0;
+    // CR-104: demanda real del encoder (bytes de AU publicadas por segundo,
+    // enviadas o descartadas). El techo de crédito nunca queda por debajo de
+    // ella: el encoder puede emitir por encima del bitrate configurado y
+    // esos descartes eran los tirones (medido: 31 Mbps con 15 pedidos).
+    let mut demand_start_ms = deps.congestion.now_ms();
+    let mut demand_bytes: u64 = 0;
+    let mut demand_kbps: u64 = 0;
     loop {
         if !pair_active.load(Ordering::Acquire) {
             println!("udp-relay salida: Pairing inactivo");
@@ -422,14 +440,29 @@ fn relay_udp_session(
         let now_ms = deps.congestion.now_ms();
         // CR-101: el crédito sigue al bitrate configurado en Cemu (no a un
         // piso fijo de 10 000 kbps), para no descartar AU reales.
-        let kbps = u64::from(deps.congestion.effective_kbps().max(1_000));
+        let configured = u64::from(deps.congestion.effective_kbps().max(1_000));
+        // CR-104: ventana de 1 s sobre la producción real del encoder.
+        if now_ms.saturating_sub(demand_start_ms) >= 1_000 {
+            let measured = demand_bytes.saturating_mul(8) / 1_000;
+            demand_kbps = next_demand_kbps(demand_kbps, measured, configured);
+            demand_start_ms = now_ms;
+            demand_bytes = 0;
+        }
+        let kbps = configured.max(demand_kbps);
         let elapsed = now_ms.saturating_sub(token_last_ms);
         token_last_ms = now_ms;
         let cap_bytes = kbps * 125; // 1 s de crédito en bytes
         token_bytes = cap_bytes.min(token_bytes + elapsed.saturating_mul(kbps) / 8);
         let au_bytes = u64::try_from(source.latest.annex_b.len()).unwrap_or(u64::MAX);
+        // La demanda cuenta toda AU publicada, antes de decidir si se emite.
+        demand_bytes = demand_bytes.saturating_add(au_bytes);
         if !source.latest.idr && au_bytes > token_bytes {
             dropped_by_rate += 1;
+            // latest-frame-wins: la AU descartada avanza igual el watermark;
+            // sin esto `wait_for_forwardable` devuelve la MISMA AU y el hilo
+            // gira en seco (medido: 2,3 M descartes por ventana de 2 s).
+            last_fn = Some(source.latest.fn_);
+            last_timestamp_us = Some(source.latest.timestamp_us);
             if now_ms >= drop_log_ms {
                 println!(
                     "udp-relay tasa: descartadas {dropped_by_rate} AU por crédito (kbps={kbps})"
@@ -915,5 +948,20 @@ mod tests {
         assert_eq!(au.fn_, 2);
         assert_eq!(au.annex_b, b"p-con-credito");
         drop(client);
+    }
+
+    /// TEST-0200 (CR-104): el techo de crédito sigue a la demanda real del
+    /// encoder —nunca por debajo de ella—, acotado a 3× lo configurado y con
+    /// decaimiento 1/8 por ventana cuando la demanda baja.
+    #[test]
+    fn demand_ceiling_follows_encoder_within_three_times() {
+        // Encoder por encima del bitrate pedido (medido: 31 Mbps con 15 000).
+        assert_eq!(next_demand_kbps(0, 31_000, 15_000), 31_000);
+        // Pico de arranque (87 004 kbps medido): el crédito no se infla sin tope.
+        assert_eq!(next_demand_kbps(0, 87_004, 15_000), 45_000);
+        // Demanda a la baja: 1/8 menos por ventana.
+        assert_eq!(next_demand_kbps(40_000, 10_000, 15_000), 35_000);
+        // Sin demanda medida el techo queda en el bitrate configurado.
+        assert_eq!(next_demand_kbps(0, 0, 15_000), 0);
     }
 }
