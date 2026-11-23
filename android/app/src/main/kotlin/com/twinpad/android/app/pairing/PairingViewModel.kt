@@ -435,11 +435,17 @@ internal class PairingViewModel(
     /** Olvida un dispositivo guardado (fila inactiva). */
     fun forgetSavedLink(sessionId: String) = savedLinks.forget(sessionId)
 
-    /** CR-094: Desconectar (sesión activa): cierra la sesión sin olvidar el
-     * dispositivo; queda en la lista para volver a conectarlo. */
+    /** CR-094 §2.3: Desconectar (sesión activa) cierra la sesión y quita la
+     * vinculación local, para que al reabrir la app no se reanude lo que el
+     * usuario desconectó a propósito. */
     fun onDisconnectRequested() {
-        network.disconnect()
-        feed(PairingEvent.Cancelled)
+        val active = activeSessionId()
+        if (active != null) {
+            savedLinks.forget(active)
+        } else {
+            network.disconnect()
+            feed(PairingEvent.Cancelled)
+        }
     }
 
     private fun feed(event: PairingEvent) {

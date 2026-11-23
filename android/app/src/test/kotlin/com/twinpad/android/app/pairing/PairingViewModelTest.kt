@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -162,6 +163,234 @@ class PairingViewModelTest {
             // El corte interactivo no se simula: al cerrar el socket de la
             // prueba, el cliente recibe EOF y la máquina pasa a "Sesión
             // terminada" por sí sola (SPEC-002 §6).
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** TEST-0195 — verifies CR-094 §2.3: «Desconectar» cierra la sesión y
+     * quita la vinculación local, así que al reabrir la app no se reanuda lo
+     * que el usuario desconectó. Se usa TCP loopback real (test-strategy §10). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun disconnectForgetsTheSavedLink() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        try {
+            val links = mutableListOf<com.twinpad.android.app.ui.SavedLink>()
+            val store: (Application) -> com.twinpad.android.app.ui.PairingLinkStore = {
+                object : com.twinpad.android.app.ui.PairingLinkStore(it) {
+                    override fun loadAll() = links.toList()
+
+                    override fun save(link: com.twinpad.android.app.ui.SavedLink) {
+                        links.removeAll { existing -> existing.sessionId == link.sessionId }
+                        links.add(link)
+                    }
+
+                    override fun remove(id: String) {
+                        links.removeAll { existing -> existing.sessionId == id }
+                    }
+                }
+            }
+            val viewModel =
+                PairingViewModel(
+                    app,
+                    PairingCollaborators(machine = PairingStateMachine(), linkStore = store),
+                )
+
+            val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+            val serverThread =
+                Thread {
+                    runCatching {
+                        server.accept().use { socket ->
+                            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                            val writer = socket.getOutputStream()
+                            reader.readLine() // pair_request
+                            writer.write(encodeLine(HandshakeMessage.Challenge(nonceStr)).toByteArray())
+                            writer.flush()
+                            reader.readLine() // pair_proof
+                            writer.write(encodeLine(HandshakeMessage.Ack(sessionId)).toByteArray())
+                            writer.flush()
+                            // Mantiene el socket abierto: la sesión sigue en U4 hasta
+                            // que el usuario desconecta.
+                            Thread.sleep(5_000)
+                        }
+                    }
+                }
+            serverThread.isDaemon = true
+            serverThread.start()
+
+            viewModel.onEvent(
+                PairingEvent.QrScanned("twinpad://v1#s=127.0.0.1&p=${server.localPort}&t=$nonceStr"),
+            )
+            runBlocking {
+                withTimeout(15_000) {
+                    while (viewModel.uiState.value != PairingUiState.Linked(sessionId)) {
+                        delay(20)
+                    }
+                }
+            }
+            assertEquals(1, links.size)
+
+            viewModel.onDisconnectRequested()
+            assertEquals(PairingUiState.Idle, viewModel.uiState.value)
+            assertEquals("Desconectar debe olvidar la vinculación local", 0, links.size)
+            server.close()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+
+    /**
+     * TEST-0199 (parcial) — tras quedar Linked, si el servidor envía audio_start + audio_chunk,
+     * la app transiciona audioState a PLAYING (no se descartan por estar INACTIVE).
+     * Regresión resume: si tras reanudar el server no reenvía audio_start, los chunks se descartan.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun linkedVmMovesToAudioPlayingOnAudioStartAndChunk() {
+        val main = UnconfinedTestDispatcher()
+        Dispatchers.setMain(main)
+        try {
+            val machine = PairingStateMachine()
+            val viewModel =
+                PairingViewModel(app, PairingCollaborators(machine = machine, linkStore = memoryStore))
+            val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+            server.soTimeout = 10_000
+            val uri = "twinpad://v1#s=127.0.0.1&p=${server.localPort}&t=$nonceStr"
+            val done = CompletableFuture<Boolean>()
+            val release = CompletableFuture<Boolean>()
+            val thread = Thread {
+                runCatching {
+                    server.accept().use { socket ->
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        val writer = socket.getOutputStream()
+                        reader.readLine() // pair_request
+                        writer.write((encodeLine(HandshakeMessage.Challenge(nonceStr))).toByteArray())
+                        writer.flush()
+                        reader.readLine() // pair_proof
+                        writer.write((encodeLine(HandshakeMessage.Ack(sessionId))).toByteArray())
+                        writer.flush()
+                        Thread.sleep(200)
+                        writer.write("{\"type\":\"audio_start\",\"rate\":48000,\"channels\":1,\"sample_fmt\":\"s16le\"}\n".toByteArray())
+                        writer.flush()
+                        Thread.sleep(50)
+                        // 4 bytes PCM (2 samples s16le) en base64url: "AAAA" = 00 00 00 00
+                        // 4 bytes PCM a cero en base64url ("AAAAAA"): PCM s16le par.
+                        writer.write("{\"type\":\"audio_chunk\",\"seq\":1,\"ts\":0,\"data\":\"AAAAAA\"}\n".toByteArray())
+                        writer.flush()
+                        // Mantiene el socket abierto: un EOF reinicia el audio (A0).
+                        release.get(15, TimeUnit.SECONDS)
+                        done.complete(true)
+                    }
+                }.onFailure { done.completeExceptionally(it) }
+            }
+            thread.isDaemon = true
+            thread.start()
+            viewModel.onEvent(PairingEvent.ScanRequested)
+            viewModel.onCameraPermissionResult(granted = true)
+            viewModel.onEvent(PairingEvent.QrScanned(uri))
+            runBlocking {
+                withTimeout(15_000) {
+                    while (viewModel.uiState.value != PairingUiState.Linked(sessionId)) {
+                        delay(20)
+                    }
+                }
+            }
+            runBlocking { delay(300) }
+            try {
+                assertEquals(com.twinpad.android.app.audio.AudioState.PLAYING, viewModel.audioState.value)
+            } finally {
+                release.complete(true)
+                done.get(10, TimeUnit.SECONDS)
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+
+    /**
+     * TEST-0199 (resume) — CR-056 / SPEC-001 §8.2: tras un corte con la sesión
+     * retenida, `pair_resume` restablece Linked y el audio que envía el servidor
+     * después del `pair_ack` debe llegar a PLAYING. Se usa TCP loopback real.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun resumedSessionPlaysAudioAfterPairResume() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        try {
+            val links = mutableListOf<com.twinpad.android.app.ui.SavedLink>()
+            val store: (Application) -> com.twinpad.android.app.ui.PairingLinkStore = {
+                object : com.twinpad.android.app.ui.PairingLinkStore(it) {
+                    override fun loadAll() = links.toList()
+                    override fun save(link: com.twinpad.android.app.ui.SavedLink) {
+                        links.removeAll { existing -> existing.sessionId == link.sessionId }
+                        links.add(link)
+                    }
+                    override fun remove(id: String) {
+                        links.removeAll { existing -> existing.sessionId == id }
+                    }
+                }
+            }
+            val viewModel =
+                PairingViewModel(app, PairingCollaborators(machine = PairingStateMachine(), linkStore = store))
+            val server = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+            server.soTimeout = 20_000
+            val resumeLineSeen = CompletableFuture<String>()
+            val release = CompletableFuture<Boolean>()
+            val serverThread =
+                Thread {
+                    runCatching {
+                        // Conexión 1: handshake normal y corte del servidor.
+                        server.accept().use { socket ->
+                            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                            val writer = socket.getOutputStream()
+                            reader.readLine() // pair_request
+                            writer.write(encodeLine(HandshakeMessage.Challenge(nonceStr)).toByteArray())
+                            writer.flush()
+                            reader.readLine() // pair_proof
+                            writer.write(encodeLine(HandshakeMessage.Ack(sessionId)).toByteArray())
+                            writer.flush()
+                            Thread.sleep(300)
+                        }
+                        // Conexión 2: pair_resume → pair_ack → audio del juego.
+                        server.accept().use { socket ->
+                            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                            val writer = socket.getOutputStream()
+                            resumeLineSeen.complete(reader.readLine())
+                            writer.write(encodeLine(HandshakeMessage.Ack(sessionId)).toByteArray())
+                            writer.flush()
+                            writer.write("{\"type\":\"audio_start\",\"rate\":48000,\"channels\":1,\"sample_fmt\":\"s16le\"}\n".toByteArray())
+                            writer.flush()
+                            writer.write("{\"type\":\"audio_chunk\",\"seq\":1,\"ts\":0,\"data\":\"AAAAAA\"}\n".toByteArray())
+                            writer.flush()
+                            release.get(20, TimeUnit.SECONDS)
+                        }
+                    }.onFailure { resumeLineSeen.completeExceptionally(it) }
+                }
+            serverThread.isDaemon = true
+            serverThread.start()
+
+            viewModel.onEvent(PairingEvent.ScanRequested)
+            viewModel.onCameraPermissionResult(granted = true)
+            viewModel.onEvent(PairingEvent.QrScanned("twinpad://v1#s=127.0.0.1&p=${server.localPort}&t=$nonceStr"))
+            try {
+                val resumeLine = resumeLineSeen.get(30, TimeUnit.SECONDS)
+                assertTrue("la reanudación debe enviar pair_resume: $resumeLine", resumeLine.contains("pair_resume"))
+                runBlocking {
+                    withTimeout(15_000) {
+                        while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
+                            delay(20)
+                        }
+                    }
+                }
+                assertEquals(PairingUiState.Linked(sessionId), viewModel.uiState.value)
+                assertEquals(com.twinpad.android.app.audio.AudioState.PLAYING, viewModel.audioState.value)
+            } finally {
+                release.complete(true)
+                server.close()
+            }
         } finally {
             Dispatchers.resetMain()
         }
