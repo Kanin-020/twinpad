@@ -35,7 +35,7 @@ impl ksni::Tray for TwinpadTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![provisional_icon()]
+        vec![brand_icon()]
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
@@ -113,30 +113,121 @@ impl ksni::Tray for TwinpadTray {
     }
 }
 
-/// Icono provisional de la bandeja: círculo sólido generado en código hasta
-/// tener el arte definitivo. ARGB32 en orden de bytes de red (SNI).
-/// Icono de contraste dual: relleno blanco con borde oscuro grueso. Se ve
-/// tanto sobre barras oscuras (GNOME/Wayland) como claras, porque el borde
-/// contrasta con el fondo claro y el relleno con el oscuro.
-fn provisional_icon() -> ksni::Icon {
-    const SIZE: i32 = 32;
-    const FILL: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
-    const RING: [u8; 4] = [0xFF, 0x1A, 0x1A, 0x1A];
-    let center = (SIZE as f32 - 1.0) / 2.0;
-    let radius = SIZE as f32 / 2.0 - 1.0;
-    let ring_inner = radius - 4.0;
+/// Lienzo (unidades del vector) del icono de la app Android.
+const GLYPH_VIEWPORT: f32 = 1254.0;
+/// Pivote y escala del glifo en `ic_launcher_foreground.xml`.
+const GLYPH_CENTER: (f32, f32) = (627.0, 599.0);
+const GLYPH_SCALE: f32 = 0.6;
+/// Desplazamiento vertical del grupo del glifo en el vector Android.
+const GLYPH_OFFSET_Y: f32 = 28.0;
+/// Recorte al área visible del icono adaptativo (72dp de 108dp), que es la
+/// que ve el usuario una vez aplicada la máscara del launcher.
+const GLYPH_ZOOM: f32 = 1.5;
+/// Contorno aplanado del trapecio izquierdo del glifo: los ocho tramos del
+/// `pathData` de `ic_launcher_foreground.xml` (curvas Bézier cúbicas y
+/// rectas) muestreados en una polilínea; el derecho es su espejo respecto a
+/// `GLYPH_CENTER.0`.
+fn glyph_outline() -> Vec<(f32, f32)> {
+    const STEPS: u32 = 8;
+    // Cada tramo es [x0, y0, c1x, c1y, c2x, c2y, x3, y3]: inicio, controles
+    // de la curva y fin. En las rectas los controles coinciden con los
+    // extremos, así que una misma fórmula cúbica sirve para curvas y rectas.
+    const SEGMENTS: [[f32; 8]; 8] = [
+        [530.0, 340.0, 565.0, 328.0, 601.0, 352.0, 601.0, 392.0],
+        [601.0, 392.0, 601.0, 392.0, 601.0, 815.0, 601.0, 815.0],
+        [601.0, 815.0, 601.0, 850.0, 575.0, 870.0, 540.0, 864.0],
+        [540.0, 864.0, 540.0, 864.0, 312.0, 778.0, 312.0, 778.0],
+        [312.0, 778.0, 285.0, 768.0, 271.0, 745.0, 271.0, 720.0],
+        [271.0, 720.0, 271.0, 720.0, 271.0, 478.0, 271.0, 478.0],
+        [271.0, 478.0, 271.0, 450.0, 288.0, 428.0, 312.0, 420.0],
+        [312.0, 420.0, 312.0, 420.0, 530.0, 340.0, 530.0, 340.0],
+    ];
+    let mut outline = Vec::with_capacity((STEPS * SEGMENTS.len() as u32) as usize);
+    for [x0, y0, c1x, c1y, c2x, c2y, x3, y3] in SEGMENTS {
+        for step in 1..=STEPS {
+            let t = step as f32 / STEPS as f32;
+            let u = 1.0 - t;
+            let cubic = |a: f32, b: f32, c: f32, d: f32| {
+                u * u * u * a + 3.0 * u * u * t * b + 3.0 * u * t * t * c + t * t * t * d
+            };
+            outline.push((cubic(x0, c1x, c2x, x3), cubic(y0, c1y, c2y, y3)));
+        }
+    }
+    outline
+}
+
+/// ¿El punto normalizado (0..1) cae dentro del lienzo redondeado del icono?
+fn inside_icon_canvas(x: f32, y: f32) -> bool {
+    const RADIUS: f32 = 0.22;
+    let dx = x - x.clamp(RADIUS, 1.0 - RADIUS);
+    let dy = y - y.clamp(RADIUS, 1.0 - RADIUS);
+    dx * dx + dy * dy <= RADIUS * RADIUS
+}
+
+/// Prueba de interior por cruce de rayos (par-impar).
+fn point_in_polygon(points: &[(f32, f32)], x: f32, y: f32) -> bool {
+    let mut inside = false;
+    let mut j = points.len() - 1;
+    for i in 0..points.len() {
+        let (xi, yi) = points[i];
+        let (xj, yj) = points[j];
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+/// ¿El punto normalizado (0..1) cae dentro de alguno de los dos trapecios?
+fn inside_icon_glyph(outline: &[(f32, f32)], x: f32, y: f32) -> bool {
+    let vx = ((x - 0.5) / GLYPH_ZOOM + 0.5) * GLYPH_VIEWPORT;
+    let vy = ((y - 0.5) / GLYPH_ZOOM + 0.5) * GLYPH_VIEWPORT;
+    let gx = (vx - GLYPH_CENTER.0) / GLYPH_SCALE + GLYPH_CENTER.0;
+    let gy = (vy - GLYPH_OFFSET_Y - GLYPH_CENTER.1) / GLYPH_SCALE + GLYPH_CENTER.1;
+    point_in_polygon(outline, gx, gy) || point_in_polygon(outline, GLYPH_VIEWPORT - gx, gy)
+}
+
+/// Icono de la bandeja: el icono de la app Android (dos trapecios enfrentados
+/// en Signal Violet sobre el lienzo blanco redondeado del icono adaptativo),
+/// rasterizado en código con supermuestreo 4x4 para bordes suaves. ARGB32 en
+/// orden de bytes de red (SNI).
+fn brand_icon() -> ksni::Icon {
+    const SIZE: i32 = 64;
+    const SAMPLES: i32 = 4;
+    const VIOLET: (f32, f32, f32) = (0x70 as f32, 0x64 as f32, 0xF2 as f32);
+    let samples = (SAMPLES * SAMPLES) as f32;
+    let outline = glyph_outline();
     let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
         for x in 0..SIZE {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
-            let dist_sq = dx * dx + dy * dy;
-            let pixel: [u8; 4] = if dist_sq > radius * radius {
+            let (mut canvas, mut glyph) = (0.0f32, 0.0f32);
+            for sy in 0..SAMPLES {
+                for sx in 0..SAMPLES {
+                    let px = (x as f32 + (sx as f32 + 0.5) / SAMPLES as f32) / SIZE as f32;
+                    let py = (y as f32 + (sy as f32 + 0.5) / SAMPLES as f32) / SIZE as f32;
+                    if inside_icon_canvas(px, py) {
+                        canvas += 1.0;
+                    }
+                    if inside_icon_glyph(&outline, px, py) {
+                        glyph += 1.0;
+                    }
+                }
+            }
+            let pixel: [u8; 4] = if canvas == 0.0 {
                 [0, 0, 0, 0]
-            } else if dist_sq >= ring_inner * ring_inner {
-                RING
             } else {
-                FILL
+                // Glifo compuesto sobre el lienzo blanco; el alfa sale de la
+                // cobertura del lienzo redondeado.
+                let blend = |channel: f32| -> u8 {
+                    ((channel * glyph + 255.0 * (canvas - glyph)) / canvas).round() as u8
+                };
+                [
+                    (canvas / samples * 255.0).round() as u8,
+                    blend(VIOLET.0),
+                    blend(VIOLET.1),
+                    blend(VIOLET.2),
+                ]
             };
             data.extend_from_slice(&pixel);
         }
@@ -319,7 +410,11 @@ pub fn spawn_tray(actions: TrayActions) -> Result<(), String> {
     };
     use ksni::blocking::TrayMethods;
     match tray.spawn() {
-        Ok(_handle) => {
+        Ok(handle) => {
+            // El Handle se conserva vivo lo que dura el proceso: es lo que
+            // mantiene en pie el servicio de bandeja de `ksni`, y el icono
+            // debe seguir ahí mientras el servidor corre (SPEC-010 W1).
+            let _handle: &'static mut _ = Box::leak(Box::new(handle));
             println!("Twinpad: bandeja activa (CR-061, SPEC-010 W1).");
             Ok(())
         }
@@ -385,3 +480,5 @@ mod tests {
         );
     }
 }
+
+
