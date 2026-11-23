@@ -94,9 +94,12 @@ jobs:
           Categories=Utility;
           EOF
           cat > AppDir/usr/share/icons/hicolor/scalable/apps/twinpad-server.svg <<'EOF'
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-            <rect x="4" y="4" width="56" height="56" rx="12" fill="#315efb"/>
-            <path d="M20 22h24v6h-9v19h-6V28h-9z" fill="#fff"/>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254">
+            <rect width="1254" height="1254" rx="276" fill="#FFFFFF"/>
+            <g fill="#7064F2" transform="translate(0 28) translate(627 599) scale(0.6) translate(-627 -599)">
+              <path d="M530,340C565,328 601,352 601,392L601,815C601,850 575,870 540,864L312,778C285,768 271,745 271,720L271,478C271,450 288,428 312,420Z"/>
+              <path d="M724,340C689,328 653,352 653,392L653,815C653,850 679,870 714,864L942,778C969,768 983,745 983,720L983,478C983,450 966,428 942,420Z"/>
+            </g>
           </svg>
           EOF
           chmod +x AppDir/twinpad-server.desktop
