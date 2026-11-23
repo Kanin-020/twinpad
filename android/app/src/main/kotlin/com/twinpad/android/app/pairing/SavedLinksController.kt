@@ -49,7 +49,9 @@ internal class SavedLinksController(
      * La clave sale de la máquina (`sessionKeyOrNull`, vigente tras pair_ack). */
     fun remember(linked: PairingUiState.Linked) {
         val key = machine.sessionKeyOrNull() ?: return
-        val host = network.remoteHost() ?: return
+        // SPEC-009 §6: se guarda el host del QR (p. ej. `twinpad.local.`), no la
+        // IP ya resuelta, para que cada reanudación lo re-resuelva (DHCP).
+        val host = machine.lastConnectHost() ?: network.remoteHost() ?: return
         linkStore.save(
             SavedLink(
                 sessionId = linked.sessionId,

@@ -117,6 +117,11 @@ class PairingStateMachine {
     /** CR-094: puerto del último servidor conectado (para guardar la vinculación). */
     fun lastConnectPort(): Int = lastConnect?.second ?: 0
 
+    /** Host del último intento tal como vino en el QR (puede ser `twinpad.local.`):
+     * guardarlo así permite re-resolver por mDNS en cada reanudación (SPEC-009 §6)
+     * en vez de fijar la IP ya resuelta. */
+    fun lastConnectHost(): String? = lastConnect?.first
+
     /** CR-094: al abrir la app, reanuda la vinculación guardada sin QR. Entra en
      * U6 (Reconectando) con el mismo session_id y clave; el temporizador de la VM
      * envía `pair_resume`. Solo desde Idle. */

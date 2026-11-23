@@ -429,6 +429,17 @@ class PairingStateMachineTest {
 
     // —— TEST-0122 — verifies SPEC-001 §4.3 HB2/HB5 (heartbeat, CR-055) ——
 
+    /** TEST-0197 — verifies CR-094 + SPEC-009 §6: la vinculación guardada
+     * conserva el host del QR (`twinpad.local.`), no la IP ya resuelta, para
+     * que cada reanudación lo re-resuelva tras un cambio de IP por DHCP. */
+    @Test
+    fun `last connect host keeps the qr host for mdns re resolution`() {
+        val m = scanningMachine()
+        m.onEvent(PairingEvent.QrScanned("twinpad://v1#s=twinpad.local.&p=8420&t=$tokenStr"))
+        assertEquals("twinpad.local.", m.lastConnectHost())
+        assertEquals(8420, m.lastConnectPort())
+    }
+
     /** HB2: el `ping` del Servidor se responde con `pong` que ecúa el `t`. */
     @Test
     fun `linked machine answers ping with pong echoing t`() {
