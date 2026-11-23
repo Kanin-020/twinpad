@@ -51,6 +51,10 @@ class TcpPairingClient(
     private var writerJob: Job? = null
     private var socket: Socket? = null
 
+    /** Línea tomada de la cola que el escritor no pudo escribir todavía; se
+     * reanuda antes que el resto de [pendingWrites]. */
+    @Volatile private var heldWrite: String? = null
+
     @Volatile private var connectedHost: String? = null
 
     fun remoteHost(): String? = connectedHost
@@ -130,6 +134,8 @@ class TcpPairingClient(
             runCatching { s.soTimeout = sessionSilenceTimeoutMs }
             sessionMode.set(true)
             handshakeSocket = s
+            // Retoma el escritor: el tráfico de sesión encolado antes del pair_ack.
+            startWriter(s)
         }
         lineChannel.trySend(line)
     }
@@ -150,31 +156,44 @@ class TcpPairingClient(
             scope.launch {
                 try {
                     val writer = BufferedWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8))
-                    for (line in pendingWrites) {
-                        // Escritor de un intento ya reemplazado: no consume la línea
-                        // (sería escrita en un socket muerto). La devuelve a la cola
-                        // para el escritor del intento vigente.
-                        if (socket !== s) {
-                            pendingWrites.trySend(line)
-                            break
-                        }
-                        // Tráfico de sesión viejo (gamepad, video_config) nunca se escribe
-                        // antes de pair_ack: el servidor exige pair_resume como primera
-                        // línea y responde E4 a cualquier otra.
-                        val isHandshake = HANDSHAKE_TYPES.any { line.contains("\"type\":\"$it\"") }
-                        if (handshakeSocket !== s && !isHandshake) {
-                            continue
-                        }
-                        writer.write(line)
-                        writer.write("\n")
-                        writer.flush()
-                    }
+                    // Drena mientras el escritor sea el vigente y la línea pueda
+                    // escribirse; si no, `drainNext` retiene la línea y para.
+                    while (drainNext(s, writer)) continue
                 } catch (e: java.io.IOException) {
                     // El socket cerró con escrituras en vuelo: señal de fin.
                     closeAttempt(s)
                     if (socket == null) lineChannel.trySend(null)
                 }
             }
+    }
+
+    /** Escribe la siguiente línea de la cola en [s]. Devuelve `false` si el
+     * escritor debe detenerse: el intento fue reemplazado (la línea queda en
+     * [heldWrite], FIFO intacto). El tráfico de sesión previo a `pair_ack` se
+     * descarta, como exige el servidor (E4), sin bloquear los handshakes que
+     * vienen detrás. */
+    private suspend fun drainNext(
+        s: Socket,
+        writer: BufferedWriter,
+    ): Boolean {
+        // La línea retenida por un escritor anterior va primero; si no, espera la
+        // siguiente (suspende hasta que `send` encole algo).
+        val line = heldWrite ?: pendingWrites.receiveCatching().getOrNull() ?: return false
+        heldWrite = null
+        // Tráfico de sesión viejo (gamepad, video_config) nunca se escribe antes de
+        // pair_ack: el servidor exige pair_resume como primera línea y responde E4.
+        val isHandshake = HANDSHAKE_TYPES.any { line.contains("\"type\":\"$it\"") }
+        val escribible = handshakeSocket === s || isHandshake
+        if (socket !== s) {
+            heldWrite = line
+            return false
+        }
+        if (escribible) {
+            writer.write(line)
+            writer.write("\n")
+            writer.flush()
+        }
+        return true
     }
 
     /** Encola una línea NDJSON con `\n` final (SPEC-001 §4.2); el escritor
@@ -212,6 +231,7 @@ class TcpPairingClient(
         connectedHost = null
         sessionMode.set(false)
         handshakeSocket = null
+        heldWrite = null
         while (true) {
             if (pendingWrites.tryReceive().getOrNull() == null) break
         }
@@ -228,6 +248,7 @@ class TcpPairingClient(
             connectedHost = null
             sessionMode.set(false)
             handshakeSocket = null
+            heldWrite = null
             while (true) {
                 if (pendingWrites.tryReceive().getOrNull() == null) break
             }

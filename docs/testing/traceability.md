@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0194 |
+| TEST | TEST-0201 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -72,6 +72,7 @@
 | REQ-002 | SPEC-002 | DES-002 | TEST-0196 | Implemented | CR-097: `PairingActivity` se recrea tras la muerte del proceso en segundo plano — `PairingFragment`/`SessionFragment` tienen constructor sin argumentos y el callback se re-cablea (`Fragment.instantiate` por reflexión ya no lanza `InstantiationException`), y la Activity reutiliza los fragmentos restaurados invocando `onPanelReady`/`onSessionReady` después de crear el ViewModel. Test `pairing and session fragments can be restored by reflection` (`PairingFragmentRestoreTest`) |
 | REQ-002 | SPEC-009 | DES-001 | TEST-0197 | Implemented | CR-094 + SPEC-009 §6: la vinculación guardada conserva el host del QR (`twinpad.local.`), no la IP ya resuelta, para que cada reanudación lo re-resuelva por mDNS tras un cambio de IP por DHCP (`PairingStateMachine.lastConnectHost`, usado por `SavedLinksController.remember`). Test `last connect host keeps the qr host for mdns re resolution` (`PairingStateMachineTest`) |
 | REQ-005 | SPEC-005 | `-` | TEST-0199 | Implemented | Verificación de la puerta de audio en sesión Linked: tras `pair_ack`, `audio_start` + `audio_chunk` válido dejan `AudioState` en PLAYING (`AudioStateMachine` acepta chunks solo fuera de INACTIVE). Test `linkedVmMovesToAudioPlayingOnAudioStartAndChunk` (`PairingViewModelTest`, TCP loopback real). No cubre todavía el resume (`pair_resume`) |
+| REQ-005 | SPEC-001 | DES-001 | TEST-0200 | Implemented | Tráfico de sesión encolado antes de `pair_ack` (p. ej. `input_report`) se descarta sin bloquear el `pair_request` posterior: el escritor de `TcpPairingClient` no retiene línea alguna por tráfico previo al handshake, y el orden FIFO se mantiene al reemplazar un intento (`heldWrite`). Test de loopback real `preHandshakeSessionTrafficDoesNotBlockPairRequest` (`TcpPairingClientTest`) |
 | REQ-002 | SPEC-002 | DES-002 | TEST-0198 | Implemented | Regresión «la app se cierra al abrirla»: `PairingLinkStore` se lee en el `init` del ViewModel (CR-094) y `EncryptedSharedPreferences` lanzaba `AEADBadTagException`/`KeyStoreException` (clave maestra del Keystore invalidada o `shared_prefs` restaurado por copia de seguridad sin su clave) → la actividad no arrancaba. Ahora el almacén se descarta (`deleteSharedPreferences` + recreación) y, si sigue ilegible, `loadAll` devuelve vacío; las vinculaciones se recuperan con un QR nuevo. Test `unreadable encrypted store degrades to empty instead of crashing` (`PairingLinkStoreTest`) y verificación en dispositivo real (Android 16) con `shared_prefs` corrupto: la app abre |
 | REQ-005 | SPEC-001 | DES-001 | TEST-0190 | Draft | CR-099: primera línea de socket nuevo limitada a `pair_request`/`pair_proof`/`pair_resume`; cualquier otro `type` → `pair_error` E4 y cierre (SPEC-001 §8.2). Pendiente de implementación |
 | REQ-005 | SPEC-003 | DES-004 | TEST-0191 | Draft | CR-099: tras `pair_resume` el JOIN UDP nuevo (nonce nuevo) toma el dueño del relay con IDR; el silencio UDP previo no cuenta ni dispara el fallback de §8.5; un JOIN con el nonce anterior se descarta (SPEC-003 §4.4). Pendiente de implementación |
