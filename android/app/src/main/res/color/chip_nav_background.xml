@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo de los chips del drawer: violeta de marca cuando está seleccionado,
+     Steel Panel elevado en reposo (sobre el fondo design_steel_panel). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/design_signal_violet" android:state_checked="true" />
+    <item android:color="@color/design_slate_edge" />
+</selector>

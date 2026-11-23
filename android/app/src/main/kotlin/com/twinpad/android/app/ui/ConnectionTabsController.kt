@@ -2,16 +2,15 @@ package com.twinpad.android.app.ui
 
 import android.app.Activity
 import android.view.View
-import android.widget.Button
 import androidx.core.view.isVisible
+import com.google.android.material.chip.ChipGroup
 import com.twinpad.android.app.R
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.PairingViewModel
 
 /**
- * CR-097: alterna entre la vista de conexión nueva y la lista de conexiones
- * guardadas, desde las pestañas y desde el drawer. Mantiene el estado de la
- * vista activa para que [PairingActivity] no lo tenga que cargar.
+ * CR-097: alterna entre la sesión actual, la nueva conexión (QR) y la lista
+ * de conexiones guardadas, desde las pestañas y desde el drawer.
  */
 internal class ConnectionTabsController(
     private val activity: Activity,
@@ -19,22 +18,29 @@ internal class ConnectionTabsController(
     private val panelView: () -> View,
     private val renderState: (PairingUiState) -> Unit,
 ) {
-    /** CR-097: el usuario pidió la vista de conexión con una sesión viva. */
+    /** `true` cuando se muestra la lista de conexiones guardadas. */
     var showingConnectionView = false
         private set
 
-    /** CR-097 v2: cambia entre nueva conexión y lista desde las pestañas. */
+    /** `true` cuando se muestra la sesión viva (por defecto al vincular). */
+    var showingSession = true
+        private set
+
+    /** Última vez que había sesión: al vincular de nuevo vuelve a la sesión. */
+    private var wasLinked = false
+
+    /** Cambia entre nueva conexión y lista desde los segmented buttons y el drawer. */
     fun show(connectionView: Boolean) {
         showingConnectionView = connectionView
+        showingSession = false
         renderState(viewModel.uiState.value)
-        updateDrawerButton()
     }
 
-    /** CR-097: el botón del drawer alterna entre ambas vistas. */
-    fun toggleFromDrawer() {
-        showingConnectionView = !showingConnectionView
+    /** Vuelve a la sesión viva desde el drawer (ítem "Sesión actual"). */
+    fun showSession() {
+        showingConnectionView = false
+        showingSession = true
         renderState(viewModel.uiState.value)
-        updateDrawerButton()
     }
 
     /** Muestra una sola vista de conexión: sesión, panel o lista guardada. */
@@ -42,24 +48,28 @@ internal class ConnectionTabsController(
         state: PairingUiState,
         sessionLinked: Boolean,
     ) {
-        // Las pestañas solo aparecen fuera de la sesión (con sesión viva usa el drawer).
-        activity.findViewById<View>(R.id.view_tabs).isVisible = state !is PairingUiState.Linked
-        activity.findViewById<Button>(R.id.btn_tab_new).isEnabled = showingConnectionView
-        activity.findViewById<Button>(R.id.btn_tab_list).isEnabled = !showingConnectionView
-        // CR-097: el drawer alterna entre el panel de conexión y la lista de
-        // conexiones en cualquier estado; cada una ocupa su propia vista.
-        activity.findViewById<View>(R.id.btn_drawer_connection).isVisible = true
-        val showSession = sessionLinked && !showingConnectionView
+        if (sessionLinked && !wasLinked) {
+            showingSession = true
+        }
+        wasLinked = sessionLinked
+        val showSession = sessionLinked && showingSession
         val showList = !showSession && showingConnectionView
         val showPanel = !showSession && !showingConnectionView
         activity.findViewById<View>(R.id.session_container).isVisible = showSession
         activity.findViewById<View>(R.id.saved_devices_container).isVisible = showList
+        activity.findViewById<View>(R.id.pairing_fragment_container).isVisible = showPanel
         panelView().isVisible = showPanel
+        updateNavigationItem(showSession)
     }
 
-    private fun updateDrawerButton() {
-        activity.findViewById<Button>(R.id.btn_drawer_connection).setText(
-            if (showingConnectionView) R.string.settings_session_view else R.string.settings_connection_view,
+    /** Marca en el navigation drawer la vista activa. */
+    private fun updateNavigationItem(showSession: Boolean) {
+        activity.findViewById<ChipGroup>(R.id.navigation_view).check(
+            when {
+                showSession -> R.id.nav_session
+                showingConnectionView -> R.id.nav_connection_list
+                else -> R.id.nav_new_connection
+            },
         )
     }
 }

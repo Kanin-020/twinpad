@@ -52,14 +52,27 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Material: indicador de carga durante el handshake y la reconexión. -->
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/progress_pairing"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:indicatorColor="@color/design_signal_violet"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/camera_preview" />
+
     <TextView
         android:id="@+id/txt_status"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
+        android:layout_marginTop="16dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/camera_preview" />
+        app:layout_constraintTop_toBottomOf="@id/progress_pairing" />
 
     <Button
         android:id="@+id/btn_cancel"

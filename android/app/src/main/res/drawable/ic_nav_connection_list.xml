@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "list" (Apache 2.0). Chip "Conexiones". -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M7,9V7H21V9ZM7,13V11H21V13ZM7,17V15H21V17ZM4,9Q3.575,9 3.288,8.712T3,8T3.288,7.288T4,7T4.713,7.288T5,8T4.712,8.713T4,9ZM4,13Q3.575,13 3.288,12.712T3,12T3.288,11.288T4,11T4.713,11.288T5,12T4.712,12.713T4,13ZM4,17Q3.575,17 3.288,16.712T3,16T3.288,15.288T4,15T4.713,15.288T5,16T4.712,16.713T4,17Z" />
+</vector>

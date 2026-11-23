@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "devices" (Apache 2.0). Chip "Sesión actual". -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M5,17Q4.175,17 3.588,16.413T3,15V6Q3,5.175 3.588,4.588T5,4H19Q19.825,4 20.413,4.588T21,6H15.5Q14.05,6 13.025,7.025T12,9.5V17ZM15.5,20Q14.875,20 14.438,19.563T14,18.5V9.5Q14,8.875 14.438,8.438T15.5,8H20.5Q21.125,8 21.563,8.438T22,9.5V18.5Q22,19.125 21.563,19.563T20.5,20ZM2,20V18H12V20ZM18,12.5Q18.325,12.5 18.538,12.275T18.75,11.75Q18.75,11.425 18.537,11.213T18,11Q17.7,11 17.475,11.213T17.25,11.75Q17.25,12.05 17.475,12.275T18,12.5Z" />
+</vector>

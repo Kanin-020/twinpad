@@ -11,37 +11,6 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <!-- CR-097 v2: pestañas para cambiar entre nueva conexión y lista. -->
-        <LinearLayout
-            android:id="@+id/view_tabs"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:layout_marginHorizontal="12dp"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent">
-
-            <Button
-                android:id="@+id/btn_tab_new"
-                style="@style/Widget.Twinpad.Button.Filled"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/tab_new_connection" />
-
-            <Button
-                android:id="@+id/btn_tab_list"
-                style="@style/Widget.Twinpad.Button.Filled"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:text="@string/tab_connection_list" />
-        </LinearLayout>
-
         <!-- CR-097: lista de conexiones guardadas en SavedDevicesFragment. -->
         <FrameLayout
             android:id="@+id/saved_devices_container"
@@ -50,7 +19,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/view_tabs" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <!-- CR-097 paso 1: panel de conexión en PairingFragment (fragment_pairing.xml). -->
         <FrameLayout
@@ -60,7 +29,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/view_tabs" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <!-- CR-097 paso 3: vista de sesión en SessionFragment (fragment_session.xml). -->
         <FrameLayout
@@ -85,10 +54,99 @@
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <include
+    <!-- Navigation drawer (Material): ítems de navegación arriba y el
+         formulario de ajustes debajo (drawer_settings). -->
+    <LinearLayout
         android:id="@+id/settings_drawer_content"
-        layout="@layout/drawer_settings"
         android:layout_width="280dp"
         android:layout_height="match_parent"
-        android:layout_gravity="start" />
+        android:layout_gravity="start"
+        android:background="@color/design_steel_panel"
+        android:orientation="vertical">
+
+        <include
+            layout="@layout/drawer_settings"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginVertical="8dp"
+            android:background="@color/design_slate_edge" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/navigation_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:paddingVertical="8dp"
+            app:chipSpacingHorizontal="8dp"
+            app:selectionRequired="true"
+            app:singleLine="true"
+            app:singleSelection="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/nav_new_connection"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipIcon="@drawable/ic_nav_new_connection"
+                app:checkedIconVisible="false"
+                app:chipIconVisible="true"
+                app:chipIconSize="24dp"
+                app:chipBackgroundColor="@color/chip_nav_background"
+                app:chipStrokeColor="@color/design_slate_edge"
+                app:chipStrokeWidth="1dp"
+                app:chipIconTint="@color/design_cloud_white"
+                app:chipMinHeight="48dp"
+                app:chipMinTouchTargetSize="48dp"
+                app:chipStartPadding="12dp"
+                app:chipEndPadding="12dp"
+                app:textStartPadding="0dp"
+                app:textEndPadding="0dp" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/nav_session"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipIcon="@drawable/ic_nav_session"
+                app:checkedIconVisible="false"
+                app:chipIconVisible="true"
+                app:chipIconSize="24dp"
+                app:chipBackgroundColor="@color/chip_nav_background"
+                app:chipStrokeColor="@color/design_slate_edge"
+                app:chipStrokeWidth="1dp"
+                app:chipIconTint="@color/design_cloud_white"
+                app:chipMinHeight="48dp"
+                app:chipMinTouchTargetSize="48dp"
+                app:chipStartPadding="12dp"
+                app:chipEndPadding="12dp"
+                app:textStartPadding="0dp"
+                app:textEndPadding="0dp" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/nav_connection_list"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipIcon="@drawable/ic_nav_connection_list"
+                app:checkedIconVisible="false"
+                app:chipIconVisible="true"
+                app:chipIconSize="24dp"
+                app:chipBackgroundColor="@color/chip_nav_background"
+                app:chipStrokeColor="@color/design_slate_edge"
+                app:chipStrokeWidth="1dp"
+                app:chipIconTint="@color/design_cloud_white"
+                app:chipMinHeight="48dp"
+                app:chipMinTouchTargetSize="48dp"
+                app:chipStartPadding="12dp"
+                app:chipEndPadding="12dp"
+                app:textStartPadding="0dp"
+                app:textEndPadding="0dp" />
+        </com.google.android.material.chip.ChipGroup>
+    </LinearLayout>
 </androidx.drawerlayout.widget.DrawerLayout>

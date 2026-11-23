@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import com.google.android.material.chip.ChipGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
@@ -411,16 +412,20 @@ class PairingActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_close_drawer).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
         }
-        findViewById<Button>(R.id.btn_drawer_connection).setOnClickListener {
-            findViewById<DrawerLayout>(R.id.settings_drawer).closeDrawer(GravityCompat.START)
-            // CR-097: sólo cambia de vista; la sesión sigue viva en segundo plano.
-            connectionTabs.toggleFromDrawer()
+        // CR-097: el drawer sólo cambia de vista; la sesión sigue viva en segundo plano.
+        val drawer = findViewById<DrawerLayout>(R.id.settings_drawer)
+        findViewById<ChipGroup>(R.id.navigation_view).setOnCheckedStateChangeListener { _, checkedIds ->
+            val id = checkedIds.firstOrNull() ?: return@setOnCheckedStateChangeListener
+            drawer.closeDrawer(GravityCompat.START)
+            when (id) {
+                R.id.nav_session -> connectionTabs.showSession()
+                R.id.nav_connection_list -> connectionTabs.show(connectionView = true)
+                R.id.nav_new_connection -> connectionTabs.show(connectionView = false)
+            }
         }
-        findViewById<Button>(R.id.btn_tab_new).setOnClickListener {
-            connectionTabs.show(connectionView = false)
-        }
-        findViewById<Button>(R.id.btn_tab_list).setOnClickListener {
-            connectionTabs.show(connectionView = true)
+        // El chip ya activo no cambia de estado: cerrar el drawer al tocarlo.
+        listOf(R.id.nav_new_connection, R.id.nav_session, R.id.nav_connection_list).forEach { chipId ->
+            findViewById<View>(chipId).setOnClickListener { drawer.closeDrawer(GravityCompat.START) }
         }
     }
 
@@ -779,6 +784,7 @@ class PairingActivity : AppCompatActivity() {
         val btnScan = panelView<View>(R.id.btn_scan)
         val preview = panelView<PreviewView>(R.id.camera_preview)
         val txtStatus = panelView<TextView>(R.id.txt_status)
+        val progress = panelView<View>(R.id.progress_pairing)
         val btnCancel = panelView<View>(R.id.btn_cancel)
         applyFailureAndTypedCodeVisibility(state)
         when (state) {
@@ -788,6 +794,7 @@ class PairingActivity : AppCompatActivity() {
                 preview.isVisible = false
                 txtStatus.text = ""
                 btnCancel.isVisible = false
+                progress.isVisible = false
                 SessionForegroundService.stop(this@PairingActivity)
             }
             PairingUiState.Scanning -> {
@@ -795,12 +802,14 @@ class PairingActivity : AppCompatActivity() {
                 btnScan.isVisible = false
                 preview.isVisible = true
                 txtStatus.text = getString(R.string.pairing_scanning)
+                progress.isVisible = false
                 btnCancel.isVisible = true
                 cameraController.bind(preview, this as LifecycleOwner)
             }
             PairingUiState.Handshaking -> {
                 preview.isVisible = false
                 txtStatus.text = getString(R.string.pairing_handshaking)
+                progress.isVisible = true
                 btnCancel.isVisible = true
             }
             is PairingUiState.Reconnecting -> {
@@ -813,6 +822,7 @@ class PairingActivity : AppCompatActivity() {
                 btnScan.isVisible = false
                 preview.isVisible = false
                 txtStatus.text = getString(R.string.pairing_reconnecting)
+                progress.isVisible = true
                 btnCancel.isVisible = true
                 SessionForegroundService.start(this@PairingActivity)
             }
@@ -821,11 +831,14 @@ class PairingActivity : AppCompatActivity() {
                 // inicial mientras la sesión sigue viva en segundo plano.
                 // CR-097: con conexión activa no se ofrece Escanear; Desconectar
                 // está en la fila de la columna de guardados.
+                // "Nueva conexión" con sesión viva: la máquina de estados no acepta
+                // escanear desde U4 (SPEC-002 §14), así que el botón QR no se ofrece.
                 title.isVisible = connectionTabs.showingConnectionView
                 btnScan.isVisible = false
                 txtStatus.text = if (connectionTabs.showingConnectionView) getString(R.string.pairing_linked) else ""
                 preview.isVisible = false
                 btnCancel.isVisible = false
+                progress.isVisible = false
                 // El servicio en primer plano impide que el sistema mate
                 // el proceso al cambiar de app (el video sigue vivo).
                 SessionForegroundService.start(this@PairingActivity)

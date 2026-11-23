@@ -8,6 +8,7 @@
     <string name="pairing_disconnect_button">Desconectar</string>
     <string name="pairing_saved_title">Dispositivos guardados</string>
     <string name="pairing_saved_empty">Aún no hay dispositivos guardados.</string>
+    <string name="nav_current_session">Sesión actual</string>
     <string name="tab_new_connection">Nueva conexión</string>
     <string name="tab_connection_list">Conexiones</string>
     <string name="pairing_saved_forget">Olvidar</string>
