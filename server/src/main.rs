@@ -97,7 +97,18 @@ fn main() {
         Err(error) => eprintln!("Twinpad: interfaz local del QR no disponible: {error}"),
     }
     // CR-094: dispositivos emparejados persistidos en la carpeta de datos (CR-093).
-    let registry = Arc::new(match twinpad_server::data_dir::current_dir() {
+    let data_dir = twinpad_server::data_dir::current_dir();
+    if let Ok(dir) = &data_dir {
+        // La ruta del binario se publica para que el plugin de Decky pueda
+        // arrancarlo aunque no lo encuentre en `PATH` (en Game Mode no hereda
+        // `$APPIMAGE`). Falla en silencio: sin fichero, el plugin busca igual.
+        if let Some(exe) = twinpad_server::data_dir::running_executable() {
+            if let Err(error) = twinpad_server::data_dir::publish_server_path(dir, &exe) {
+                eprintln!("Twinpad: no se pudo publicar la ruta del binario: {error}");
+            }
+        }
+    }
+    let registry = Arc::new(match data_dir {
         Ok(dir) => twinpad_server::registry::SessionRegistry::with_device_store(&dir),
         Err(error) => {
             eprintln!("Twinpad: sin carpeta de datos; los dispositivos no se recordarán: {error}");
