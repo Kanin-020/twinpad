@@ -177,6 +177,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: "*"
@@ -200,12 +201,23 @@ jobs:
             release_tag="v${release_tag}"
           fi
 
+          notes_file="$RUNNER_TEMP/twinpad-release-notes.md"
+          cp .github/release-notes.md "$notes_file"
+          if changelog=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$release_tag" \
+              -f target_commitish="$GITHUB_SHA" \
+              --jq .body 2>/dev/null); then
+            {
+              printf '\n---\n\n## Cambios de esta versión\n\n'
+              printf '%s\n' "$changelog"
+            } >> "$notes_file"
+          fi
+
           gh_args=(release create "$release_tag" release-assets/*
             --repo "$GITHUB_REPOSITORY"
             --target "$GITHUB_SHA"
             --title "Twinpad ${release_tag}"
-            --generate-notes
-            --notes "Linux builds: Android APK (signed with the debug key; for testing only), Twinpad server AppImage, and Cemu fork x86_64 build.")
+            --notes-file "$notes_file")
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$RELEASE_PRERELEASE" == "true" ]]; then
             gh_args+=(--prerelease)
           fi
