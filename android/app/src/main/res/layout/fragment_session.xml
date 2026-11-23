@@ -32,17 +32,27 @@
         </FrameLayout>
     </FrameLayout>
 
-    <!-- CR-079: slider de gauges — la MISMA retícula 2×2 de la ventana
-         de espera (CR-076 v3, única instancia en la jerarquía). Sin
-         stream es la vista frontal fullscreen opaca (cubre el
-         Framebuffer residual); en STREAMING se ancla abajo como hoja
-         arrastrable SOBRE el video (nace abierta, CR-079). Declarado
-         tras surface_container para ganar el toque en el drag. -->
-    <com.twinpad.android.app.ui.MetricsSliderContainer
-        android:id="@+id/metrics_slider"
-        android:visibility="gone"
+    <!-- Superficie táctil: va ANTES del slider de métricas para que la hoja
+         reciba los toques de arrastre (CR-107). -->
+    <FrameLayout
+        android:id="@+id/surface_container"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- CR-107: barra de rendimiento como bottom sheet de Material
+         (BottomSheetBehavior). Misma retícula 2×2 de gauges (CR-076 v3,
+         única instancia). Sin stream es la vista frontal fullscreen;
+         en STREAMING se ancla abajo sobre el video. Vive en un
+         CoordinatorLayout propio: BottomSheetBehavior exige ese padre. -->
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:id="@+id/metrics_slider"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -53,7 +63,10 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@color/design_void_canvas"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
+            app:behavior_peekHeight="0dp"
+            app:behavior_hideable="true">
 
             <!-- CR-079 v4: el asa vive ARRIBA de la hoja (decisión del
                  owner). Así el plegado real es posible: la hoja baja y
@@ -218,16 +231,7 @@
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
-    </com.twinpad.android.app.ui.MetricsSliderContainer>
-
-    <FrameLayout
-        android:id="@+id/surface_container"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
     <TextView
         android:id="@+id/hud_chip"
