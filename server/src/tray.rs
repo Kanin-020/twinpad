@@ -22,7 +22,6 @@ pub struct TrayActions {
 
 struct TwinpadTray {
     actions: TrayActions,
-    autostart_on: bool,
 }
 
 impl ksni::Tray for TwinpadTray {
@@ -74,8 +73,11 @@ impl ksni::Tray for TwinpadTray {
             // W5: toggle del autoarranque.
             CheckmarkItem {
                 label: "Iniciar al arrancar el equipo".into(),
-                checked: self.autostart_on,
-                activate: Box::new(|tray: &mut Self| {
+                // `menu()` se reconstruye en cada GetLayout: el estado se lee
+                // del desktop entry real, no de una copia que pueda quedar
+                // obsoleta si se conmuta desde la página o el QAM.
+                checked: crate::autostart::is_installed(),
+                activate: Box::new(|_tray: &mut Self| {
                     let result = if crate::autostart::is_installed() {
                         crate::autostart::remove().map(|_| false)
                     } else {
@@ -83,7 +85,6 @@ impl ksni::Tray for TwinpadTray {
                     };
                     match result {
                         Ok(estado) => {
-                            tray.autostart_on = estado;
                             println!(
                                 "Twinpad: autoarranque {} (CR-061, SPEC-010 W5).",
                                 if estado { "activado" } else { "desactivado" }
@@ -403,11 +404,7 @@ fn try_fallback(status: Result<std::process::ExitStatus, std::io::Error>) -> boo
 /// Spawn fail-soft del tray (W7). En entornos sin bandeja devuelve el error
 /// para que quien llama loguee y siga vivo; flag y HTTP quedan intactos.
 pub fn spawn_tray(actions: TrayActions) -> Result<(), String> {
-    let autostart_on = crate::autostart::is_installed();
-    let tray = TwinpadTray {
-        actions,
-        autostart_on,
-    };
+    let tray = TwinpadTray { actions };
     use ksni::blocking::TrayMethods;
     match tray.spawn() {
         Ok(handle) => {

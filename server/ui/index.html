@@ -135,6 +135,12 @@
             }
             qrBody.innerHTML = data.svg;
             uriField.value = data.uri;
+            if (typeof data.autostart === "boolean") {
+              // Estado real del desktop entry: refleja cambios hechos desde el
+              // tray o el QAM sin recargar (mismo sondeo que el QR).
+              autostartOn = data.autostart;
+              paintAutostart();
+            }
             deadline = Date.now() + data.ttl_ms;
             paintTtl(data.ttl_ms);
           } catch (error) {

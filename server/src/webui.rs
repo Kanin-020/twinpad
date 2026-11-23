@@ -212,7 +212,7 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
             // la regeneración sin recargar; misma frescura por consulta
             // que la página (W8). Sin SVG renderizable → 503 fail-soft.
             let (uri, ttl_ms) = (deps.current_uri)();
-            match qr_payload(&uri, ttl_ms) {
+            match qr_payload(&uri, ttl_ms, (deps.autostart_on)()) {
                 Some(body) => {
                     respond(stream, "200 OK", "application/json; charset=utf-8", &body);
                 }
@@ -232,7 +232,7 @@ pub(crate) fn handle_connection(stream: &mut TcpStream, deps: &UiDeps) -> Reques
             // invalida el vigente no consumido y emite uno nuevo de
             // inmediato (tokens::rotate_qr); el UI lo muestra SIN recargar.
             let (uri, ttl_ms) = (deps.rotate_uri)();
-            match qr_payload(&uri, ttl_ms) {
+            match qr_payload(&uri, ttl_ms, (deps.autostart_on)()) {
                 Some(body) => {
                     respond(stream, "200 OK", "application/json; charset=utf-8", &body);
                 }
@@ -405,10 +405,10 @@ pub fn render_page(deps: &UiDeps) -> String {
 /// restantes y el SVG del MISMO token (W8); el cliente sustituye QR y
 /// casilla juntos, nunca desincronizados. `None` si el SVG no es
 /// renderizable (→ 503 en la ruta).
-fn qr_payload(uri: &str, ttl_ms: u64) -> Option<String> {
+fn qr_payload(uri: &str, ttl_ms: u64, autostart: bool) -> Option<String> {
     let svg = qr_svg(uri)?;
     Some(format!(
-        "{{\"uri\":{uri_json},\"ttl_ms\":{ttl_ms},\"svg\":{svg_json}}}",
+        "{{\"uri\":{uri_json},\"ttl_ms\":{ttl_ms},\"svg\":{svg_json},\"autostart\":{autostart}}}",
         uri_json = json_string(uri),
         svg_json = json_string(&svg),
     ))
