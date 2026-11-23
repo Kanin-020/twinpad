@@ -298,9 +298,18 @@ class PairingActivity : AppCompatActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         setContentView(R.layout.activity_pairing)
-        // CR-097 paso 1: el panel de conexión vive en PairingFragment.
-        panelFragment = PairingFragment(onPanelReady = ::onPanelReady)
-        sessionFragment = SessionFragment(onSessionReady = ::onSessionReady)
+        // CR-097 paso 1: el panel de conexión vive en PairingFragment. Tras la
+        // muerte del proceso Android restaura los fragmentos por reflexión
+        // (constructor sin argumentos): se reutilizan los restaurados y se
+        // re-cablean los callbacks, que no viajan en el estado guardado.
+        panelFragment =
+            supportFragmentManager.findFragmentById(R.id.pairing_fragment_container) as? PairingFragment
+                ?: PairingFragment()
+        sessionFragment =
+            supportFragmentManager.findFragmentById(R.id.session_container) as? SessionFragment
+                ?: SessionFragment()
+        panelFragment.onPanelReady = ::onPanelReady
+        sessionFragment.onSessionReady = ::onSessionReady
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.pairing_fragment_container, panelFragment)
@@ -309,6 +318,12 @@ class PairingActivity : AppCompatActivity() {
                 .commitNow()
         }
         viewModel = ViewModelProvider(this, PairingViewModel.factory(application))[PairingViewModel::class.java]
+        if (savedInstanceState != null) {
+            // Los fragmentos restaurados ya inflaron su vista (antes de existir
+            // viewModel y de asignarles el callback): se cablean ahora.
+            onPanelReady()
+            onSessionReady()
+        }
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         cameraController =

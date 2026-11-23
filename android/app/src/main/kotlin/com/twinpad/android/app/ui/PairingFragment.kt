@@ -12,10 +12,14 @@ import com.twinpad.android.app.R
  * PairingActivity sigue siendo dueña de la lógica y de las vistas; este
  * fragmento sólo infla fragment_pairing.xml dentro de su contenedor y avisa
  * a la Activity cuando la vista ya existe.
+ *
+ * Sin parámetros en el constructor: Android restaura el fragmento por
+ * reflexión cuando el proceso murió en segundo plano. [onPanelReady] lo
+ * vuelve a cablear la Activity en `onCreate`.
  */
-class PairingFragment(
-    private val onPanelReady: () -> Unit,
-) : Fragment() {
+class PairingFragment : Fragment() {
+    internal var onPanelReady: (() -> Unit)? = null
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -27,6 +31,6 @@ class PairingFragment(
         savedInstanceState: Bundle?,
     ) {
         super.onViewCreated(view, savedInstanceState)
-        onPanelReady()
+        onPanelReady?.invoke()
     }
 }

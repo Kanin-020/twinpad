@@ -11,10 +11,14 @@ import com.twinpad.android.app.R
  * CR-097 paso 3: vista de sesión (vídeo, métricas, HUD, teclado, ajustes).
  * PairingActivity sigue siendo dueña de la lógica; este fragmento sólo infla
  * fragment_session.xml dentro de su contenedor y avisa cuando la vista existe.
+ *
+ * Sin parámetros en el constructor: Android restaura el fragmento por
+ * reflexión cuando el proceso murió en segundo plano. [onSessionReady] lo
+ * vuelve a cablear la Activity en `onCreate`.
  */
-class SessionFragment(
-    private val onSessionReady: () -> Unit,
-) : Fragment() {
+class SessionFragment : Fragment() {
+    internal var onSessionReady: (() -> Unit)? = null
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -26,6 +30,6 @@ class SessionFragment(
         savedInstanceState: Bundle?,
     ) {
         super.onViewCreated(view, savedInstanceState)
-        onSessionReady()
+        onSessionReady?.invoke()
     }
 }
