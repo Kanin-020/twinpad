@@ -76,7 +76,9 @@ internal class GameSelectionController(
     fun onGameSelected(gameId: String) {
         if (!selection.pending || selection.requestedGameId != gameId) return
         val previous = _selectedGameId.value
-        if (previous != gameId) clearMediaForSelectionChange()
+        // Al reabrir la app no hay selección previa: el audio que el server ya
+        // inició con `audio_start` no debe resetearse.
+        if (previous != null && previous != gameId) clearMediaForSelectionChange()
         _selectedGameId.value = gameId
         selection.pending = false
         selection.requestedGameId = null
