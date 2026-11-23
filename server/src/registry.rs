@@ -15,12 +15,14 @@ impl crate::session::ControlRetention for SessionRegistry {
     fn take_retained(&self, session_id: &SessionId, now_ms: u64) -> Option<RetainedSession> {
         let taken = lock_or_reset(&self.retained).remove(session_id);
         if let Some(retained) = taken {
-            if !retained.retention_alive(now_ms) {
-                // La ventana murió entre retener y el intento: el resume
-                // será rechazado y el estado de media se destruye ya.
-                self.destroy_media_state(session_id);
+            if retained.retention_alive(now_ms) {
+                return Some(retained);
             }
-            return Some(retained);
+            // La ventana murió entre retener y el intento (el sweeper aún no
+            // pasó): se destruye su estado de media y se sigue al registro en
+            // disco (CR-094), que no caduca. Devolver la entrada vencida daría
+            // E3 a un dispositivo registrado.
+            self.destroy_media_state(session_id);
         }
         // CR-094: dispositivo registrado en disco → reanudación sin límite de 60 s.
         let devices = self.devices.as_ref()?;
@@ -467,6 +469,37 @@ mod tests {
         assert_eq!(&buf_a, b"{\"ping\":1}\n");
         assert_eq!(&buf_b, b"{\"ping\":1}\n");
         let _ = (sid_a, sid_b);
+    }
+
+    // TEST-0194 — verifies CR-094 (SPEC-001 §8.2): un dispositivo registrado en
+    // disco reanuda aunque la retención de 60 000 ms haya vencido y el sweeper
+    // todavía no la haya barrido (la entrada vencida no puede sombrear el
+    // registro → nada de E3); el no registrado sigue exigiendo QR nuevo.
+    #[test]
+    fn registered_device_resumes_when_the_retention_expired_unswept() {
+        let dir = std::env::temp_dir().join(format!("twinpad-registry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let registry = SessionRegistry::with_device_store(&dir);
+        let (sid, _) = session(11);
+        registry.remember_device(sid, SessionKey([7; 32]));
+        registry.retain(&sid, &SessionKey([7; 32]), 0);
+        assert!(registry.retained(&sid).is_some());
+
+        let expired_at = twinpad_core::resume::RETENTION_MS + 1;
+        let taken = crate::session::ControlRetention::take_retained(&registry, &sid, expired_at)
+            .expect("el registro en disco debe reanudar");
+        assert_eq!(taken.session_id, sid);
+        assert_eq!(taken.session_key.0, [7; 32]);
+        assert!(taken.retention_alive(expired_at));
+        assert!(registry.retained(&sid).is_none());
+
+        // Sin registro en disco la retención vencida sí exige QR nuevo (E3).
+        let unswept = SessionRegistry::new();
+        unswept.retain(&sid, &SessionKey([8; 32]), 0);
+        assert!(
+            crate::session::ControlRetention::take_retained(&unswept, &sid, expired_at).is_none()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
