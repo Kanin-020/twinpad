@@ -536,6 +536,15 @@ impl GameRegistry {
         )
     }
 
+    /// CR-106: reinicia el filtro de `seq` de input del plugin Cemu al
+    /// seleccionar el juego. No se persiste: sin Cemu vivo no hay efecto.
+    pub fn send_cemu_input_reset(&self) -> bool {
+        Self::write_line_to(
+            self.game_writer(Some("cemu")),
+            "{\"type\":\"input_reset\"}",
+        )
+    }
+
     /// Entrega el snapshot inicial a un Plugin recién seleccionado.
     pub fn send_input_snapshot(&self, game_id: &str, snapshot: &str) -> bool {
         Self::write_line_to(self.game_writer(Some(game_id)), snapshot)
@@ -992,6 +1001,36 @@ mod tests {
         assert_eq!(received, format!("{line}\n"));
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_camera_frame(line));
+    }
+
+    // TEST-0202 — verifies CR-106: the input reset reaches only the live Cemu Plugin,
+    // as a single exact line, and is a no-op without it.
+    #[test]
+    fn input_reset_reaches_only_live_cemu() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        assert!(!registry.send_cemu_input_reset());
+
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        assert!(registry.send_cemu_input_reset());
+        let mut received = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut received)
+            .unwrap();
+        assert_eq!(received, "{\"type\":\"input_reset\"}\n");
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_input_reset());
     }
 
     // TEST-0113 — verifies SPEC-003 §8.2 (CR-051): the IDR request reaches only the

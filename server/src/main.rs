@@ -560,6 +560,11 @@ fn main() {
                         if !resumed {
                             registry_ref.set_selected_game(session_id, None);
                         }
+                        // CR-106: al reanudar con Cemu seleccionado, el teléfono reinicia
+                        // `seq` desde 0; Cemu debe olvidar el último `seq` aceptado.
+                        if resumed && previous_selected.as_deref() == Some("cemu") {
+                            games_ref.send_cemu_input_reset();
+                        }
                         let initial_video_config = twinpad_server::video::VideoConfig::from_env();
 
                         let session_input_snapshot =
@@ -856,6 +861,8 @@ fn main() {
                                                             config.bitrate_kbps,
                                                         );
                                                     }
+                                                    // CR-106: nueva sesión de input en Cemu.
+                                                    games_ref.send_cemu_input_reset();
                                                 }
                                                 if let Some(snapshot) =
                                                     pending_snapshot_for_selection
