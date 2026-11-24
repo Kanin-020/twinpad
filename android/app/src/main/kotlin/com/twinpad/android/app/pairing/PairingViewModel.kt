@@ -116,6 +116,7 @@ internal class PairingViewModel(
     private val gamepadSwitcher =
         GamepadBtSwitcher(
             { _uiState.value is PairingUiState.Linked },
+            { armGamepadChannel() },
         )
 
     /** Efectos que la Activity ejecuta (permiso, apertura/cierre de cámara). */
@@ -397,8 +398,16 @@ internal class PairingViewModel(
                         "accel=${motion.accel.joinToString(",")} gyro=${motion.gyro.joinToString(",")}",
                 )
             }
-            // Gamepad sólo por LAN: sin sesión Linked no se envía (H0).
-            if (_uiState.value is PairingUiState.Linked) {
+            // CR-111: controles por BT HID si está listo (por defecto); si no, LAN.
+            // Gyro y touch viajan siempre por LAN.
+            val linked = _uiState.value is PairingUiState.Linked
+            val hasMotionOrTouch = updated.motion != null || updated.touchPressed
+            if (gamepadSwitcher.isBtReady()) {
+                gamepadSwitcher.sendOverBt(updated)
+                if (linked && hasMotionOrTouch) {
+                    network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
+                }
+            } else if (linked) {
                 network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
             }
         }
@@ -460,9 +469,6 @@ internal class PairingViewModel(
         // CR-056 (U6): el temporizador de reanudación vive mientras U6.
         scheduleResumeLoop()
         armGamepadChannel()
-        // CR-059: el switcher decide arranque y liberación con histéresis
-        // (caída de sesión, handshake fallido sin Wi-Fi, regreso a LAN).
-        gamepadSwitcher.onUiState(_uiState.value)
         effects.forEach(executeEffect)
     }
 
@@ -500,14 +506,19 @@ internal class PairingViewModel(
      * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
     private val armGamepadChannel: () -> Unit = {
         val linked = _uiState.value is PairingUiState.Linked
+        val ready = linked || gamepadSwitcher.isBtReady()
         if (gamepad.state == com.twinpad.android.app.hid.GamepadState.OFFLINE) {
-            if (linked) {
+            if (ready) {
                 gamepad.onChannelReady()?.let {
-                    network.send(com.twinpad.android.app.wire.InputCodec.encode(it))
+                    if (linked) {
+                        network.send(com.twinpad.android.app.wire.InputCodec.encode(it))
+                    } else {
+                        gamepadSwitcher.sendOverBt(it)
+                    }
                 }
             }
-        } else if (!linked) {
-            gamepad.onChannelDown() // §6 H1→H0: sin LAN los controles dejan de enviar
+        } else if (!ready) {
+            gamepad.onChannelDown() // §6 H1→H0: sin LAN ni BT los controles dejan de enviar
         }
     }
 
@@ -550,8 +561,10 @@ internal class PairingViewModel(
         // CR-094: reconexión automática al abrir la app. Va al final de la clase:
         // `feed` usa los lambdas de arriba, que deben estar inicializados antes.
         savedLinks.resumeLast() // CR-094: reanuda la última vinculación guardada
+        gamepadSwitcher.startChannel(getApplication()) // prueba BT: canal HID al abrir
     }
 
+    /** CR-059: el perfil BT se libera en `onCleared`, que corre al destruir la Activity. */
     override fun onCleared() {
         resumeJob?.cancel()
         mediaSession.close()

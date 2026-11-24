@@ -51,9 +51,16 @@ class BluetoothHidGamepad(context: Context) {
 
         /** Canal caído: cerrar la senda BT y decidir regreso a LAN. */
         fun onChannelLost()
+
+        /** Vibración pedida por el host (CR-109): intensidades strong y weak, 0…255. */
+        fun onRumble(
+            strong: Int,
+            weak: Int,
+        ) {}
     }
 
     private val appContext = context.applicationContext
+    private var originalAdapterName: String? = null
     private var hidProfile: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
     private val listenerRef = AtomicReference<Listener?>(null)
@@ -61,6 +68,7 @@ class BluetoothHidGamepad(context: Context) {
     private var registerAttempts = 0
     private var registerRetryJob: ScheduledFuture<*>? = null
     private var connectAttempts = 0
+    private var hostCandidateIndex = 0
     private var connectRetryJob: ScheduledFuture<*>? = null
 
     /** Estado observable del canal. */
@@ -78,6 +86,28 @@ class BluetoothHidGamepad(context: Context) {
             Log.i(TAG, "bt-hid: adaptador nulo o Bluetooth deshabilitado")
             channel = Channel.FAILED
             return
+        }
+        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Si la app se cerró sin restaurar, el nombre actual ya es ADAPTER_NAME: recupera el original.
+        val pending = prefs.getString(KEY_ORIGINAL_NAME, null)
+        if (pending != null) {
+            try {
+                adapter.setName(pending)
+            } catch (e: SecurityException) {
+                Log.i(TAG, "bt-hid: sin permiso para restaurar el nombre pendiente")
+            }
+            prefs.edit().remove(KEY_ORIGINAL_NAME).apply()
+        }
+        if (originalAdapterName == null) {
+            originalAdapterName = adapter.name
+            prefs.edit().putString(KEY_ORIGINAL_NAME, originalAdapterName).apply()
+        }
+        try {
+            if (!adapter.setName(ADAPTER_NAME)) {
+                Log.i(TAG, "bt-hid: no se pudo poner el nombre $ADAPTER_NAME")
+            }
+        } catch (e: SecurityException) {
+            Log.i(TAG, "bt-hid: sin permiso para cambiar el nombre")
         }
         val requested =
             adapter.getProfileProxy(appContext, profileListener, BluetoothProfile.HID_DEVICE)
@@ -103,6 +133,7 @@ class BluetoothHidGamepad(context: Context) {
         if (adapter != null && profile != null) {
             adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, profile)
         }
+        restoreAdapterName()
         hidProfile = null
         host = null
         channel = Channel.IDLE
@@ -115,13 +146,17 @@ class BluetoothHidGamepad(context: Context) {
      */
     fun sendReport(bytes: ByteArray) {
         val profile = hidProfile
-        val device = host
+        // Respaldo: si el callback llegó sin device, se toma el host conectado del perfil.
+        val device = host ?: profile?.getConnectedDevices()?.firstOrNull()
         if (profile == null || device == null) {
-            Log.i(TAG, "bt-hid: sin conexión activa; reporte no enviado")
+            Log.i(
+                TAG,
+                "bt-hid: sin conexión activa (profile=${profile != null} host=${host != null}); reporte no enviado",
+            )
             return
         }
         try {
-            profile.sendReport(device, REPORT_ID, bytes)
+            profile.sendReport(device, REPORT_ID, bytes.copyOfRange(1, bytes.size))
         } catch (e: SecurityException) {
             // BLUETOOTH_CONNECT sin conceder: el canal no puede operar.
             Log.i(TAG, "bt-hid: sin permiso BLUETOOTH_CONNECT; reporte no enviado")
@@ -181,6 +216,19 @@ class BluetoothHidGamepad(context: Context) {
                 cancelRegisterRetry()
                 channel = Channel.REGISTERED
                 connectToBondedHost()
+            }
+
+            override fun onSetReport(
+                device: BluetoothDevice?,
+                type: Byte,
+                id: Byte,
+                data: ByteArray?,
+            ) {
+                // Report ID 3 = salida de vibración (CR-109); el resto se ignora.
+                if (id.toInt() != RUMBLE_REPORT_ID || data == null || data.size < 2) return
+                val strong = data[0].toInt() and BYTE_MASK
+                val weak = data[1].toInt() and BYTE_MASK
+                listenerRef.get()?.onRumble(strong, weak)
             }
 
             override fun onConnectionStateChanged(
@@ -260,13 +308,18 @@ class BluetoothHidGamepad(context: Context) {
 
     private fun connectToBondedHost() {
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
-        val device =
-            adapter?.bondedDevices?.firstOrNull { it.type == BluetoothDevice.DEVICE_TYPE_CLASSIC }
+        // Prueba BT: el primer emparejado (p. ej. el coche) no es el PC. Cada
+        // reintento apunta al siguiente emparejado clásico hasta que uno acepte.
+        val candidates =
+            adapter?.bondedDevices?.filter { it.type == BluetoothDevice.DEVICE_TYPE_CLASSIC }.orEmpty()
         val profile = hidProfile
-        if (device == null || profile == null) {
+        if (candidates.isEmpty() || profile == null) {
             Log.i(TAG, "bt-hid: sin PC emparejado vía Bluetooth; canal queda en espera")
             return
         }
+        val device = candidates[hostCandidateIndex % candidates.size]
+        hostCandidateIndex += 1
+        Log.i(TAG, "bt-hid: conectando HID a ${device.address} (${device.name})")
         try {
             profile.connect(device)
         } catch (e: SecurityException) {
@@ -300,6 +353,20 @@ class BluetoothHidGamepad(context: Context) {
         connectRetryJob = null
     }
 
+    /** Devuelve el nombre Bluetooth original del teléfono si se cambió a [ADAPTER_NAME]. */
+    private fun restoreAdapterName() {
+        val original = originalAdapterName ?: FALLBACK_ADAPTER_NAME
+        val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
+        try {
+            adapter?.setName(original)
+        } catch (e: SecurityException) {
+            Log.i(TAG, "bt-hid: sin permiso para restaurar el nombre")
+        }
+        originalAdapterName = null
+        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(KEY_ORIGINAL_NAME).apply()
+    }
+
     /**
      * Descriptor SDP: la app se anuncia como gamepad HID con el Report Map
      * de la Signature (ADR-009 §4; descriptor de SPEC-004 §2 vía CR-059).
@@ -331,12 +398,26 @@ class BluetoothHidGamepad(context: Context) {
 
         /** Report ID del input (el descriptor lo declara). */
         private const val REPORT_ID = 1
+        private const val RUMBLE_REPORT_ID = 3
+
+        /** Máscara de un byte (0xFF) para leer la fuerza de vibración sin signo. */
+        private const val BYTE_MASK = 0xFF
 
         /** Subclase SDP de gamepad (SUBCLASS2_*). */
         private const val SUBCLASS_GAMEPAD = BluetoothHidDevice.SUBCLASS2_GAMEPAD
 
         /** Identidad SDP de la app HID. */
         private const val APP_NAME = "Twinpad Gamepad"
+
+        /** Nombre Bluetooth del teléfono mientras Twinpad está activo (Steam lo muestra). */
+        private const val ADAPTER_NAME = "Twinpad"
+
+        /** Nombre Bluetooth del teléfono de prueba; respaldo si no hay original guardado. */
+        private const val FALLBACK_ADAPTER_NAME = "Android"
+
+        /** Preferencias para recuperar el nombre original tras un cierre sin restaurar. */
+        private const val PREFS = "twinpad_bt_hid"
+        private const val KEY_ORIGINAL_NAME = "original_adapter_name"
         private const val APP_DESCRIPTION = "Twinpad phone as PC gamepad (CR-059)"
         private const val APP_PROVIDER = "Twinpad"
 

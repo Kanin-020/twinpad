@@ -21,15 +21,15 @@ enum class InputTransport {
  * canal BT, liberación con histéresis) la gobierna el conmutador de la app.
  */
 object HandoverPolicy {
-    /** Ruta del transporte del gamepad (CR-098): LAN si la sesión está Linked;
-     * si no, canal BT HID si está operativo; sin ninguna, H0. */
+    /** Ruta del transporte del gamepad (CR-111): canal BT HID si está operativo
+     * (por defecto); si no, LAN si la sesión está Linked; sin ninguna, H0. */
     fun route(
         lanLinked: Boolean,
         btReady: Boolean,
     ): InputTransport =
         when {
-            lanLinked -> InputTransport.LAN
             btReady -> InputTransport.BT
+            lanLinked -> InputTransport.LAN
             else -> InputTransport.NONE
         }
 }

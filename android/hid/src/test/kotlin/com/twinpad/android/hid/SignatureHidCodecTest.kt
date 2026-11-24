@@ -1,6 +1,7 @@
 package com.twinpad.android.hid
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,8 +15,8 @@ class SignatureHidCodecTest {
     fun restStateEncodesToNeutralReport() {
         // Sticks en reposo, D-pad neutro de la Signature, sin botones ni triggers.
         val report = SignatureHidCodec.encode(0, 0, 0, 0, 8, 0, 0, 0)
-        // Report ID + 4 sticks + 2 triggers + hat/botones + botones altos + pad.
-        assertEquals(10, report.size)
+        // Report ID + 4 sticks + 2 triggers + hat/botones + botones altos + pad + batería.
+        assertEquals(11, report.size)
         assertEquals(1.toByte(), report[0]) // Report ID
         assertEquals(0.toByte(), report[1]) // LX
         assertEquals(0.toByte(), report[2]) // LY
@@ -45,14 +46,34 @@ class SignatureHidCodecTest {
     }
 
     @Test
-    fun buttonsFillBits4to15AsMergedNibbles() {
-        // Botones según SPEC-004 §4: bit 0 = button_a … bit 11 = extra_2.
+    fun buttonsMapToStandardHidUsages() {
+        // SPEC-004 §4: bit 0 = button_a … bit 11 = extra_2; el report map
+        // declara Usage 1…15, así que A/B/X/Y van a 1/2/4/5 (no a 1/2/3/4)
+        // para que el SO no lea X como "C" ni Y como "X".
         val buttons = (1 shl 0) or (1 shl 3) or (1 shl 4) or (1 shl 11)
         val report = SignatureHidCodec.encode(0, 0, 0, 0, 8, buttons, 0, 0)
-        // byte 7 bits 4…7 = b0…b3 → b0 y b3 = 0x01 + 0x08 = 0x90 (hat neutro 0x0F)
-        assertEquals((0x0F or 0x90), report[7].toInt() and 0xFF)
-        // byte 8 bits 0…7 = b4…b11 → b4 y b11 = 0x01 + 0x80 = 0x81
-        assertEquals(0x81, report[8].toInt() and 0xFF)
+        // A→h0, extra_2→h5, L1→h6, Y→h4: hid = 0x71; byte 7 = hatch + h0…h3.
+        assertEquals(0x0F or 0x10, report[7].toInt() and 0xFF)
+        assertEquals(0x07, report[8].toInt() and 0xFF)
+        assertEquals(0x00, report[9].toInt() and 0xFF)
+
+        // L3/R3 (bits 6/7 canónicos) → Usage 14/15 = h13/h14, bits 1 y 2 del byte 9.
+        val thumb = SignatureHidCodec.encode(0, 0, 0, 0, 8, (1 shl 6) or (1 shl 7), 0, 0)
+        assertEquals(0x06, thumb[9].toInt() and 0xFF)
+
+        // Start (bit 8) y Select (bit 9) → Usage 12/11 = h11/h10 (byte 8).
+        val start = SignatureHidCodec.encode(0, 0, 0, 0, 8, 1 shl 8, 0, 0)
+        assertEquals(0x80, start[8].toInt() and 0xFF)
+        val select = SignatureHidCodec.encode(0, 0, 0, 0, 8, 1 shl 9, 0, 0)
+        assertEquals(0x40, select[8].toInt() and 0xFF)
+    }
+
+    @Test
+    fun batteryEncodesPercentInByte10AndClampsTo100() {
+        val half = SignatureHidCodec.encode(0, 0, 0, 0, 8, 0, 0, 0, batteryPercent = 50)
+        assertEquals(50.toByte(), half[10])
+        val over = SignatureHidCodec.encode(0, 0, 0, 0, 8, 0, 0, 0, batteryPercent = 180)
+        assertEquals(100.toByte(), over[10])
     }
 
     @Test
@@ -80,4 +101,20 @@ class SignatureHidCodecTest {
         assertTrue(hasButtonPage)
         assertTrue(hasHat)
     }
+
+    @Test
+    fun reportMapDeclaresInputAndRumbleReportsOnly() {
+        // CR-111: BT lleva report 1 (controles) y report 3 (vibración); gyro/touch van por LAN.
+        val map = SignatureHidCodec.REPORT_MAP
+        assertTrue(containsSequence(map, byteArrayOf(0x85.toByte(), 0x01)))
+        assertTrue(containsSequence(map, byteArrayOf(0x85.toByte(), 0x03)))
+        assertFalse(containsSequence(map, byteArrayOf(0x85.toByte(), 0x02)))
+        // Salida de vibración: Output (0x91) para los 2 bytes.
+        assertTrue(containsSequence(map, byteArrayOf(0x91.toByte(), 0x02)))
+    }
+
+    private fun containsSequence(
+        haystack: ByteArray,
+        needle: ByteArray,
+    ): Boolean = (0..haystack.size - needle.size).any { i -> needle.indices.all { haystack[i + it] == needle[it] } }
 }

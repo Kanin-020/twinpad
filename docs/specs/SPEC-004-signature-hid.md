@@ -4,7 +4,7 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.11.0 |
+| Version | 1.12.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
@@ -104,13 +104,14 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 - **Trigger:** la app arranca el canal BT HID al entrar en sesión LAN `Linked`,
   o ante un handshake fallido sin Wi-Fi (`Failure`), si el canal no está operativo.
-- **Flow:** los reportes del gamepad se envían únicamente por la ruta BT
-  (sin re-pairing; touch/inercia quedan excluidos). La sesión LAN no transporta
-  el gamepad ni como respaldo. Sin canal BT operativo, el gamepad está en H0 y
-  no envía.
-- **Result:** el gamepad sale sólo por Bluetooth HID; la Segunda pantalla y el
-  audio siguen por la LAN cuando hay sesión, y quedan indisponibles sin ella
-  (ADR-002), no como error.
+- **Flow:** los reportes del gamepad se envían por la ruta BT HID (por defecto);
+  si el canal BT no está operativo, los inputs (botones, sticks, gatillos, D-pad)
+  salen por LAN como respaldo. Gyro y touch siempre por LAN (no viajan por BT).
+  La vibración va por BT. Sin ninguna ruta operativa, el gamepad está en H0 y no envía.
+- **Result:** los inputs salen por Bluetooth HID y, si no está operativo, por LAN;
+  gyro y touch siempre por LAN. La Segunda pantalla, el audio y el micrófono
+  siguen por la LAN cuando hay sesión, y quedan indisponibles sin ella (ADR-002),
+  no como error.
 
 ## 9. Errors
 
@@ -225,3 +226,4 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.9.0 | 2026-10-27 | Product owner + Twinpad team (CR-028) | Mando físico conectado al teléfono: mapper puro (keycodes/sticks/triggers/hat) y fusión por elemento con la superficie táctil; sin cambio wire (§8.1, R6, TEST-087) |
 | 1.10.0 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU de referencia pasa a landscape, exclusivo de la orientación landscape fija de la app: accel `(y, -z, x)`, gyro `(-y, -z, x)`; wire y unidades sin cambios |
 | 1.11.0 | 2026-11-01 | Owner + Buffy (agente) (CR-059, ADR-009) | Doble transporte de la Signature: ruta LAN + ruta Bluetooth HID nativa (alternativa completa sin Wi-Fi y failover automático con histórisis de 5 s); touch/giroscopio/rumble exclusivos de LAN; Test Map TEST-0126/0127 |
+| 1.12.0 | 2026-11-24 | Owner + Buffy (agente) (CR-111) | §8.3: BT HID primero para inputs, LAN como respaldo; gyro y touch siempre por LAN; vibración por BT |

@@ -28,4 +28,25 @@ class RumblePlayer(context: Context) {
         val waveform = RumbleCodec.waveform(message.pattern)
         device.vibrate(VibrationEffect.createWaveform(waveform.timings, waveform.amplitudes, -1))
     }
+
+    /** Vibración continua por BT (CR-109): la intensidad máxima de strong/weak
+     * (0…255) manda; 0 detiene el motor. */
+    fun playStrength(
+        strong: Int,
+        weak: Int,
+    ) {
+        val device = vibrator ?: return
+        if (!device.hasVibrator()) return
+        val amplitude = maxOf(strong, weak).coerceIn(0, MAX_AMPLITUDE)
+        if (amplitude == 0) {
+            device.cancel()
+            return
+        }
+        device.vibrate(VibrationEffect.createOneShot(BT_RUMBLE_MS, amplitude))
+    }
+
+    private companion object {
+        private const val MAX_AMPLITUDE = 255
+        private const val BT_RUMBLE_MS = 100L
+    }
 }
