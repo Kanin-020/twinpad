@@ -397,6 +397,8 @@ private const val DEF_RIGHT_SIDE_X = 0.84f
 private const val DEF_SHOULDER_Y = 0.13f
 private const val DEF_SELECT_X = 0.39f
 private const val DEF_START_X = 0.52f
+private const val DEF_HOME_X = 0.455f
+private const val DEF_HOME_Y = 0.01f
 private const val DEF_FACE_LEFT_X = 0.74f
 private const val DEF_FACE_TOP_X = 0.84f
 private const val DEF_FACE_RIGHT_X = 0.90f
@@ -415,6 +417,7 @@ private fun defaultControls(): List<TouchControl> =
         shoulderDefault("button_l1", "L1", "button_l1", DEF_LEFT_SIDE_X),
         faceDefault("button_select", "Select", "button_select", DEF_SELECT_X, DEF_SHOULDER_Y),
         faceDefault("button_start", "Start", "button_start", DEF_START_X, DEF_SHOULDER_Y),
+        faceDefault("button_home", "Home", "button_extra_1", DEF_HOME_X, DEF_HOME_Y),
         shoulderDefault("button_r1", "R1", "button_r1", DEF_RIGHT_SIDE_X),
         triggerDefault("trigger_r", "R2", "trigger_r2", DEF_RIGHT_SIDE_X),
         dpadDefault(DEF_DPAD_X, DEF_DPAD_Y),

@@ -55,7 +55,7 @@ class ProfileMapLayoutTest {
     fun default_map_layout_maps_all_canonical_controls() {
         val profile = ProfileMapLayout.extract(inflater(), FIXTURE_SIZE.width, FIXTURE_SIZE.height)!!
         ControlProfileCodec.validate(profile)
-        assertEquals(15, profile.controls.size)
+        assertEquals(16, profile.controls.size)
         val byId = profile.controls.associateBy { it.id }
         for (id in setOf("btn_a", "dpad_cross", "stick_left", "stick_right")) {
             assertTrue("falta control '$id'", id in byId)
@@ -94,7 +94,7 @@ class ProfileMapLayoutTest {
 
     /**
      * Paridad estructural con el default del modelo (TEST-0143): el layout
-     * de `profile_map.xml` debe representar los mismos 15 controles canónicos
+     * de `profile_map.xml` debe representar los mismos 16 controles canónicos
      * con sus kind/label/hid exactos. Posiciones y tamaños quedan LIBRES
      * (CR-069: el desarrollador los ajusta en Android Studio sin editar el
      * default del modelo; en runtime el layout es la fuente del default).

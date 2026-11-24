@@ -31,7 +31,7 @@ class ControlProfileTest {
         val controls = ControlProfileCodec.defaultProfile().controls
         val assignments = controls.map { it.hid }.toSet()
 
-        assertEquals(15, controls.size)
+        assertEquals(16, controls.size)
         assertTrue(
             assignments.containsAll(
                 setOf(

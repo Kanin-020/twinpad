@@ -18,7 +18,7 @@ import com.twinpad.android.app.R
 internal class MetricsSliderController(
     private val activity: Activity,
 ) {
-    private enum class SheetMode { WAITING, SHEET, HIDDEN }
+    private enum class SheetMode { SHEET, HIDDEN }
 
     private val slider: View = activity.findViewById(R.id.metrics_slider)
     private val sheet: View = activity.findViewById(R.id.metrics_sheet)
@@ -69,30 +69,27 @@ internal class MetricsSliderController(
         streaming: Boolean,
         sliderEnabled: Boolean,
     ) {
+        // Sin stream la hoja es la misma que con stream: solo cambia el video de fondo.
         val target =
             when {
-                !streaming -> SheetMode.WAITING
-                sliderEnabled -> SheetMode.SHEET
+                !streaming || sliderEnabled -> SheetMode.SHEET
                 else -> SheetMode.HIDDEN
             }
         if (target == mode) {
             return
         }
         mode = target
+        this.streaming = streaming
         applyCurrent()
     }
 
+    private var streaming = false
+
     private fun applyCurrent() {
+        // Sin transmisión, el fondo es el tapete de mesa con el logo; con
+        // transmisión la hoja queda transparente sobre el video.
+        slider.background = null
         when (mode) {
-            SheetMode.WAITING -> {
-                slider.isVisible = true
-                setSheetFullLayout(Gravity.NO_GRAVITY)
-                sheet.setBackgroundResource(R.color.design_void_canvas)
-                content.background = null
-                handle.isVisible = false
-                behavior.isHideable = true
-                behavior.state = BottomSheetBehavior.STATE_EXPANDED
-            }
             SheetMode.SHEET -> {
                 slider.isVisible = true
                 setSheetFullLayout(Gravity.BOTTOM)

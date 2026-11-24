@@ -1,9 +1,6 @@
 package com.twinpad.android.app.ui
 
 import android.Manifest
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
 import android.util.Log
@@ -11,7 +8,6 @@ import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -24,6 +20,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -42,7 +39,6 @@ import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
-import com.twinpad.android.app.wire.ProtocolConstants
 import com.twinpad.android.app.wire.VideoStageStatsCodec
 import com.twinpad.android.app.wire.VideoStageStatsMessage
 import kotlinx.coroutines.flow.collectLatest
@@ -140,9 +136,7 @@ class PairingActivity : AppCompatActivity() {
             }
         }
     private lateinit var sensorManager: SensorManager
-    private var rotationVector: Sensor? = null
-    private val orientationMatrix = FloatArray(9)
-    private val orientationAngles = FloatArray(3)
+    private lateinit var motionSensors: PhoneMotionSensors
 
     /** Último par (w, h) REAL presentado por el stream (CR-074): con
      * «Nativa» el drawer no fija target y el marco debe salir del frame
@@ -180,38 +174,15 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    private val motionController =
-        ProfileGyroController { sample ->
-            surfaceRef?.updateMotion(sample)
-        }
-    private val accelerationListener =
-        sensorListener { values, timestamp -> motionController.updateAcceleration(values, timestamp) }
-    private val gyroscopeListener =
-        sensorListener { values, timestamp -> motionController.updateGyroscope(values, timestamp) }
-    private val orientationListener =
-        object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                SensorManager.getRotationMatrixFromVector(orientationMatrix, event.values)
-                remapOrientationMatrix(orientationMatrix, display.rotation)
-                SensorManager.getOrientation(orientationMatrix, orientationAngles)
-                if (gyroMonitorVisible) {
-                    val orientationTurns = GyroOrientationMapper.toScreenTurns(orientationAngles)
-                    findViewById<GyroMonitorView>(R.id.gyro_monitor).apply {
-                        setOrientationTurns(orientationTurns[0], orientationTurns[1], orientationTurns[2])
-                        bringToFront()
-                    }
-                }
-            }
-
-            override fun onAccuracyChanged(
-                sensor: Sensor?,
-                accuracy: Int,
-            ) = Unit
-        }
-
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             viewModel.onCameraPermissionResult(granted)
+        }
+
+    /** Permiso BLUETOOTH_CONNECT para el canal HID (prueba de banco). */
+    private val btPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            viewModel.onBluetoothPermissionResult(granted)
         }
 
     /** CR-035: permiso del micrófono bajo demanda; al concederlo se reevalúa
@@ -298,6 +269,10 @@ class PairingActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Prueba BT: pide BLUETOOTH_CONNECT al abrir la app (Android 12+).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            btPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -338,7 +313,13 @@ class PairingActivity : AppCompatActivity() {
             onSessionReady()
         }
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-        rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        motionSensors =
+            PhoneMotionSensors(
+                sensorManager,
+                { display },
+                { sample -> surfaceRef?.updateMotion(sample) },
+                ::showOrientationTurns,
+            )
         cameraController =
             PairingCameraController(this) { raw ->
                 viewModel.onEvent(PairingEvent.QrScanned(raw))
@@ -367,12 +348,17 @@ class PairingActivity : AppCompatActivity() {
             applyVideoScale(drawer.load())
         }
         drawer.applyPersistedSettings()
+
         sessionView<ImageButton>(R.id.btn_settings).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
         }
         observeMicDemand()
         observeKeyboardDemand()
         drawer.bind()
+        if (viewModel.uiState.value is PairingUiState.Linked && !sessionConfigSent) {
+            viewModel.onStreamSettingsChanged(drawer.load())
+            sessionConfigSent = true
+        }
         attachProfileSurface()
         // Se suscribe aquí: StateFlow emite el valor actual, y la vista ya existe.
         lifecycleScope.launch {
@@ -588,7 +574,7 @@ class PairingActivity : AppCompatActivity() {
      * propiedad para el umbral de funciones de detekt. */
     private val applyLinkedState: (PairingUiState) -> Unit = { state ->
         renderState(state)
-        if (state is PairingUiState.Linked && !sessionConfigSent) {
+        if (state is PairingUiState.Linked && !sessionConfigSent && ::drawer.isInitialized) {
             viewModel.onStreamSettingsChanged(drawer.load())
             sessionConfigSent = true
         } else if (state !is PairingUiState.Linked) {
@@ -611,6 +597,10 @@ class PairingActivity : AppCompatActivity() {
         }
         val streaming = state.state == StreamState.STREAMING
         sessionView<View>(R.id.drc_content).isVisible = streaming
+        // Sin transmisión: se ve el tapete de mesa en vez del SurfaceView negro.
+        sessionView<View>(R.id.video_surface_container).background =
+            if (streaming) null else ContextCompat.getDrawable(this, R.drawable.bg_table_logo)
+        sessionView<SurfaceView>(R.id.video_view).isVisible = streaming
         // CR-079: la vista de espera CR-076 ahora tiene dos modos (fullscreen
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)
@@ -900,32 +890,20 @@ class PairingActivity : AppCompatActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-        motionController.reset()
-        registerSensor(rotationVector, orientationListener)
-        registerSensor(sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), accelerationListener)
-        registerSensor(sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE), gyroscopeListener)
+        motionSensors.start()
     }
 
-    /** Registra el listener solo si el sensor existe en el dispositivo. */
-    private fun registerSensor(
-        sensor: Sensor?,
-        listener: SensorEventListener,
-    ) {
-        sensor?.let {
-            sensorManager.registerListener(
-                listener,
-                it,
-                SensorManager.SENSOR_DELAY_GAME,
-                ProtocolConstants.SENSOR_REPORT_INTERVAL_US,
-            )
+    /** Pinta el monitor de giro sólo si está visible (CR-074 / monitor de orientación). */
+    private fun showOrientationTurns(turns: List<Int>) {
+        if (!gyroMonitorVisible) return
+        findViewById<GyroMonitorView>(R.id.gyro_monitor).apply {
+            setOrientationTurns(turns[0], turns[1], turns[2])
+            bringToFront()
         }
     }
 
     override fun onPause() {
-        sensorManager.unregisterListener(accelerationListener)
-        sensorManager.unregisterListener(gyroscopeListener)
-        sensorManager.unregisterListener(orientationListener)
-        motionController.reset()
+        motionSensors.stop()
         super.onPause()
         viewModel.onAppBackgrounded() // SPEC-002 §8.3
     }
@@ -947,37 +925,6 @@ private fun PairingActivity.keepDisplayAwake(state: StreamState) {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     } else {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
-}
-
-/** Listener de sensor que solo reenvía valores y marca de tiempo; la precisión no se usa. */
-private fun sensorListener(onValues: (FloatArray, Long) -> Unit): SensorEventListener =
-    object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) {
-            onValues(event.values, event.timestamp)
-        }
-
-        override fun onAccuracyChanged(
-            sensor: Sensor?,
-            accuracy: Int,
-        ) = Unit
-    }
-
-/** Reorienta la referencia de ejes del sensor para que siga las coordenadas visibles de la pantalla. */
-internal fun remapOrientationMatrix(
-    matrix: FloatArray,
-    displayRotation: Int,
-) {
-    val (xAxis, yAxis) =
-        when (displayRotation) {
-            Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
-            Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
-            Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
-            else -> SensorManager.AXIS_X to SensorManager.AXIS_Y
-        }
-    val remapped = FloatArray(matrix.size)
-    if (SensorManager.remapCoordinateSystem(matrix, xAxis, yAxis, remapped)) {
-        remapped.copyInto(matrix)
     }
 }
 

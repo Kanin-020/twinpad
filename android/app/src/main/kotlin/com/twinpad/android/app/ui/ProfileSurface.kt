@@ -12,7 +12,6 @@ import com.twinpad.android.app.hid.PhysicalGamepadAlgo
 import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.surface.ControlProfile
 import com.twinpad.android.app.surface.ControlProfileCodec
-import com.twinpad.android.app.surface.ControlProfileStore
 import com.twinpad.android.app.surface.ProfileException
 import com.twinpad.android.app.surface.ProfileMapLayout
 import com.twinpad.android.app.surface.applyFaceDistribution
@@ -30,7 +29,6 @@ class ProfileSurface(
     /** Mando físico conectado al teléfono (CR-028): su estado se fusiona
      * con la superficie táctil al componer cada reporte (SPEC-004). */
     private val physicalGamepad = PhysicalGamepadAlgo()
-    private val store = ControlProfileStore(context)
 
     /** Contexto para inflar el layout de mapeo del desarrollador (CR-067). */
     private val layoutContext: Context = context.applicationContext
@@ -61,6 +59,22 @@ class ProfileSurface(
     var profile: ControlProfile = ControlProfileCodec.defaultProfile()
         private set
 
+    /** El layout de mapeo se extrae con el tamaño de la vista: si cambia
+     * (p. ej. al llegar a pantalla completa tras cargar), se vuelve a extraer. */
+    override fun onSizeChanged(
+        w: Int,
+        h: Int,
+        oldw: Int,
+        oldh: Int,
+    ) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        val sized = w > 0 && h > 0
+        val resized = w != oldw || h != oldh
+        if (sized && resized) {
+            loadProfile(activeGameId)
+        }
+    }
+
     fun updateMotion(sample: MotionInput?) {
         if (sample == motionSample) return
         motionSample = sample
@@ -76,16 +90,14 @@ class ProfileSurface(
             // CR-067: cadena de perfil — JSON por juego de `filesDir/profiles/`
             // (Config externa, SPEC-007) o el layout de mapeo del desarrollador
             // con drag & drop (`res/layout/profile_map.xml`) o default canónico.
-            val fromStore = if (gameId.isEmpty()) null else store.load(gameId)
             val loaded =
-                fromStore
-                    ?: try {
-                        ProfileMapLayout.extract(LayoutInflater.from(layoutContext), width, height)
-                    } catch (_: ProfileException) {
-                        // SPEC-008 §9: un layout de mapeo inválido se descarta
-                        // (sin derribar la superficie) y cae al default.
-                        null
-                    }
+                try {
+                    ProfileMapLayout.extract(LayoutInflater.from(layoutContext), width, height)
+                } catch (_: ProfileException) {
+                    // SPEC-008 §9: un layout de mapeo inválido se descarta
+                    // (sin derribar la superficie) y cae al default.
+                    null
+                }
             if (generation != profileLoadGeneration) return@launch
             profile =
                 applyFaceDistribution(
