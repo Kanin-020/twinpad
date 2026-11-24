@@ -2,12 +2,11 @@
 
 Twinpad convierte un teléfono Android en la segunda pantalla y el gamepad de tu PC: el servidor captura la pantalla del juego, el celular la muestra y envía los controles por la red local, y la vinculación se hace con un QR.
 
-Esta release trae cuatro piezas. Cada una se instala por separado; abajo se explica qué es y cómo configurarla.
+Esta release trae tres piezas. Cada una se instala por separado; abajo se explica qué es y cómo configurarla. El fork de Cemu se publica y compila en su propio repositorio, no en esta release.
 
 | Pieza | Archivo | Dónde corre |
 |---|---|---|
 | El server | `twinpad-server-<versión>-x86_64.AppImage` | PC con Linux x86_64 |
-| Cemu | `cemu-linux-x86_64-<tag>.tar.gz` | PC con Linux x86_64 |
 | Android | `twinpad-android-<versión>-debug-signed.apk` | Teléfono Android |
 | Decky | `decky-twinpad-<versión>.zip` | Steam Deck / SteamOS |
 
@@ -35,19 +34,11 @@ El firewall del PC debe permitir el tráfico entrante del teléfono en la red lo
 
 ## Cemu
 
-**Qué es.** Un fork de Cemu (el emulador de Wii U) con el soporte de Twinpad integrado: reenvía a la segunda pantalla lo que el juego dibuja en el GamePad y suma los canales de entrada, audio y micrófono del teléfono. Sirve para jugar títulos de Wii U con la pantalla secundaria real.
+**Qué es.** Un fork de Cemu (el emulador de Wii U) con el soporte de Twinpad integrado: reenvía a la segunda pantalla lo que el juego dibuja en el GamePad y suma los canales de entrada, audio y micrófono del teléfono.
 
-**Cómo configurarlo.**
+**Dónde descargarlo.** El fork de Cemu se compila y publica en su repositorio original: <https://github.com/Kanin-020/Cemu/releases/latest>. Descarga el paquete para Linux x86_64 de ahí.
 
-1. Extrae el paquete:
-   ```bash
-   tar -xzf cemu-linux-x86_64-<tag>.tar.gz
-   cd cemu
-   ./Cemu
-   ```
-2. Arranca **primero El server** y deja la página de gestión abierta para vincular el teléfono. El fork se conecta a los canales locales del servidor cuando inicia una partida.
-3. Es el Cemu de siempre: la configuración de gráficos, audio y perfiles de juego se hace en su propia interfaz. El paquete incluye `resources` y `gameProfiles`, así que no hace falta una instalación previa de Cemu.
-4. Necesita las dependencias gráficas habituales de Cemu en Linux (Vulkan u OpenGL) y una GPU con driver actualizado.
+Arranca **primero El server** y deja la página de gestión abierta para vincular el teléfono. El fork se conecta a los canales locales del servidor cuando inicia una partida.
 
 ---
 
