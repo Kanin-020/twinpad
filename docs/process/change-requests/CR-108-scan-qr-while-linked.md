@@ -5,11 +5,11 @@
 | ID | CR-108 |
 | Title | Escanear un QR nuevo desde U4 (sesión activa) sin cerrar la sesión |
 | Type | Behavior change |
-| Status | Open |
+| Status | Approved |
 | Author | Buffy (agente) |
 | Created | 2026-11-23 |
-| Decided | - |
-| Decided by | - |
+| Decided | 2026-11-25 |
+| Decided by | Product owner (chat) |
 
 ## 1. Target
 
@@ -30,23 +30,32 @@ R5: Un intento de vinculación = un escaneo; ...
 Pantalla de Pairing con sesión activa: solo se muestra la sesión; no hay acción de escaneo.
 ```
 
-**Proposed:**
+**Proposed (decisión del owner, 2026-11-25 — «se registra pero no se hace»):**
 
 ```text
-§6 (nueva fila): U4 | acción "escanear QR" | U2 | la sesión activa se mantiene
-  en memoria hasta que el nuevo intento llegue a pair_ack; si el intento falla
-  (E1–E5), la sesión anterior NO se restaura automáticamente y se cierra.
-§6 (invariante): U4 es el único estado con sesión activa; un escaneo desde U4
-  abre un intento nuevo y no crea una sesión paralela.
+§6 (nueva fila): U4 | enlace pedido (QR o código) | U4 | el payload queda
+  registrado como enlace pendiente; la sesión activa no se toca.
+§6 (nueva transición): U4 → U1/U5 (la sesión termina, por desconexión o caída)
+  | si hay un enlace pendiente, se inicia con él el intento de vinculación
+  (misma ruta que un escaneo desde U1) y el pendiente se consume una sola vez.
+§6 (estado transitorio): U6 (Reconectando) todavía cuenta como sesión viva: el
+  pendiente NO se ejecuta hasta que la reconexión se resuelva.
 §14: U4 solo se alcanza con un pair_ack recibido y verificado (SPEC-001 §7);
   jamás por timeout ni por escaneo solo. [sin cambios]
-R5: Un intento de vinculación = un escaneo. Desde U4 el escaneo es explícito
-  del usuario; no hay reintentos automáticos.
+  Un enlace pendiente no crea sesión ni intento paralelo: hasta que la sesión
+  no termina, la máquina sigue en U4.
+R5: Un intento de vinculación = un escaneo (o un código escrito). Sin sesión
+  viva el intento es inmediato; con sesión viva queda registrado y se ejecuta
+  al terminar la sesión. Nunca hay reintentos automáticos.
 ```
 
-Notas para el PO antes de aprobar:
-- Decidir qué pasa con la sesión viva al fallar el nuevo escaneo: cerrarla (propuesta) o conservarla.
-- Confirmar si el escaneo desde U4 sustituye la sesión activa o solo la complementa.
+Alcance en la app (implementado):
+- El panel «Nueva conexión» muestra QR y «Vincular sin cámara» con sesión viva.
+- La cámara la abre la Activity (la máquina no acepta Escanear desde U4) y se
+  cierra al registrarse el enlace; el aviso indica que se conectará al terminar
+  la sesión actual.
+- El pendiente vive en memoria del `PairingViewModel` (`core/PendingLink`): la
+  muerte del proceso lo descarta.
 
 ## 3. Motivation
 
@@ -72,21 +81,22 @@ El rework de UI pide que «Nueva conexión» muestre el panel con el QR aunque h
 
 ## 6. Decision
 
-- **Outcome:** pendiente de decisión del product owner.
-- **Rationale:** —
-- **Rollout:** —
+- **Outcome:** aprobada 2026-11-25. Con sesión activa, el QR/código se muestra y el enlace pedido se **guarda** («se registra») pero **no se ejecuta** hasta que la sesión termine.
+- **Rationale:** el owner quiere poder vincular el siguiente dispositivo sin cortar la sesión en curso; la sesión viva nunca se cierra para atender el escaneo.
+- **Rollout:** cambio local de la app; sin cambios de wire ni de servidor.
 
 ## 7. Execution checklist
 
-- [ ] Target document(s) updated (version bumped, changelog entry references this CR ID)
-- [ ] Dependent documents updated (from impact table)
-- [ ] Tests added/updated (TEST IDs)
-- [ ] `testing/traceability.md` rows updated (including CR history table)
+- [ ] Target document(s) updated (version bumped, changelog entry references this CR ID) — pendiente: el agente no modifica SPECs
+- [ ] Dependent documents updated (DES-002 «Nueva conexión»)
+- [x] Tests added (TEST-0207 `PendingLinkTest`)
+- [x] `testing/traceability.md` row updated (incluida la tabla de historial de cambios)
 - [ ] Indexes (`_index.md`) updated
-- [ ] Code change merged (if any)
+- [x] Code applied: `core/PendingLink`, `PairingViewModel` (registro y consumo), `PairingActivity` (panel QR/código con sesión viva)
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1.0 | 2026-11-23 | Buffy (agente) | Opened |
+| 0.2.0 | 2026-11-25 | Buffy (agente) | Decisión del owner: enlace pendiente que se ejecuta al terminar la sesión; implementado con TEST-0207 |

@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-106 |
+| CR | CR-119 |
 
 ## Open / In review
 
@@ -49,6 +49,11 @@
 | CR-013 | VPAD temporal automático de Jugador 1 en Cemu | SPEC-006, DES-004 | 2026-10-19 | [CR-013-cemu-temporary-vpad-player-one.md](CR-013-cemu-temporary-vpad-player-one.md) |
 | CR-113 | Mando virtual DualSense opcional en el Servidor PC (Linux `/dev/uhid`): el SO y Steam ven VID/PID `054C:0CE6` con PS, touchpad y giroscopio; opt-in por `TWINPAD_VIRTUAL_PAD`, sin tocar la app | SPEC-004 1.13.0 (§8.4), código `server/src/virtual_pad.rs` + cableado en `main.rs`, traceability (TEST-0203) | Applied (2026-11-25) | Buffy (agente) | [CR-113-dualsense-virtual-pad-linux.md](CR-113-dualsense-virtual-pad-linux.md) |
 | CR-114 | Mando virtual on/off desde la página local y el menú del tray (panel + `POST /virtual-pad` + ítem con marca, preferencia persistida) y bandeja que espera al host SNI y se re-registra si el panel se reinicia | SPEC-010 0.5.0 (§5 W10, W1/W7), SPEC-004 1.14.0 (§8.4), código `webui.rs`/`index.html`/`tray.rs`/`virtual_pad.rs`, traceability (TEST-0204/0205) | Applied (2026-11-25) | Buffy (agente) | [CR-114-virtual-pad-ui-toggle-and-tray.md](CR-114-virtual-pad-ui-toggle-and-tray.md) |
+| CR-108 | Escanear QR o pegar un código con sesión activa: el enlace se **guarda** como pendiente y se ejecuta cuando la sesión termina (la sesión viva no se toca); el panel «Nueva conexión» muestra QR y «Vincular sin cámara» en U4 | SPEC-002 (§6, §14, R5), DES-002, código `core/PendingLink`, `PairingViewModel`, `PairingActivity`, traceability (TEST-0207) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-108-scan-qr-while-linked.md](CR-108-scan-qr-while-linked.md) |
+| CR-115 | No enviar audio del teléfono a la PC mientras haya una salida de audio Bluetooth conectada (A2DP/SCO/LE Audio); la captura se detiene y se reevalúa en caliente | SPEC-005 (§5, §7), DES-004, REQ-005, código `ui/MicDemand*`, traceability (TEST-0206) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-115-no-phone-audio-to-pc-over-bluetooth.md](CR-115-no-phone-audio-to-pc-over-bluetooth.md) |
+| CR-116 | Identidad de mando por `vendorId`/`productId`/`name` del `InputDevice` (no existen fabricante/producto como texto), con `descriptor` de respaldo | SPEC-011 §3, código `ui/GamepadProfileStore`, traceability (TEST-0209) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-116-gamepad-identity-inputdevice-fields.md](CR-116-gamepad-identity-inputdevice-fields.md) |
+| CR-117 | La captura de una fila reemplaza su entrada física (aclaración de SPEC-011 §6 M3/§7.3 frente a AC-2); los duplicados son entre filas | SPEC-011 §6/§7, código `hid/GamepadMapping`, traceability (TEST-0209) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-117-gamepad-capture-replaces-row-binding.md](CR-117-gamepad-capture-replaces-row-binding.md) |
+| CR-118 | El mapeador se abre solo la primera vez que se detecta cada modelo; la marca se persiste y no se repite al reiniciar ni al reconectar | SPEC-011 §6 M1/§7.1/AC-1, código `ui/GamepadProfileStore` y `ui/PhysicalGamepadController`, traceability (TEST-0212) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-118-gamepad-mapper-once-per-model.md](CR-118-gamepad-mapper-once-per-model.md) |
 
 ## Applied
 
