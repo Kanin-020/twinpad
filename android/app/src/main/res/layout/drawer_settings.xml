@@ -119,6 +119,7 @@
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_show_fps"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -129,6 +130,7 @@
              Debug — la ventana de espera aparece como hoja arrastrable
              sobre el video (nace abierta); desmarcado no se muestra. -->
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_metrics_slider"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -143,6 +145,7 @@
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_show_controls"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -159,17 +162,22 @@
         <!-- CR-034: distribución de los botones de cara; también el mando
              físico (SPEC-002 R19). -->
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_nintendo_distribution"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_nintendo_distribution" />
 
-        <!-- Abre el drawer con L1 + R1 + START del mando físico durante la sesión. -->
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switch_sidebar_chord"
-            android:layout_width="wrap_content"
+        <!-- SPEC-011: acceso al mapeador del mando físico (modelo y perfil
+             activos en el texto); deshabilitado sin mando conectado. -->
+        <Button
+            android:id="@+id/btn_gamepad_mapper"
+            style="@style/Widget.Twinpad.Button.Filled"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/settings_sidebar_chord" />
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_gamepad_mapper" />
+
 
         <!-- CR-090: sección del micrófono, justo ENCIMA de la de cámara y con
              su mismo patrón (título + interruptor). La captura sigue siendo
@@ -184,6 +192,7 @@
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_microphone_stream"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -200,6 +209,7 @@
         <!-- CR-034: opt-in del stream de cámara; los frames solo salen con
              el juego seleccionado Y demanda vigente (CR-038). -->
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_camera_stream"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -235,6 +245,7 @@
 
         <!-- CR-054: métricas por etapa del Plugin, opt-in, off por defecto. -->
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_advanced_metrics"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -249,6 +260,7 @@
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
             android:id="@+id/switch_show_gyro_monitor"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

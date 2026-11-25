@@ -15,12 +15,14 @@ import com.twinpad.android.app.pairing.PairingViewModel
  * CR-097: pinta la lista de conexiones guardadas dentro de
  * `saved_devices_container` (fragment_saved_devices.xml). Mantiene la fila
  * expandida; las acciones delegan en el [PairingViewModel] y piden un nuevo
- * render con [rerender].
+ * render con [rerender]. La conexión activa muestra un punto verde cuando su
+ * transmisión está viva ([isStreaming]).
  */
 internal class SavedDevicesRenderer(
     private val activity: PairingActivity,
     private val container: View,
     private val viewModel: PairingViewModel,
+    private val isStreaming: () -> Boolean,
     private val rerender: () -> Unit,
 ) {
     private var expandedSavedId: String? = null
@@ -46,7 +48,15 @@ internal class SavedDevicesRenderer(
         }
         saved.forEach { link ->
             val isActive = link.sessionId == activeId
-            list.addView(linkCard(link.name.ifBlank { link.addr }, link.addr, link.sessionId, isActive))
+            list.addView(
+                linkCard(
+                    link.name.ifBlank { link.addr },
+                    link.addr,
+                    link.sessionId,
+                    isActive,
+                    isActive && isStreaming(),
+                ),
+            )
         }
     }
 
@@ -56,12 +66,15 @@ internal class SavedDevicesRenderer(
         addr: String,
         sessionId: String,
         isActive: Boolean,
+        showStreaming: Boolean,
     ): View {
         val card =
             LayoutInflater.from(activity).inflate(R.layout.item_saved_device, container as ViewGroup, false)
                 as MaterialCardView
-        card.findViewById<TextView>(R.id.saved_device_name).text = if (isActive) "\u25cf $label" else label
+        card.findViewById<TextView>(R.id.saved_device_name).text = label
         card.findViewById<TextView>(R.id.saved_device_addr).text = addr
+        card.findViewById<View>(R.id.saved_device_status)
+            .visibility = if (showStreaming) View.VISIBLE else View.GONE
         val action = card.findViewById<Button>(R.id.saved_device_action)
         action.visibility = if (sessionId == expandedSavedId) View.VISIBLE else View.GONE
         action.text =

@@ -20,7 +20,7 @@ class AudioPlaybackTest {
         val latestVolume = AtomicReference(1f)
         val playback =
             AudioPlayback(
-                PlaybackTrackFactory { _, _ ->
+                PlaybackTrackFactory { _, _, _ ->
                     tracksCreated.incrementAndGet()
                     object : PlaybackTrack {
                         override fun write(pcm: ByteArray) {

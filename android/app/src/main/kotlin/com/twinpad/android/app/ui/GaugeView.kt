@@ -9,7 +9,6 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
 import com.twinpad.android.app.R
 
@@ -35,8 +34,24 @@ class GaugeView
         /** Animator vigente, cancelado al llegar una muestra nueva. */
         private var progressAnimator: ValueAnimator? = null
 
-        /** CR-086 v2: animator del brillo de carga (continuo, sin fin). */
-        private var chargingAnimator: ValueAnimator? = null
+        /** CR-086 v2 + CR-112: barrido del brillo de carga a ritmo propio
+         * (ver [startChargingAnimation]); `true` mientras corre. */
+        private var charging = false
+
+        /** Origen del ciclo vigente del brillo (ns monotónicos). */
+        private var chargingStartedAtNs = 0L
+
+        /** Tick del brillo: avanza la fase e invalida a ~30 Hz. */
+        private val chargingTicker =
+            object : Runnable {
+                override fun run() {
+                    if (!charging) return
+                    val cycleMs = (System.nanoTime() - chargingStartedAtNs) / NANOS_PER_MS
+                    chargingPhase = (cycleMs % CHARGING_CYCLE_MS).toFloat() / CHARGING_CYCLE_MS
+                    invalidate()
+                    postDelayed(this, CHARGING_FRAME_MS)
+                }
+            }
 
         /** Fase 0..1 del brillo de carga sobre el arco lleno. */
         private var chargingPhase: Float = 0f
@@ -247,29 +262,23 @@ class GaugeView
             }
         }
 
-        /** Arranca (idempotente) el barrido continuo del brillo. */
+        /** Arranca (idempotente) el barrido continuo del brillo.
+         * CR-112: el `ValueAnimator` infinito invalidaba a la frecuencia de
+         * refresco del panel (120 Hz en este teléfono). Con los cuatro gauges
+         * visibles durante el stream la app se quedaba a 100 % de CPU y el
+         * SoC a 86 °C — la carga que precede al corte del video. El mismo
+         * barrido con ticks de ~30 Hz cuesta una cuarta parte. */
         private fun startChargingAnimation() {
-            if (chargingAnimator != null) {
-                return
-            }
-            chargingAnimator =
-                ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = CHARGING_CYCLE_MS
-                    interpolator = LinearInterpolator()
-                    repeatCount = ValueAnimator.INFINITE
-                    repeatMode = ValueAnimator.RESTART
-                    addUpdateListener { animator ->
-                        chargingPhase = animator.animatedValue as Float
-                        invalidate()
-                    }
-                    start()
-                }
+            if (charging) return
+            charging = true
+            chargingStartedAtNs = System.nanoTime()
+            postDelayed(chargingTicker, CHARGING_FRAME_MS)
         }
 
         /** Detiene el brillo y lo deja fuera del arco (fase 0). */
         private fun stopChargingAnimation() {
-            chargingAnimator?.cancel()
-            chargingAnimator = null
+            charging = false
+            removeCallbacks(chargingTicker)
             chargingPhase = 0f
             invalidate()
         }
@@ -339,6 +348,12 @@ class GaugeView
 
             /** CR-086 v2: una vuelta del brillo de carga (batería). */
             const val CHARGING_CYCLE_MS = 1800L
+
+            /** CR-112: ritmo de repintado del brillo (~30 Hz, no el del panel). */
+            const val CHARGING_FRAME_MS = 33L
+
+            /** Nanosegundos por milisegundo (fase del ciclo del brillo). */
+            const val NANOS_PER_MS = 1_000_000L
 
             /** CR-086 v2: alpha del brillo (35 % del blanco). */
             const val CHARGING_HIGHLIGHT_ALPHA = 0x59

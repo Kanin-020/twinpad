@@ -2,6 +2,7 @@ package com.twinpad.android.app.pairing
 
 import android.app.Application
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -16,6 +17,7 @@ import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
+import com.twinpad.android.app.ui.applyPhoneAudioRoute
 import com.twinpad.android.app.ui.bitrateForResolution
 import com.twinpad.android.app.wire.CameraRequestCodec
 import com.twinpad.android.app.wire.GameListCodec
@@ -86,6 +88,7 @@ internal class PairingViewModel(
     private val audioMachine = collaborators.audioMachine
     private val gamepad = collaborators.gamepad
     private val playback = collaborators.playback
+    private val audioManager = app.getSystemService(Application.AUDIO_SERVICE) as AudioManager
     val streamStats = collaborators.streamStats
     private val rumblePlayer = RumblePlayer(app)
     private val linkStore =
@@ -103,6 +106,14 @@ internal class PairingViewModel(
      * preservar la cadena base_fn de los patches (SPEC-003/CR-002). */
     private val _uiState = MutableStateFlow<PairingUiState>(machine.state)
     val uiState: StateFlow<PairingUiState> = _uiState
+
+    /** CR-108 (decisión del owner): un enlace pedido con sesión viva se guarda
+     * y se ejecuta cuando la sesión termina; la sesión activa no se toca. */
+    private val pendingLink = com.twinpad.android.app.core.PendingLink()
+    private val _pendingLinkWaiting = MutableStateFlow(false)
+
+    /** `true` mientras hay un enlace esperando el final de la sesión viva. */
+    val pendingLinkWaiting: StateFlow<Boolean> = _pendingLinkWaiting
 
     /** CR-059: demanda del permiso BT que el falllover necesita en caliente;
      * la Activity lo lanza al dialógo del SO y devuelve el resultado por
@@ -361,7 +372,16 @@ internal class PairingViewModel(
     }
 
     /** Punto de entrada de la UI/capa Android hacia la máquina. */
-    fun onEvent(event: PairingEvent) = feed(event)
+    fun onEvent(event: PairingEvent) {
+        // CR-108: con sesión viva el escaneo no abre un intento nuevo; queda
+        // registrado para ejecutarse al terminar la sesión.
+        if (event is PairingEvent.QrScanned && _uiState.value is PairingUiState.Linked) {
+            pendingLink.save(event.raw)
+            _pendingLinkWaiting.value = true
+            return
+        }
+        feed(event)
+    }
 
     /** Líneas de sesión media enviadas por el teléfono hacia el Servidor
      * (CR-034: `camera_frame`; CR-035: `mic_chunk` solo con demanda vigente). */
@@ -460,6 +480,7 @@ internal class PairingViewModel(
     private fun feed(event: PairingEvent) {
         val effects = machine.onEvent(event)
         _uiState.value = machine.state
+        runPendingLink()
         if (_uiState.value is PairingUiState.Linked) {
             // CR-055 HB5: en U4 el watchdog de silencio (15 s sin ninguna línea)
             // declara la conexión terminada; el pong mantiene viva la sesión.
@@ -470,6 +491,19 @@ internal class PairingViewModel(
         scheduleResumeLoop()
         armGamepadChannel()
         effects.forEach(executeEffect)
+    }
+
+    /** CR-108: al quedarse sin sesión se ejecuta el enlace que esperaba.
+     * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
+    private val runPendingLink: () -> Unit = {
+        val state = _uiState.value
+        // U6 reconectando todavía es sesión viva (puede volver a U4).
+        val sessionAlive = state is PairingUiState.Linked || state is PairingUiState.Reconnecting
+        val pending = pendingLink.takeWhenSessionEnded(sessionAlive)
+        if (pending != null) {
+            _pendingLinkWaiting.value = false
+            feed(PairingEvent.QrScanned(pending))
+        }
     }
 
     /** Temporizador U6 (CR-056, SPEC-001 §8.2): mientras la máquina esté en
@@ -562,6 +596,13 @@ internal class PairingViewModel(
         // `feed` usa los lambdas de arriba, que deben estar inicializados antes.
         savedLinks.resumeLast() // CR-094: reanuda la última vinculación guardada
         gamepadSwitcher.startChannel(getApplication()) // prueba BT: canal HID al abrir
+    }
+
+    /** CR-115: mientras el teléfono tenga una salida Bluetooth, el audio de
+     * la sesión se reproduce en su altavoz para que el PC no suene como
+     * bocina. Sin Bluetooth se deja la salida que elija el sistema. */
+    val applyPlaybackRoute: () -> Unit = {
+        applyPhoneAudioRoute(audioManager) { device -> playback.setOutputDevice(device) }
     }
 
     /** CR-059: el perfil BT se libera en `onCleared`, que corre al destruir la Activity. */

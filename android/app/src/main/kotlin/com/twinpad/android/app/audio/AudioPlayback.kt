@@ -1,6 +1,7 @@
 package com.twinpad.android.app.audio
 
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioTrack
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +27,10 @@ class AudioPlayback internal constructor(
     private var channels: Int = 0
     private var volume: Float = 1f
 
+    /** CR-115: salida fija (altavoz del teléfono) mientras haya audio BT;
+     * `null` deja la salida que elija el sistema. */
+    private var outputDevice: AudioDeviceInfo? = null
+
     init {
         scope.launch {
             for (command in commands) {
@@ -34,6 +39,13 @@ class AudioPlayback internal constructor(
                     is PlaybackCommand.SetVolume -> {
                         volume = command.volume
                         track?.setVolume(volume)
+                    }
+                    is PlaybackCommand.SetDevice -> {
+                        outputDevice = command.device
+                        // La pista vigente no cambia de ruta en caliente: se
+                        // descarta y el próximo fragmento la recrea con la
+                        // salida nueva (CR-115).
+                        releaseTrack()
                     }
                     PlaybackCommand.Stop -> releaseTrack()
                     PlaybackCommand.Close -> {
@@ -57,6 +69,11 @@ class AudioPlayback internal constructor(
         commands.trySend(PlaybackCommand.SetVolume(volume.coerceIn(0f, 1f)))
     }
 
+    /** CR-115: fija la salida del stream (altavoz con audio BT, `null` sistema). */
+    fun setOutputDevice(device: AudioDeviceInfo?) {
+        commands.trySend(PlaybackCommand.SetDevice(device))
+    }
+
     /** Silencia el stream vigente sin cerrar el reproductor para futuros streams. */
     fun stop() {
         commands.trySend(PlaybackCommand.Stop)
@@ -73,7 +90,7 @@ class AudioPlayback internal constructor(
         if (track == null || chunk.rate != rate || chunk.channels != channels) {
             releaseTrack()
             if (chunk.rate <= 0 || chunk.channels !in 1..2) return
-            track = trackFactory.create(chunk.rate, chunk.channels) ?: return
+            track = trackFactory.create(chunk.rate, chunk.channels, outputDevice) ?: return
             track?.setVolume(volume)
             rate = chunk.rate
             channels = chunk.channels
@@ -97,6 +114,9 @@ internal sealed interface PlaybackCommand {
     /** Cambia el volumen del track vigente (no del host). */
     data class SetVolume(val volume: Float) : PlaybackCommand
 
+    /** CR-115: cambia la salida; la pista vigente se recrea al escribir. */
+    data class SetDevice(val device: AudioDeviceInfo?) : PlaybackCommand
+
     /** Silencia y libera el track; canal abierto para un nuevo stream. */
     data object Stop : PlaybackCommand
 
@@ -109,6 +129,7 @@ internal fun interface PlaybackTrackFactory {
     fun create(
         rate: Int,
         channels: Int,
+        device: AudioDeviceInfo?,
     ): PlaybackTrack?
 }
 
@@ -128,6 +149,7 @@ private object AndroidPlaybackTrackFactory : PlaybackTrackFactory {
     override fun create(
         rate: Int,
         channels: Int,
+        device: AudioDeviceInfo?,
     ): PlaybackTrack? {
         val channelMask = if (channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
         val format =
@@ -150,6 +172,7 @@ private object AndroidPlaybackTrackFactory : PlaybackTrackFactory {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .setBufferSizeInBytes(minBuffer * 2)
                 .build()
+                .apply { if (device != null) setPreferredDevice(device) }
         audioTrack.play()
         return AndroidPlaybackTrack(audioTrack)
     }

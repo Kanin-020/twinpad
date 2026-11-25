@@ -7,8 +7,33 @@
     android:paddingTop="32dp">
 
     <LinearLayout
-        android:id="@+id/saved_devices_list"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical" />
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/saved_devices_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pairing_saved_title"
+            android:textColor="@color/design_cloud_white"
+            android:textFontWeight="500"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/saved_devices_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="16dp"
+            android:text="@string/pairing_saved_hint"
+            android:textColor="@color/design_quiet_slate"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/saved_devices_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
 </ScrollView>

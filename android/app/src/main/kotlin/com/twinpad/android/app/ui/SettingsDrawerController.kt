@@ -1,5 +1,6 @@
 package com.twinpad.android.app.ui
 
+import android.view.MotionEvent
 import android.widget.RadioButton
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.slider.Slider
@@ -86,7 +87,6 @@ internal class SettingsDrawerController(
         activity.findViewById<SwitchMaterial>(R.id.switch_show_controls).isChecked = settings.showControls
         activity.findViewById<SwitchMaterial>(R.id.switch_nintendo_distribution).isChecked =
             settings.nintendoDistribution
-        activity.findViewById<SwitchMaterial>(R.id.switch_sidebar_chord).isChecked = settings.sidebarChord
         host.onHudRestored(settings.showHud)
         host.onControlsToggled(settings.showControls)
         host.onNintendoDistributionToggled(settings.nintendoDistribution)
@@ -160,10 +160,19 @@ internal class SettingsDrawerController(
         }
     }
 
-    /** CR-001: el volumen del drawer persiste sin notificar al ViewModel. */
+    /** CR-001: el volumen del drawer persiste sin notificar al ViewModel.
+     * El arrastre del slider se aísla del scroll del drawer y del gesto del
+     * `DrawerLayout` para que el pulgar siga al dedo en todo su recorrido. */
     private fun bindAudioVolumeSeek() {
         val audioVolume = activity.findViewById<Slider>(R.id.audio_volume_seek)
         audioVolume.value = store.load().audioVolumePercent.toFloat()
+        audioVolume.setOnTouchListener { view, event ->
+            val dragging =
+                event.actionMasked != MotionEvent.ACTION_UP &&
+                    event.actionMasked != MotionEvent.ACTION_CANCEL
+            view.parent?.requestDisallowInterceptTouchEvent(dragging)
+            false
+        }
         audioVolume.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 val percent = value.roundToInt().coerceIn(0, AUDIO_VOLUME_PERCENT_MAX)
@@ -194,11 +203,6 @@ internal class SettingsDrawerController(
             .setOnCheckedChangeListener { _, checked ->
                 host.onNintendoDistributionToggled(checked)
                 persist { it.copy(nintendoDistribution = checked) }
-            }
-        // Combinación L1 + R1 + START para abrir el drawer durante la sesión.
-        activity.findViewById<SwitchMaterial>(R.id.switch_sidebar_chord)
-            .setOnCheckedChangeListener { _, checked ->
-                persist { it.copy(sidebarChord = checked) }
             }
         // CR-054: métricas por etapa del Plugin; el host re-renderiza el HUD.
         activity.findViewById<SwitchMaterial>(R.id.switch_advanced_metrics)

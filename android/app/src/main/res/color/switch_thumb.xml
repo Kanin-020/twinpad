@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pulgar de los interruptores del drawer: Cloud White cuando está activado,
+     Misted Slate cuando está desactivado (con colorPrimary = Cloud White el
+     Material Switch pintaba pulgar y pista en blanco en ambos estados). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/design_cloud_white" android:state_checked="true" />
+    <item android:color="@color/design_misted_slate" />
+</selector>

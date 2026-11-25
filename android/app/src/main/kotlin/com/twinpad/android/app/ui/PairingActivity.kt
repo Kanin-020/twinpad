@@ -2,6 +2,9 @@ package com.twinpad.android.app.ui
 
 import android.Manifest
 import android.hardware.SensorManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
 import android.view.Gravity
@@ -17,6 +20,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
@@ -39,17 +43,12 @@ import com.twinpad.android.app.hid.PhysicalMotion
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
-import com.twinpad.android.app.wire.VideoStageStatsCodec
-import com.twinpad.android.app.wire.VideoStageStatsMessage
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
-
-/** Conversión kbps → Mbps. */
-private const val KBPS_PER_MBPS: Int = 1_000
 
 /** CR-038: valor inicial de [PairingActivity.loadedProfileId] — ningún juego
  * cargado aún, así la primera emisión del estado combinado (antes `null`)
@@ -75,6 +74,10 @@ class PairingActivity : AppCompatActivity() {
         SidebarChord {
             findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
         }
+
+    /** CR-115: ruta de audio del teléfono (para no enviar nada a la PC por BT). */
+    private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
+
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
@@ -177,7 +180,19 @@ class PairingActivity : AppCompatActivity() {
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             viewModel.onCameraPermissionResult(granted)
+            // CR-108: el escaneo con sesión viva lo gobierna la Activity (la
+            // máquina no acepta Escanear desde U4).
+            if (granted && linkedScanActive) {
+                startLinkedScan()
+            } else if (!granted && linkedScanActive) {
+                stopLinkedScan()
+                panelView<TextView>(R.id.txt_status).text =
+                    getString(R.string.pairing_error_camera_denied)
+            }
         }
+
+    /** CR-108: cámara del panel «Nueva conexión» con una sesión ya activa. */
+    private var linkedScanActive = false
 
     /** Permiso BLUETOOTH_CONNECT para el canal HID (prueba de banco). */
     private val btPermissionLauncher =
@@ -187,9 +202,9 @@ class PairingActivity : AppCompatActivity() {
 
     /** CR-035: permiso del micrófono bajo demanda; al concederlo se reevalúa
      * el estado combinado de la sesión (juego «cemu» + `mic_request`). */
-    private val micPermissionLauncher =
+    private val micPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) applyMicDemand()
+            if (granted) micDemand.apply()
         }
 
     /** Efectos del drawer que exceden sus vistas: hardware y estado propio. */
@@ -348,6 +363,10 @@ class PairingActivity : AppCompatActivity() {
             applyVideoScale(drawer.load())
         }
         drawer.applyPersistedSettings()
+        // CR-115: el ruteo Bluetooth cambia la demanda del micrófono y la
+        // salida del audio de la sesión en caliente.
+        micDemand.register()
+        audioManager.registerAudioDeviceCallback(playbackRouteCallback, null)
 
         sessionView<ImageButton>(R.id.btn_settings).setOnClickListener {
             findViewById<DrawerLayout>(R.id.settings_drawer).openDrawer(GravityCompat.START)
@@ -381,7 +400,13 @@ class PairingActivity : AppCompatActivity() {
     /** Cablea cada View a su evento del ViewModel. */
     private fun wireViews() {
         panelView<Button>(R.id.btn_scan).setOnClickListener {
-            viewModel.onEvent(PairingEvent.ScanRequested)
+            // CR-108: con sesión viva el enlace pedido se guarda para cuando
+            // la sesión termine; no abre un intento nuevo en la máquina.
+            if (viewModel.uiState.value is PairingUiState.Linked) {
+                startLinkedScan()
+            } else {
+                viewModel.onEvent(PairingEvent.ScanRequested)
+            }
         }
         // CR-060 (SPEC-002 §8.4): el payload textual que la PC ya imprime
         // junto al QR se escribe/pega aquí; misma ruta que el QR sin cámara.
@@ -389,7 +414,7 @@ class PairingActivity : AppCompatActivity() {
             showTypedCodeDialog()
         }
         panelView<Button>(R.id.btn_cancel).setOnClickListener {
-            viewModel.onEvent(PairingEvent.Cancelled)
+            if (linkedScanActive) stopLinkedScan() else viewModel.onEvent(PairingEvent.Cancelled)
         }
         panelView<Button>(R.id.btn_disconnect).setOnClickListener {
             viewModel.onDisconnectRequested() // CR-094
@@ -510,29 +535,70 @@ class PairingActivity : AppCompatActivity() {
         }
     }
 
-    /** CR-035 + CR-090: captura solo con el juego seleccionado, la demanda
-     * `mic_request` vigente Y el interruptor «Enviar micrófono al GamePad»
-     * activado (preferencia persistida que lee el drawer). Si falta el
-     * permiso RECORD_AUDIO se solicita y el lanzador reevalúa la demanda al
-     * concederlo; sin gate completo se para la captura. Función-propiedad
-     * para mantener el recuento de funciones bajo el umbral de detekt. */
-    private val applyMicDemand: () -> Unit = {
-        val demandActive =
-            viewModel.selectedGameId.value == "cemu" &&
-                viewModel.micRequested.value &&
-                drawer.load().microphoneStream
-        when {
-            !demandActive -> micController.stop()
-            micController.hasPermission() -> micController.start()
-            else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    /** CR-108: abre la cámara del QR con la sesión viva. El resultado entra a
+     * [PairingViewModel.onEvent] y se guarda como enlace pendiente.
+     * (Lambda: detekt TooManyFunctions.) */
+    private val startLinkedScan: () -> Unit = {
+        linkedScanActive = true
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            renderLinked()
+            cameraController.bind(panelView<PreviewView>(R.id.camera_preview), this)
+        } else {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
+
+    /** CR-108: cierra la cámara del escaneo con sesión viva y deja el panel en
+     * su estado de sesión activa (con el aviso del enlace pendiente si lo hay).
+     * (Lambda: detekt TooManyFunctions.) */
+    private val stopLinkedScan: () -> Unit = {
+        if (linkedScanActive) {
+            linkedScanActive = false
+            cameraController.stop()
+        }
+        if (viewModel.uiState.value is PairingUiState.Linked) renderLinked()
+    }
+
+    /** CR-035/CR-090/CR-115: el gate y la captura viven en el controlador. */
+    private val micDemand by lazy {
+        MicDemandController(
+            audioManager = audioManager,
+            mic = micController,
+            gameSelected = { viewModel.selectedGameId.value == "cemu" },
+            micRequested = { viewModel.micRequested.value },
+            switchEnabled = { drawer.load().microphoneStream },
+            requestPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+        )
+    }
+
+    private val applyMicDemand: () -> Unit = { micDemand.apply() }
+
+    /** CR-115: al cambiar las salidas del teléfono se reevalúa si el audio de
+     * la sesión debe quedarse en el altavoz (con Bluetooth) o volver al
+     * ruteo del sistema. */
+    private val playbackRouteCallback =
+        object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = viewModel.applyPlaybackRoute()
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                viewModel.applyPlaybackRoute()
+            }
+        }
 
     /** Observa la sesión completa (video por frame, HUD por tick). */
     private fun observeStates() {
         lifecycleScope.launch {
             viewModel.uiState.collectLatest { state ->
                 applyLinkedState(state)
+            }
+        }
+        // CR-108: al guardarse el enlace pendiente se cierra la cámara y se
+        // avisa que se conectará cuando termine la sesión actual.
+        lifecycleScope.launch {
+            viewModel.pendingLinkWaiting.collectLatest { waiting ->
+                if (waiting) stopLinkedScan()
             }
         }
         observeSelectedGame()
@@ -581,6 +647,7 @@ class PairingActivity : AppCompatActivity() {
         } else if (state !is PairingUiState.Linked) {
             sessionConfigSent = false
         }
+        if (state is PairingUiState.Linked) viewModel.applyPlaybackRoute()
     }
 
     /** Tick del stream: escala al frame real y el MONITOR FULL-SCREEN de
@@ -607,60 +674,22 @@ class PairingActivity : AppCompatActivity() {
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)
         keepDisplayAwake(viewModel.uiState.value is PairingUiState.Linked)
+        // El punto verde de la conexión activa sigue el inicio/fin del stream.
+        if (viewModel.uiState.value is PairingUiState.Linked) renderSavedDevicesNow()
     }
 
-    private fun renderHudChip() {
-        val chip = sessionView<TextView>(R.id.hud_chip)
-        val stageLine = sessionView<TextView>(R.id.hud_stage)
-        if (!hudVisible) {
-            chip.isVisible = false
-            stageLine.isVisible = false
-            return
-        }
-        val stats = viewModel.streamStats
-        stats.refresh()
-        chip.text =
-            getString(
-                R.string.hud_chip_text,
-                "%.0f fps".format(stats.fps),
-                "%.0f fps".format(stats.receiveFps),
-                "%.1f".format(stats.kbps / KBPS_PER_MBPS),
-            )
-        chip.isVisible = true
-        // CR-054: las métricas por etapa viven en un bloque separado
-        // («Métricas avanzadas») con su propio interruptor del drawer.
-        val metrics = viewModel.videoStageStats.value
-        val formatted = metrics?.let(VideoStageStatsCodec::format)
-        if (!advancedMetricsVisible || formatted == null) {
-            stageLine.isVisible = false
-        } else {
-            stageLine.text =
-                getString(R.string.hud_stage_title) + "\n" + formatted
-            stageLine.isVisible = true
-        }
-        renderHudStageDetails(metrics)
+    /** HUD de la sesión (CR-054/CR-075/CR-112); el renderer vive aparte. */
+    private val hudRenderer by lazy {
+        SessionHudRenderer(
+            context = this,
+            findView = { id -> sessionView<View>(id) },
+            stats = viewModel.streamStats,
+            stageStats = { viewModel.videoStageStats.value },
+            mediaTransport = { viewModel.mediaTransport.value },
+        )
     }
 
-    /** CR-075: segunda línea del HUD («Métricas avanzadas») con SOLO lo
-     * conocido: backend del encoder (hw), transporte media (UDP/TCP) y las
-     * resoluciones de entrada/salida que reporta el Plugin en la ventana.
-     * Función-propiedad para mantener el recuento de funciones bajo el
-     * umbral de detekt. */
-    private val renderHudStageDetails = { metrics: VideoStageStatsMessage? ->
-        val details = sessionView<TextView>(R.id.hud_stage_details)
-        if (!advancedMetricsVisible) {
-            details.isVisible = false
-        } else {
-            val transport = viewModel.mediaTransport.value?.let { if (it) "UDP" else "TCP" }
-            val detailsText = metrics?.let { VideoStageStatsCodec.formatDetails(it, transport) }
-            if (detailsText == null) {
-                details.isVisible = false
-            } else {
-                details.text = detailsText
-                details.isVisible = true
-            }
-        }
-    }
+    private fun renderHudChip() = hudRenderer.render(hudVisible, advancedMetricsVisible)
 
     /** Superficie táctil: instanciar el editor/uso una sola vez. */
     private fun attachProfileSurface() {
@@ -751,6 +780,8 @@ class PairingActivity : AppCompatActivity() {
             activity = this,
             container = findViewById(R.id.saved_devices_container),
             viewModel = viewModel,
+            // Punto verde solo con la transmisión de esta conexión viva.
+            isStreaming = { viewModel.streamState.value.state == StreamState.STREAMING },
             rerender = { renderSavedDevicesNow() },
         )
     }
@@ -773,16 +804,25 @@ class PairingActivity : AppCompatActivity() {
     private fun renderLinked() {
         // Con la vista de conexión elegida, el panel muestra la pantalla
         // inicial mientras la sesión sigue viva en segundo plano.
-        // CR-097: con conexión activa no se ofrece Escanear; Desconectar
-        // está en la fila de la columna de guardados.
-        // "Nueva conexión" con sesión viva: la máquina de estados no acepta
-        // escanear desde U4 (SPEC-002 §14), así que el botón QR no se ofrece.
-        panelView<View>(R.id.pairing_title).isVisible = connectionTabs.showingConnectionView
-        panelView<View>(R.id.btn_scan).isVisible = false
+        // Desconectar está en la fila de la columna de guardados.
+        // CR-108 (decisión del owner): el QR y el código sí se ofrecen con
+        // sesión viva; el enlace pedido se registra y se ejecuta cuando la
+        // sesión termine, sin tocar la sesión activa.
+        val showingNewConnection = !connectionTabs.showingConnectionView
+        panelView<View>(R.id.pairing_title).isVisible = showingNewConnection
+        panelView<View>(R.id.btn_scan).isVisible = showingNewConnection && !linkedScanActive
+        panelView<View>(R.id.btn_typed_code).isVisible = showingNewConnection
         panelView<TextView>(R.id.txt_status).text =
-            if (connectionTabs.showingConnectionView) getString(R.string.pairing_linked) else ""
-        panelView<PreviewView>(R.id.camera_preview).isVisible = false
-        panelView<View>(R.id.btn_cancel).isVisible = false
+            when {
+                !showingNewConnection -> ""
+                // CR-108: mientras se escanea se indica que el enlace queda
+                // guardado para cuando termine la sesión.
+                linkedScanActive -> getString(R.string.pairing_scanning)
+                viewModel.pendingLinkWaiting.value -> getString(R.string.pairing_pending_link)
+                else -> getString(R.string.pairing_linked)
+            }
+        panelView<PreviewView>(R.id.camera_preview).isVisible = linkedScanActive
+        panelView<View>(R.id.btn_cancel).isVisible = linkedScanActive
         panelView<View>(R.id.progress_pairing).isVisible = false
         // El servicio en primer plano impide que el sistema mate
         // el proceso al cambiar de app (el video sigue vivo).
@@ -914,6 +954,10 @@ class PairingActivity : AppCompatActivity() {
         sessionView<SurfaceView>(R.id.video_view).holder.removeCallback(mediaSurfaceCallback)
         // CR-077: el monitor de FPS del Gamepad no debe sobrevivir a la Activity.
         gaugePanel.stopDeviceMonitor()
+        if (::drawer.isInitialized) {
+            micDemand.unregister()
+            audioManager.unregisterAudioDeviceCallback(playbackRouteCallback)
+        }
         viewModel.attachMediaSurface(null)
         cameraController.release()
         micController.stop()
@@ -950,5 +994,5 @@ fun com.twinpad.android.app.core.PairingError.resId(): Int =
         com.twinpad.android.app.core.PairingError.SessionEnded -> R.string.pairing_session_ended
     }
 
-private fun isGamepadSource(source: Int): Boolean =
+internal fun isGamepadSource(source: Int): Boolean =
     source and InputDevice.SOURCE_GAMEPAD != 0 || source and InputDevice.SOURCE_JOYSTICK != 0

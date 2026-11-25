@@ -6,6 +6,9 @@
     <string name="pairing_cancel_button">Cancelar</string>
     <string name="pairing_disconnect_button">Desconectar</string>
     <string name="pairing_saved_empty">Aún no hay dispositivos guardados.</string>
+    <string name="pairing_saved_title">Conexiones guardadas</string>
+    <string name="pairing_saved_hint">Toca una conexión para reconectarte o desconectarla. El punto verde marca la que está transmitiendo ahora.</string>
+    <string name="pairing_saved_active">Transmitiendo</string>
     <string name="pairing_saved_forget">Olvidar</string>
     <string name="pairing_saved_disconnect">Desconectar</string>
     <string name="pairing_retry_button">Reintentar</string>
@@ -17,6 +20,7 @@
     <string name="pairing_handshaking">Conectando con la PC…</string>
     <string name="pairing_reconnecting">Reconectando con la PC…</string>
     <string name="pairing_linked">Vinculado</string>
+    <string name="pairing_pending_link">Enlace guardado: se conectará cuando termine la sesión actual</string>
     <string name="pairing_error_server_unavailable">Servidor no disponible</string>
     <string name="pairing_error_qr_expired">QR expirado, generar uno nuevo</string>
     <string name="pairing_error_rejected">Vinculación rechazada</string>
@@ -59,7 +63,28 @@
     <!-- CR-032: título de grupo + interruptor de distribución de cara. -->
     <string name="settings_distribution">Distribución</string>
     <string name="settings_nintendo_distribution">Distribución Nintendo</string>
-    <string name="settings_sidebar_chord">Abrir ajustes con L1 + R1 + START</string>
+    <string name="settings_gamepad_mapper">Mando físico</string>
+    <string name="settings_gamepad_mapper_connected">Mando físico · %1$s · %2$s</string>
+    <string name="gamepad_mapper_profile">Perfil: %1$s</string>
+    <string name="gamepad_mapper_profile_title">Perfil del mando</string>
+    <string name="gamepad_mapper_default">Predeterminado</string>
+    <string name="gamepad_mapper_new_profile">Nuevo perfil</string>
+    <string name="gamepad_mapper_profile_name">Nombre del perfil</string>
+    <string name="gamepad_mapper_name_in_use">Ese nombre ya existe</string>
+    <string name="gamepad_mapper_hint">Toca una entrada y luego pulsa un botón o mueve un eje.</string>
+    <string name="gamepad_mapper_capturing">Pulsa un botón o mueve un eje para «%1$s»…</string>
+    <string name="gamepad_mapper_cancel_capture">Cancelar captura</string>
+    <string name="gamepad_mapper_unassigned">Sin asignar</string>
+    <string name="gamepad_mapper_corrupt">El perfil guardado no se pudo leer; se usa el predeterminado.</string>
+    <string name="gamepad_mapper_close">Cerrar</string>
+    <string name="gamepad_mapper_section">Equivalencias</string>
+    <string name="gamepad_mapper_cancel">Cancelar</string>
+    <string name="gamepad_mapper_create">Crear</string>
+    <string name="gamepad_mapper_selected_mark">✓</string>
+    <string name="gamepad_mapper_name_required">Escribe un nombre para el perfil.</string>
+    <string name="gamepad_mapper_key">Botón %1$d</string>
+    <string name="gamepad_mapper_axis">Eje %1$s (%2$s)</string>
+    <string name="gamepad_mapper_axis_name">%1$d</string>
     <!-- CR-090: el título de cámara pierde la mención a la integración (el
          dueño pidió no nombrarla en la app); el micrófono gana su propia
          sección justo encima, con el mismo patrón de interruptor. -->
