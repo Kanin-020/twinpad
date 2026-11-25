@@ -5,16 +5,13 @@ import com.twinpad.android.app.hid.PhysicalGamepadAlgo.KeyCodes
 
 /**
  * Combinación L1 + R1 + START del mando físico que abre el drawer de ajustes
- * durante la sesión. Solo dispara si [enabled] es verdadero en el momento de la
- * pulsación; las teclas no se consumen y siguen llegando al juego.
+ * durante la sesión. Es un comportamiento por defecto de la app, no una
+ * preferencia; las teclas no se consumen y siguen llegando al juego.
  */
 internal class SidebarChord(private val onTriggered: () -> Unit) {
     private val held = mutableSetOf<Int>()
 
-    fun onKey(
-        event: KeyEvent,
-        enabled: Boolean,
-    ) {
+    fun onKey(event: KeyEvent) {
         val code = event.keyCode
         if (code !in KEYS) return
         when (event.action) {
@@ -22,7 +19,7 @@ internal class SidebarChord(private val onTriggered: () -> Unit) {
             KeyEvent.ACTION_DOWN -> {
                 if (event.repeatCount != 0) return
                 held.add(code)
-                if (enabled && held.containsAll(KEYS)) onTriggered()
+                if (held.containsAll(KEYS)) onTriggered()
             }
         }
     }

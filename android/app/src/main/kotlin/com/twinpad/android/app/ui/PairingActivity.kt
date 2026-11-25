@@ -39,13 +39,12 @@ import com.twinpad.android.app.R
 import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingUiState
-import com.twinpad.android.app.hid.PhysicalMotion
+import com.twinpad.android.app.hid.PhysicalAxes
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.stream.StreamState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /** Delay del tick del HUD (ms). */
 private const val HUD_TICK_MS: Long = 1_000L
@@ -78,6 +77,9 @@ class PairingActivity : AppCompatActivity() {
     /** CR-115: ruta de audio del teléfono (para no enviar nada a la PC por BT). */
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
+    /** SPEC-011: perfiles y mapeador del mando físico (Ajustes + autoapertura). */
+    private val gamepadProfiles by lazy { GamepadProfileStore(this) }
+    private lateinit var physicalGamepad: PhysicalGamepadController
     private var surfaceRef: ProfileSurface? = null
     private var hudVisible = true
     private var controlsVisible = true
@@ -294,6 +296,13 @@ class PairingActivity : AppCompatActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         setContentView(R.layout.activity_pairing)
+        // SPEC-011: antes de crear los fragmentos, porque la superficie de
+        // sesión se adjunta en onSessionReady y consulta el mapeo activo.
+        physicalGamepad =
+            PhysicalGamepadController(this, gamepadProfiles) { mapping ->
+                surfaceRef?.setPhysicalMapping(mapping)
+            }
+        physicalGamepad.bind()
         // CR-097 paso 1: el panel de conexión vive en PairingFragment. Tras la
         // muerte del proceso Android restaura los fragmentos por reflexión
         // (constructor sin argumentos): se reutilizan los restaurados y se
@@ -697,6 +706,7 @@ class PairingActivity : AppCompatActivity() {
             val surface = ProfileSurface(this) { report -> viewModel.onGamepadInput(report) }
             surface.showControls = controlsVisible
             surface.setNintendoFaceLayout(nintendoFaceDistribution)
+            surface.setPhysicalMapping(physicalGamepad.mappingForConnected())
             surfaceRef = surface
             sessionView<ViewGroup>(R.id.surface_container).addView(
                 surface,
@@ -710,8 +720,10 @@ class PairingActivity : AppCompatActivity() {
      * códigos y ejes del mapper puro; la fusión con la superficie táctil
      * vive en [ProfileSurface]. Sin sesión linkeada no se consumen eventos. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // SPEC-011: con una fila en captura, el siguiente botón es el nuevo mapeo.
+        if (physicalGamepad.onKey(event)) return true
         if (isGamepadSource(event.source)) {
-            sidebarChord.onKey(event, enabled = ::drawer.isInitialized && drawer.load().sidebarChord)
+            sidebarChord.onKey(event)
         }
         val surface =
             sessionSurfaceWithPhysicalGamepad()
@@ -730,30 +742,19 @@ class PairingActivity : AppCompatActivity() {
 
     /** CR-028: sticks/triggers/hat del mando físico (`MotionEvent`). */
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        // SPEC-011: captura de ejes mientras el mapeador espera una entrada.
+        if (physicalGamepad.onMotion(event)) return true
         val surface =
             sessionSurfaceWithPhysicalGamepad()?.takeIf {
                 isGamepadSource(event.source)
             }
         if (surface != null) {
-            surface.onPhysicalMotion(
-                PhysicalMotion(
-                    leftX = event.getAxisValue(MotionEvent.AXIS_X),
-                    leftY = event.getAxisValue(MotionEvent.AXIS_Y),
-                    rightX = event.getAxisValue(MotionEvent.AXIS_Z),
-                    rightY = event.getAxisValue(MotionEvent.AXIS_RZ),
-                    triggerL =
-                        maxOf(
-                            event.getAxisValue(MotionEvent.AXIS_BRAKE),
-                            event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
-                        ),
-                    triggerR =
-                        maxOf(
-                            event.getAxisValue(MotionEvent.AXIS_GAS),
-                            event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
-                        ),
-                    hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X).roundToInt(),
-                    hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y).roundToInt(),
-                ),
+            // SPEC-011 §4: el mapeo del perfil decide qué eje alimenta cada
+            // elemento canónico.
+            surface.onPhysicalAxes(
+                PhysicalAxes.tracked.associateWith { axis ->
+                    event.getAxisValue(axis).takeIf { it.isFinite() } ?: 0f
+                },
             )
             return true
         }
@@ -933,6 +934,7 @@ class PairingActivity : AppCompatActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         motionSensors.start()
+        physicalGamepad.refreshAction()
     }
 
     /** Pinta el monitor de giro sólo si está visible (CR-074 / monitor de orientación). */
@@ -958,6 +960,7 @@ class PairingActivity : AppCompatActivity() {
             micDemand.unregister()
             audioManager.unregisterAudioDeviceCallback(playbackRouteCallback)
         }
+        physicalGamepad.stop()
         viewModel.attachMediaSurface(null)
         cameraController.release()
         micController.stop()
@@ -995,4 +998,5 @@ fun com.twinpad.android.app.core.PairingError.resId(): Int =
     }
 
 internal fun isGamepadSource(source: Int): Boolean =
-    source and InputDevice.SOURCE_GAMEPAD != 0 || source and InputDevice.SOURCE_JOYSTICK != 0
+    (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+        (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK

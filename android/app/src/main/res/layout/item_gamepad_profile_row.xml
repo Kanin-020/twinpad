@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:background="@drawable/bg_gamepad_row"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:minHeight="52dp"
+    android:orientation="horizontal"
+    android:paddingLeft="16dp"
+    android:paddingTop="14dp"
+    android:paddingRight="16dp"
+    android:paddingBottom="14dp">
+
+    <TextView
+        android:id="@+id/profile_option_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:fontFamily="@font/inter"
+        android:textColor="@color/design_cloud_white"
+        android:textFontWeight="500"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/profile_option_check"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/inter"
+        android:text="@string/gamepad_mapper_selected_mark"
+        android:textColor="@color/design_signal_violet"
+        android:textFontWeight="600"
+        android:textSize="16sp"
+        android:visibility="invisible" />
+</LinearLayout>

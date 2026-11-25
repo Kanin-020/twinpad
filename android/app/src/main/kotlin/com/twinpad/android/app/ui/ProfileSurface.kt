@@ -162,6 +162,17 @@ class ProfileSurface(
         emit()
     }
 
+    /** SPEC-011: valores de eje del `MotionEvent` interpretados por el perfil. */
+    fun onPhysicalAxes(values: Map<Int, Float>) {
+        if (physicalGamepad.onAxes(values)) emit()
+    }
+
+    /** SPEC-011: aplica el mapeo del perfil activo al instante. */
+    fun setPhysicalMapping(mapping: com.twinpad.android.app.hid.GamepadMapping) {
+        physicalGamepad.mapping = mapping
+        emit()
+    }
+
     /** CR-028: `true` si el keycode pertenece a la Signature. */
     fun handlesPhysicalKey(keyCode: Int): Boolean = physicalGamepad.handlesKey(keyCode)
 

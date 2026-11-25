@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPEC-011 + DESIGN.md: escenario oscuro (Void/Charcoal), tipografía Inter,
+     tarjetas de 16 dp, botones de 12 dp y violeta solo como señal de estado. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_gamepad_panel"
+    android:orientation="vertical"
+    android:paddingLeft="20dp"
+    android:paddingTop="20dp"
+    android:paddingRight="20dp"
+    android:paddingBottom="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/inter"
+                android:letterSpacing="0.08"
+                android:text="@string/settings_gamepad_mapper"
+                android:textAllCaps="true"
+                android:textColor="@color/design_signal_violet"
+                android:textFontWeight="600"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/mapper_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter"
+                android:letterSpacing="-0.02"
+                android:maxLines="2"
+                android:textColor="@color/design_cloud_white"
+                android:textFontWeight="500"
+                android:textSize="22sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/mapper_profile"
+            style="@style/Widget.Twinpad.Button.Pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:maxWidth="220dp"
+            app:icon="@drawable/bg_gamepad_dot"
+            app:iconGravity="textStart"
+            app:iconPadding="8dp"
+            app:iconSize="6dp"
+            app:iconTint="@color/design_signal_violet" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/mapper_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_gamepad_status_idle"
+        android:fontFamily="@font/inter"
+        android:lineSpacingExtra="1dp"
+        android:paddingLeft="12dp"
+        android:paddingTop="10dp"
+        android:paddingRight="12dp"
+        android:paddingBottom="10dp"
+        android:text="@string/gamepad_mapper_hint"
+        android:textColor="@color/design_misted_slate"
+        android:textFontWeight="400"
+        android:textSize="13sp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mapper_cancel_capture"
+        style="@style/Widget.Twinpad.Button.Ghost"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginTop="4dp"
+        android:text="@string/gamepad_mapper_cancel_capture"
+        android:visibility="gone" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:fontFamily="@font/inter"
+        android:letterSpacing="0.08"
+        android:text="@string/gamepad_mapper_section"
+        android:textAllCaps="true"
+        android:textColor="@color/design_quiet_slate"
+        android:textFontWeight="500"
+        android:textSize="13sp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fadeScrollbars="false"
+        android:overScrollMode="ifContentScrolls"
+        android:scrollbarStyle="outsideOverlay"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/mapper_rows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/mapper_new_profile"
+            style="@style/Widget.Twinpad.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/gamepad_mapper_new_profile" />
+
+        <Space
+            android:layout_width="12dp"
+            android:layout_height="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/mapper_close"
+            style="@style/Widget.Twinpad.Button.Filled"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/gamepad_mapper_close" />
+    </LinearLayout>
+</LinearLayout>

@@ -2,6 +2,7 @@ package com.twinpad.android.app.hid
 
 import com.twinpad.android.app.wire.InputReport
 import com.twinpad.android.app.wire.ProtocolConstants
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Estado de un evento de movimiento del mando físico (CR-028): ejes de
@@ -21,10 +22,14 @@ data class PhysicalMotion(
 /**
  * Mando físico conectado al teléfono (CR-028, SPEC-004): mapper puro y
  * fusión con la superficie táctil. Sin imports de Android (ENG §5 P11);
- * la Activity traduce `KeyEvent`/`MotionEvent` de origen gamepad a los
- * códigos/ejes de esta clase y el resultado sigue siendo un [InputReport]
- * de la Signature de SPEC-004 §4 (mismos 12 botones, D-pad 0–8, sticks
- * −127…127, triggers 0…255). El `seq` lo asigna GamepadStateMachine.
+ * la Activity entrega teclas y el mapa de ejes del `MotionEvent`, y el
+ * resultado sigue siendo un [InputReport] de la Signature de SPEC-004 §4
+ * (mismos 12 botones, D-pad 0–8, sticks −127…127, triggers 0…255). El `seq`
+ * lo asigna GamepadStateMachine.
+ *
+ * SPEC-011: el mapeo entrada física → entrada canónica es un [GamepadMapping]
+ * por perfil; sin perfil aplica [GamepadMapping.DEFAULT], equivalente exacto
+ * al mapeo de SPEC-004 §8.1. Los duplicados se permiten.
  *
  * Fusión por elemento (CR-028): el mando físico manda solo sobre los
  * elementos que está accionando (stick fuera de la zona muerta, D-pad
@@ -38,6 +43,9 @@ class PhysicalGamepadAlgo {
      * posición de Nintendo (A derecha, B abajo, X arriba, Y izquierda)
      * es el que llega al juego. La Signature de SPEC-004 §4 no cambia. */
     var nintendoFaceDistribution: Boolean = false
+
+    /** SPEC-011: mapeo vigente del mando (perfil activo o predeterminado). */
+    var mapping: GamepadMapping = GamepadMapping.DEFAULT
 
     var stickLx = 0
         private set
@@ -56,44 +64,63 @@ class PhysicalGamepadAlgo {
     var buttons = 0
         private set
 
-    /** Direcciones D-pad activadas por teclas (composición multi-dirección). */
-    private val dpadKeys = mutableSetOf<Int>()
+    /** Teclas pulsadas vigentes (cualquier código del mapeo). */
+    private val pressedKeys = mutableSetOf<Int>()
 
-    /** Dirección absoluta del hat del mando (8 = sin hat/neutro). */
-    private var hatDirection = ProtocolConstants.DPAD_NEUTRAL
+    /** Valores vigentes de los ejes del `MotionEvent`. */
+    private var axes: Map<Int, Float> = emptyMap()
 
     /** Aplica el estado físico más reciente de un `MotionEvent` del mando
-     * (CR-028). Valores bajo [STICK_DEADZONE] caen a 0 (zona muerta). */
-    fun onMotion(motion: PhysicalMotion) {
-        stickLx = stickFromAxis(motion.leftX)
-        stickLy = stickFromAxis(motion.leftY)
-        stickRx = stickFromAxis(motion.rightX)
-        stickRy = stickFromAxis(motion.rightY)
-        triggerL2 = triggerFromAxis(motion.triggerL)
-        triggerR2 = triggerFromAxis(motion.triggerR)
-        onHat(motion.hatX, motion.hatY)
+     * (CR-028) en la forma canónica de la Signature. */
+    fun onMotion(motion: PhysicalMotion): Boolean =
+        onAxes(
+            mapOf(
+                PhysicalAxes.AXIS_X to motion.leftX,
+                PhysicalAxes.AXIS_Y to motion.leftY,
+                PhysicalAxes.AXIS_Z to motion.rightX,
+                PhysicalAxes.AXIS_RZ to motion.rightY,
+                PhysicalAxes.AXIS_BRAKE to motion.triggerL,
+                PhysicalAxes.AXIS_LTRIGGER to motion.triggerL,
+                PhysicalAxes.AXIS_GAS to motion.triggerR,
+                PhysicalAxes.AXIS_RTRIGGER to motion.triggerR,
+                PhysicalAxes.AXIS_HAT_X to motion.hatX.toFloat(),
+                PhysicalAxes.AXIS_HAT_Y to motion.hatY.toFloat(),
+            ),
+        )
+
+    /** SPEC-011: aplica los valores de eje del mando tal como los reporta el
+     * sistema; el mapeo decide qué eje alimenta cada elemento canónico. */
+    fun onAxes(values: Map<Int, Float>): Boolean {
+        axes = values
+        return recompute()
     }
 
     /** Aplica una tecla del mando físico (keycode de `android.view.KeyEvent`,
      * ver [KeyCodes]). Devuelve `true` si el elemento cambió; `false` si el
-     * código no pertenece a la Signature. */
+     * código no pertenece al mapeo vigente. */
     fun onKey(
         keyCode: Int,
         pressed: Boolean,
-    ): Boolean =
-        when (keyCode) {
-            KeyCodes.BUTTON_L2, KeyCodes.BUTTON_R2 -> applyTriggerKey(keyCode, pressed)
-            KeyCodes.DPAD_LEFT, KeyCodes.DPAD_DOWN, KeyCodes.DPAD_RIGHT, KeyCodes.DPAD_UP ->
-                applyDpadKey(keyCode, pressed)
-            else -> applyButtonKey(keyCode, pressed)
+    ): Boolean {
+        if (!mapping.handlesKey(keyCode)) {
+            if (pressed) return false
+            pressedKeys.remove(keyCode)
+            return recompute()
         }
+        if (pressed) pressedKeys.add(keyCode) else pressedKeys.remove(keyCode)
+        return recompute()
+    }
 
-    /** D-pad absoluto del hat de `MotionEvent` (AXIS_HAT_X/HAT_Y −1/0/1): */
+    /** D-pad absoluto del hat de `MotionEvent` (AXIS_HAT_X/AXIS_HAT_Y −1/0/1). */
     fun onHat(
         hatX: Int,
         hatY: Int,
     ) {
-        hatDirection = hatToDirection(hatX, hatY)
+        axes =
+            axes +
+            (PhysicalAxes.AXIS_HAT_X to hatX.toFloat()) +
+            (PhysicalAxes.AXIS_HAT_Y to hatY.toFloat())
+        recompute()
     }
 
     /**
@@ -110,7 +137,7 @@ class PhysicalGamepadAlgo {
             stickLy = pickStick(touch.stickLy, stickLy),
             stickRx = pickStick(touch.stickRx, stickRx),
             stickRy = pickStick(touch.stickRy, stickRy),
-            dpad = pickDpad(touch.dpad, composedDpad()),
+            dpad = pickDpad(touch.dpad, dpad),
             buttons = touch.buttons or buttons,
             triggerL2 = maxOf(touch.triggerL2, triggerL2),
             triggerR2 = maxOf(touch.triggerR2, triggerR2),
@@ -120,13 +147,9 @@ class PhysicalGamepadAlgo {
             touchPressed = touch.touchPressed,
         )
 
-    /** `true` si el keycode es un elemento de la Signature (CR-028): la
-     * Activity lo consume cuando está en sesión; el resto pasa al SO. */
-    fun handlesKey(keyCode: Int): Boolean =
-        keyToButton(keyCode) != null ||
-            keyCode == KeyCodes.BUTTON_L2 ||
-            keyCode == KeyCodes.BUTTON_R2 ||
-            DPAD_KEYCODES.any { keyCode == it }
+    /** `true` si el keycode es un elemento del mapeo vigente: la Activity lo
+     * consume cuando está en sesión; el resto pasa al SO. */
+    fun handlesKey(keyCode: Int): Boolean = mapping.handlesKey(keyCode)
 
     /** Reposo del mando físico no pisa la superficie táctil. */
     private fun pickStick(
@@ -139,17 +162,70 @@ class PhysicalGamepadAlgo {
         physicalValue: Int,
     ): Int = if (physicalValue != ProtocolConstants.DPAD_NEUTRAL) physicalValue else touchValue
 
-    /** D-pad efectivo del mando físico: el hat manda cuando está activo;
-     * si no, composición de teclas D-pad simultáneas (diagonales por OR). */
-    private fun composedDpad(): Int =
-        if (hatDirection != ProtocolConstants.DPAD_NEUTRAL) {
-            hatDirection
-        } else {
-            composeDpadKeys()
-        }
+    /** Recalcula el estado canónico y dice si cambió algún elemento. */
+    private fun recompute(): Boolean {
+        val previous = listOf(buttons, dpad, stickLx, stickLy, stickRx, stickRy, triggerL2, triggerR2)
+        buttons = mappedButtons()
+        dpad = composedDpad()
+        stickLx = mappedStick(MappedControl.STICK_LX)
+        stickLy = mappedStick(MappedControl.STICK_LY)
+        stickRx = mappedStick(MappedControl.STICK_RX)
+        stickRy = mappedStick(MappedControl.STICK_RY)
+        triggerL2 = mappedTrigger(MappedControl.TRIGGER_L2)
+        triggerR2 = mappedTrigger(MappedControl.TRIGGER_R2)
+        val current = listOf(buttons, dpad, stickLx, stickLy, stickRx, stickRy, triggerL2, triggerR2)
+        return previous != current
+    }
 
-    private fun composeDpadKeys(): Int {
-        val directions = dpadKeys.toSet()
+    private fun mappedButtons(): Int {
+        var mask = 0
+        for (button in Button.entries) {
+            if (mapping.inputsOf(button.control).any { it is PhysicalInput.Key && it.keyCode in pressedKeys }) {
+                mask = mask or (1 shl button.effectiveBit(nintendoFaceDistribution))
+            }
+        }
+        return mask
+    }
+
+    private fun mappedTrigger(control: MappedControl): Int {
+        val inputs = mapping.inputsOf(control)
+        if (inputs.any { it is PhysicalInput.Key && it.keyCode in pressedKeys }) {
+            return ProtocolConstants.TRIGGER_MAX
+        }
+        val best =
+            inputs
+                .filterIsInstance<PhysicalInput.Axis>()
+                .maxByOrNull { positiveAxis(it) }
+        return best?.let { triggerFromAxis(positiveAxis(it)) } ?: 0
+    }
+
+    private fun positiveAxis(input: PhysicalInput.Axis): Float {
+        return ((axes[input.axis] ?: 0f) * input.sign).coerceIn(0f, 1f)
+    }
+
+    private fun mappedStick(control: MappedControl): Int {
+        val best =
+            mapping.inputsOf(control)
+                .filterIsInstance<PhysicalInput.Axis>()
+                .maxByOrNull { abs(axes[it.axis] ?: 0f) }
+                ?: return 0
+        // SPEC-011 §8: el stick conserva la dirección física del eje (empujar
+        // a la izquierda envía izquierda); el sentido solo normaliza gatillos
+        // y direcciones de cruceta.
+        return stickFromAxis(axes[best.axis] ?: 0f)
+    }
+
+    /** D-pad efectivo: direcciones activadas por tecla o por eje del hat. */
+    private fun composedDpad(): Int {
+        val directions =
+            listOf(
+                MappedControl.DPAD_UP to ProtocolConstants.DPAD_UP,
+                MappedControl.DPAD_RIGHT to ProtocolConstants.DPAD_RIGHT,
+                MappedControl.DPAD_DOWN to ProtocolConstants.DPAD_DOWN,
+                MappedControl.DPAD_LEFT to ProtocolConstants.DPAD_LEFT,
+            ).filter { (control, _) -> dpadActive(control) }
+                .map { it.second }
+                .toSet()
         if (directions.isEmpty()) return ProtocolConstants.DPAD_NEUTRAL
         return when (directions) {
             setOf(ProtocolConstants.DPAD_UP, ProtocolConstants.DPAD_RIGHT) -> NE
@@ -160,52 +236,17 @@ class PhysicalGamepadAlgo {
         }
     }
 
+    private fun dpadActive(control: MappedControl): Boolean =
+        mapping.inputsOf(control).any { input ->
+            when (input) {
+                is PhysicalInput.Key -> input.keyCode in pressedKeys
+                is PhysicalInput.Axis -> (axes[input.axis] ?: 0f) * input.sign >= DPAD_AXIS_THRESHOLD
+            }
+        }
+
     private fun singleOrNeutral(directions: Set<Int>): Int {
         if (directions.size > 1) return ProtocolConstants.DPAD_NEUTRAL // direcciones opuestas
         return directions.first()
-    }
-
-    private fun applyTriggerKey(
-        keyCode: Int,
-        pressed: Boolean,
-    ): Boolean {
-        val isLeft = keyCode == KeyCodes.BUTTON_L2
-        val updated = if (pressed) ProtocolConstants.TRIGGER_MAX else 0
-        val changed = if (isLeft) triggerL2 != updated else triggerR2 != updated
-        if (isLeft) triggerL2 = updated else triggerR2 = updated
-        return changed
-    }
-
-    private fun applyDpadKey(
-        keyCode: Int,
-        pressed: Boolean,
-    ): Boolean {
-        val direction = keyToDpadDirection(keyCode)
-        val changedInSet = if (pressed) dpadKeys.add(direction) else dpadKeys.remove(direction)
-        val composed = composedDpad()
-        val changed = changedInSet || composed != dpad
-        dpad = composed
-        return changed
-    }
-
-    private fun keyToDpadDirection(keyCode: Int): Int =
-        when (keyCode) {
-            KeyCodes.DPAD_UP -> ProtocolConstants.DPAD_UP
-            KeyCodes.DPAD_RIGHT -> ProtocolConstants.DPAD_RIGHT
-            KeyCodes.DPAD_DOWN -> ProtocolConstants.DPAD_DOWN
-            else -> ProtocolConstants.DPAD_LEFT
-        }
-
-    private fun applyButtonKey(
-        keyCode: Int,
-        pressed: Boolean,
-    ): Boolean {
-        val button = keyToButton(keyCode) ?: return false
-        val mask = 1 shl button.effectiveBit(nintendoFaceDistribution)
-        val updated = if (pressed) buttons or mask else buttons and mask.inv()
-        if (updated == buttons) return false
-        buttons = updated
-        return true
     }
 
     private fun stickFromAxis(axis: Float): Int {
@@ -216,8 +257,6 @@ class PhysicalGamepadAlgo {
 
     private fun triggerFromAxis(axis: Float): Int = (axis.coerceIn(0f, 1f) * ProtocolConstants.TRIGGER_MAX).roundToInt()
 
-    private fun keyToButton(keyCode: Int): Button? = Button.entries.find { it.keyCode == keyCode }
-
     /** Botones de la Signature en orden de bits de SPEC-004 §4, con su
      * keycode de `android.view.KeyEvent` (−1 = sin keycode estándar).
      * Los bits y keycodes son constantes canónicas del protocolo/plataforma. */
@@ -225,19 +264,20 @@ class PhysicalGamepadAlgo {
     enum class Button(
         val bit: Int,
         val keyCode: Int,
+        val control: MappedControl,
     ) {
-        A(0, KeyCodes.BUTTON_A),
-        B(1, KeyCodes.BUTTON_B),
-        X(2, KeyCodes.BUTTON_X),
-        Y(3, KeyCodes.BUTTON_Y),
-        L1(4, KeyCodes.BUTTON_L1),
-        R1(5, KeyCodes.BUTTON_R1),
-        L3(6, KeyCodes.BUTTON_L3),
-        R3(7, KeyCodes.BUTTON_R3),
-        START(8, KeyCodes.BUTTON_START),
-        SELECT(9, KeyCodes.BUTTON_SELECT),
-        EXTRA_1(10, -1),
-        EXTRA_2(11, -1),
+        A(0, KeyCodes.BUTTON_A, MappedControl.A),
+        B(1, KeyCodes.BUTTON_B, MappedControl.B),
+        X(2, KeyCodes.BUTTON_X, MappedControl.X),
+        Y(3, KeyCodes.BUTTON_Y, MappedControl.Y),
+        L1(4, KeyCodes.BUTTON_L1, MappedControl.L1),
+        R1(5, KeyCodes.BUTTON_R1, MappedControl.R1),
+        L3(6, KeyCodes.BUTTON_L3, MappedControl.L3),
+        R3(7, KeyCodes.BUTTON_R3, MappedControl.R3),
+        START(8, KeyCodes.BUTTON_START, MappedControl.START),
+        SELECT(9, KeyCodes.BUTTON_SELECT, MappedControl.SELECT),
+        EXTRA_1(10, -1, MappedControl.EXTRA_1),
+        EXTRA_2(11, -1, MappedControl.EXTRA_2),
         ;
 
         /** CR-032: con distribución Nintendo la tecla reportada como A
@@ -257,56 +297,36 @@ class PhysicalGamepadAlgo {
     /** Keycodes de `android.view.KeyEvent` usados por el mapper (CR-028).
      * Son constantes de la plataforma Android, definidas por AOSP; los
      * valores nombrados que siguen no son números mágicos de negocio. */
-    @Suppress("MagicNumber")
     object KeyCodes {
-        const val DPAD_UP = 19
-        const val DPAD_DOWN = 20
-        const val DPAD_LEFT = 21
-        const val DPAD_RIGHT = 22
-        const val BUTTON_A = 96
-        const val BUTTON_B = 97
-        const val BUTTON_X = 99
-        const val BUTTON_Y = 100
-        const val BUTTON_L1 = 102
-        const val BUTTON_R1 = 103
-        const val BUTTON_L2 = 104
-        const val BUTTON_R2 = 105
-        const val BUTTON_START = 108
-        const val BUTTON_SELECT = 109
-        const val BUTTON_L3 = 110
-        const val BUTTON_R3 = 111
+        const val DPAD_UP = PhysicalKeys.DPAD_UP
+        const val DPAD_DOWN = PhysicalKeys.DPAD_DOWN
+        const val DPAD_LEFT = PhysicalKeys.DPAD_LEFT
+        const val DPAD_RIGHT = PhysicalKeys.DPAD_RIGHT
+        const val BUTTON_A = PhysicalKeys.BUTTON_A
+        const val BUTTON_B = PhysicalKeys.BUTTON_B
+        const val BUTTON_X = PhysicalKeys.BUTTON_X
+        const val BUTTON_Y = PhysicalKeys.BUTTON_Y
+        const val BUTTON_L1 = PhysicalKeys.BUTTON_L1
+        const val BUTTON_R1 = PhysicalKeys.BUTTON_R1
+        const val BUTTON_L2 = PhysicalKeys.BUTTON_L2
+        const val BUTTON_R2 = PhysicalKeys.BUTTON_R2
+        const val BUTTON_START = PhysicalKeys.BUTTON_START
+        const val BUTTON_SELECT = PhysicalKeys.BUTTON_SELECT
+        const val BUTTON_L3 = PhysicalKeys.BUTTON_L3
+        const val BUTTON_R3 = PhysicalKeys.BUTTON_R3
     }
 
     private companion object {
         /** Zona muerta de sticks físicos (normalizado); sin reescalado. */
         const val STICK_DEADZONE = 0.1f
 
+        /** Umbral del eje del hat para activar una dirección. */
+        const val DPAD_AXIS_THRESHOLD = 0.5f
+
         /** Diagonales del D-pad (SPEC-004 §4: sentido horario desde el norte). */
         const val NE = 1
         const val SE = 3
         const val SW = 5
         const val NW = 7
-
-        /** Keycodes D-pad que el mapper trata como dirección (CR-028). */
-        val DPAD_KEYCODES: List<Int> =
-            listOf(KeyCodes.DPAD_UP, KeyCodes.DPAD_RIGHT, KeyCodes.DPAD_DOWN, KeyCodes.DPAD_LEFT)
-
-        /** Hat (hatX, hatY) → dirección D-pad; mapping canónico §4. */
-        val HAT_TO_DIRECTION: Map<Pair<Int, Int>, Int> =
-            mapOf(
-                (0 to -1) to ProtocolConstants.DPAD_UP,
-                (1 to -1) to NE,
-                (1 to 0) to ProtocolConstants.DPAD_RIGHT,
-                (1 to 1) to SE,
-                (0 to 1) to ProtocolConstants.DPAD_DOWN,
-                (-1 to 1) to SW,
-                (-1 to 0) to ProtocolConstants.DPAD_LEFT,
-                (-1 to -1) to NW,
-            )
-
-        private fun hatToDirection(
-            hatX: Int,
-            hatY: Int,
-        ): Int = HAT_TO_DIRECTION[hatX to hatY] ?: ProtocolConstants.DPAD_NEUTRAL
     }
 }
