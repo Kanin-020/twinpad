@@ -13,16 +13,23 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Acciones compartidas del tray con `webui` y `autostart` (DES-005 §4).
+#[derive(Clone)]
 pub struct TrayActions {
     /// Puerto HTTP local de la página (W3: abrir interfaz).
     pub webui_port: u16,
     /// Flag compartido de parada (W4).
     pub shutdown: Arc<AtomicBool>,
+    /// Mando virtual del servidor (W10, CR-114): el menú lo enciende y apaga
+    /// igual que la página local.
+    pub virtual_pad: Arc<crate::virtual_pad::VirtualPadManager>,
 }
 
 struct TwinpadTray {
     actions: TrayActions,
 }
+
+/// Aviso de «watcher offline» una sola vez por caída (W7, CR-114).
+static TRAY_OFFLINE_ANNOUNCED: AtomicBool = AtomicBool::new(false);
 
 impl ksni::Tray for TwinpadTray {
     fn id(&self) -> String {
@@ -43,6 +50,25 @@ impl ksni::Tray for TwinpadTray {
             description: "Servidor activo: acepta sesiones de Pairing en la LAN.".to_string(),
             ..Default::default()
         }
+    }
+
+    /// W7/CR-114: el host SNI puede no existir todavía (arranque por
+    /// autostart antes de que cargue la extensión de bandeja) o reiniciarse
+    /// con el escritorio. No se abandona: `ksni` vuelve a registrar el icono
+    /// cuando el watcher reaparece.
+    fn watcher_offline(&self, reason: ksni::OfflineReason) -> bool {
+        if !TRAY_OFFLINE_ANNOUNCED.swap(true, Ordering::AcqRel) {
+            eprintln!(
+                "Twinpad: sin host de bandeja todavía ({reason:?}); el icono aparece en cuanto \
+                 el escritorio lo ofrezca (W7)."
+            );
+        }
+        true
+    }
+
+    fn watcher_online(&self) {
+        TRAY_OFFLINE_ANNOUNCED.store(false, Ordering::Release);
+        println!("Twinpad: bandeja registrada en el host del escritorio (W1).");
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
@@ -70,6 +96,26 @@ impl ksni::Tray for TwinpadTray {
             }
             .into(),
             MenuItem::Separator,
+            // W10 (CR-114): mismo interruptor que la página local; el estado
+            // se lee del manager en cada GetLayout, no de una copia.
+            CheckmarkItem {
+                label: "Mando virtual (DualSense)".into(),
+                checked: self.actions.virtual_pad.enabled(),
+                activate: Box::new(|tray: &mut Self| {
+                    let enabled = !tray.actions.virtual_pad.enabled();
+                    match tray.actions.virtual_pad.set_enabled(enabled) {
+                        Ok(()) => println!(
+                            "Twinpad: mando virtual {} (CR-114, SPEC-010 W10).",
+                            if enabled { "activado" } else { "desactivado" }
+                        ),
+                        Err(error) => eprintln!(
+                            "Twinpad: no se pudo activar el mando virtual: {error} (E9)."
+                        ),
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
             // W5: toggle del autoarranque.
             CheckmarkItem {
                 label: "Iniciar al arrancar el equipo".into(),
@@ -401,22 +447,44 @@ fn try_fallback(status: Result<std::process::ExitStatus, std::io::Error>) -> boo
     }
 }
 
-/// Spawn fail-soft del tray (W7). En entornos sin bandeja devuelve el error
-/// para que quien llama loguee y siga vivo; flag y HTTP quedan intactos.
+/// Intentos del spawn cuando el bus de sesión aún no está listo (arranque
+/// por autostart muy temprano); con `assume_sni_available` la ausencia del
+/// watcher NO es un fallo: el servicio espera y se registra solo.
+const TRAY_SPAWN_ATTEMPTS: u32 = 5;
+const TRAY_SPAWN_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Spawn fail-soft del tray (W7). Un fallo duro (sin bus de sesión, p. ej.
+/// dentro de un sandbox) devuelve el error tras unos reintentos; flag y HTTP
+/// quedan intactos y la página sigue operativa.
 pub fn spawn_tray(actions: TrayActions) -> Result<(), String> {
-    let tray = TwinpadTray { actions };
     use ksni::blocking::TrayMethods;
-    match tray.spawn() {
-        Ok(handle) => {
-            // El Handle se conserva vivo lo que dura el proceso: es lo que
-            // mantiene en pie el servicio de bandeja de `ksni`, y el icono
-            // debe seguir ahí mientras el servidor corre (SPEC-010 W1).
-            let _handle: &'static mut _ = Box::leak(Box::new(handle));
-            println!("Twinpad: bandeja activa (CR-061, SPEC-010 W1).");
-            Ok(())
+    let mut last_error = String::new();
+    for attempt in 1..=TRAY_SPAWN_ATTEMPTS {
+        let tray = TwinpadTray {
+            actions: actions.clone(),
+        };
+        // CR-114: el watcher puede llegar TARDE (autostart antes de la
+        // extensión de bandeja de GNOME, panel reiniciado…). En ese caso el
+        // servicio queda a la espera y se registra al aparecer, en vez de
+        // morir y dejar el servidor sin icono.
+        match tray.assume_sni_available(true).spawn() {
+            Ok(handle) => {
+                // El Handle se conserva vivo lo que dura el proceso: es lo que
+                // mantiene en pie el servicio de bandeja de `ksni`, y el icono
+                // debe seguir ahí mientras el servidor corre (SPEC-010 W1).
+                let _handle: &'static mut _ = Box::leak(Box::new(handle));
+                println!("Twinpad: bandeja activa (CR-061, SPEC-010 W1).");
+                return Ok(());
+            }
+            Err(error) => {
+                last_error = format!("{error}");
+                if attempt < TRAY_SPAWN_ATTEMPTS {
+                    std::thread::sleep(TRAY_SPAWN_DELAY);
+                }
+            }
         }
-        Err(error) => Err(format!("{error}")),
     }
+    Err(last_error)
 }
 
 #[cfg(test)]

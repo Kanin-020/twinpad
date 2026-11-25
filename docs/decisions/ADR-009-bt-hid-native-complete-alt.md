@@ -75,7 +75,10 @@ necesita recibir algo que su stack Bluetooth entienda sin fricción de setup.
   consume el gamepad directamente (eso hace viable el "modo alternativo
   completo": el juego recibe inputs aunque el Servidor PC esté caído o la LAN
   no exista). ViGEm/virtual driver queda como escalamiento posterior solo si
-  en banco físico algún juego no reconoce el gamepad estándar.
+  en banco físico algún juego no reconoce el gamepad estándar. **CR-113
+  (2026-11-25):** el owner activa ese escalamiento en Linux como modo opt-in
+  del Servidor PC (DualSense virtual por `/dev/uhid`, SPEC-004 §8.4); no
+  sustituye al perfil HID Device role de esta decisión.
 - **Alcance de la Signature en la ruta BT:** sticks, D-pad, 12 botones,
   triggers L2/R2. Touch DRC y muestras inerciales (giroscopio/acelerómetro)
   no viajan por BT — quedan exclusivos de la ruta LAN (SPEC-006 SDK/SPEC-004

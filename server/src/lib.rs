@@ -27,4 +27,5 @@ pub mod tile_video;
 pub mod tokens;
 pub mod tray;
 pub mod video;
+pub mod virtual_pad;
 pub mod webui;

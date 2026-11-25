@@ -135,6 +135,9 @@ fn main() {
     }
     let media_hub = Arc::new(twinpad_server::media::MediaHub::default());
     let input_owner = Arc::new(std::sync::Mutex::new(None::<twinpad_core::SessionId>));
+    // CR-113/CR-114 (SPEC-004 §8.4, SPEC-010 W10): mando virtual DualSense
+    // opcional por /dev/uhid, gobernable desde la página local.
+    let virtual_pad = twinpad_server::virtual_pad::VirtualPadManager::from_environment();
 
     // SPEC-006/ADR-008: listener IPC para juegos con SDK. Si el puerto está
     // en uso, el server sigue (pairing/video/inputs) pero sin detección.
@@ -384,6 +387,15 @@ fn main() {
                     })
                     .unwrap_or((0, 0, 0))
             }),
+            // W10 (CR-114): mando virtual on/off desde la página.
+            virtual_pad_on: {
+                let pad = Arc::clone(&virtual_pad);
+                Box::new(move || pad.enabled())
+            },
+            set_virtual_pad: {
+                let pad = Arc::clone(&virtual_pad);
+                Box::new(move |enabled| pad.set_enabled(enabled))
+            },
             // W5 también en la página: mismo desktop entry que el tray y el QAM.
             autostart_on: Box::new(twinpad_server::autostart::is_installed),
             set_autostart: Box::new(|enabled| {
@@ -426,11 +438,16 @@ fn main() {
         let tray_actions = twinpad_server::tray::TrayActions {
             webui_port,
             shutdown: Arc::clone(&shutdown),
+            virtual_pad: Arc::clone(&virtual_pad),
         };
         std::thread::spawn(move || {
             if let Err(error) = twinpad_server::tray::spawn_tray(tray_actions) {
+                // W7/CR-114: sin bus de sesión visible (sandbox) o sin host
+                // SNI no hay icono; la página local sigue siendo la vía.
                 eprintln!(
-                    "Twinpad: bandeja no disponible ({error}); el server sigue por stdout (W7)."
+                    "Twinpad: bandeja no disponible ({error}); el server sigue por stdout y la \
+                     página http://127.0.0.1:{webui_port}/ (E4). Si corre dentro de un sandbox \
+                     (Toolbx/Flatpak), el escritorio del host no ve su bandeja."
                 );
             }
         });
@@ -483,6 +500,7 @@ fn main() {
         let registry_ref = Arc::clone(&registry);
         let games_ref = Arc::clone(&game_registry);
         let input_owner_ref = Arc::clone(&input_owner);
+        let virtual_pad_ref = virtual_pad.clone();
         std::thread::spawn(move || {
             let mut deps = SessionDeps {
                 now_ms: &mut || SystemClock.now_ms(),
@@ -947,6 +965,7 @@ fn main() {
                                                             &line,
                                                         );
                                                     }
+                                                    virtual_pad_ref.update(&report);
                                                 }
                                             }
                                         }
@@ -957,6 +976,7 @@ fn main() {
                         }
                         session_running.store(false, std::sync::atomic::Ordering::Release);
                         release_input_owner(&input_owner_ref, session_id);
+                        virtual_pad_ref.release_all();
                         if let Some(handle) = ping_thread {
                             let _ = handle.join();
                         }

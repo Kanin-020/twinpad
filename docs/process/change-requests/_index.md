@@ -47,6 +47,8 @@
 | CR-014 | Migrar la Segunda pantalla de JPEG/tiles a H.264/AVC con canal media seguro | SPEC-003, ARCH, DES-003/004 | 2026-10-20 | [CR-014-video-codec-migration.md](CR-014-video-codec-migration.md) |
 | CR-011 | Landscape habitual inmersivo y ejes gyro relativos a pantalla | SPEC-002, SPEC-004, DES-002 | 2026-10-18 | [CR-011-android-landscape-immersive-gyro.md](CR-011-android-landscape-immersive-gyro.md) |
 | CR-013 | VPAD temporal automático de Jugador 1 en Cemu | SPEC-006, DES-004 | 2026-10-19 | [CR-013-cemu-temporary-vpad-player-one.md](CR-013-cemu-temporary-vpad-player-one.md) |
+| CR-113 | Mando virtual DualSense opcional en el Servidor PC (Linux `/dev/uhid`): el SO y Steam ven VID/PID `054C:0CE6` con PS, touchpad y giroscopio; opt-in por `TWINPAD_VIRTUAL_PAD`, sin tocar la app | SPEC-004 1.13.0 (§8.4), código `server/src/virtual_pad.rs` + cableado en `main.rs`, traceability (TEST-0203) | Applied (2026-11-25) | Buffy (agente) | [CR-113-dualsense-virtual-pad-linux.md](CR-113-dualsense-virtual-pad-linux.md) |
+| CR-114 | Mando virtual on/off desde la página local y el menú del tray (panel + `POST /virtual-pad` + ítem con marca, preferencia persistida) y bandeja que espera al host SNI y se re-registra si el panel se reinicia | SPEC-010 0.5.0 (§5 W10, W1/W7), SPEC-004 1.14.0 (§8.4), código `webui.rs`/`index.html`/`tray.rs`/`virtual_pad.rs`, traceability (TEST-0204/0205) | Applied (2026-11-25) | Buffy (agente) | [CR-114-virtual-pad-ui-toggle-and-tray.md](CR-114-virtual-pad-ui-toggle-and-tray.md) |
 
 ## Applied
 

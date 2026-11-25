@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.12.0 |
+| Version | 1.14.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127 |
-| Last updated | 2026-11-01 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205 |
+| Last updated | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -112,6 +112,29 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
   gyro y touch siempre por LAN. La Segunda pantalla, el audio y el micrófono
   siguen por la LAN cuando hay sesión, y quedan indisponibles sin ella (ADR-002),
   no como error.
+
+### 8.4 Mando virtual del Servidor (opcional, solo Linux; CR-113, CR-114)
+
+- **Trigger:** el Servidor PC arranca con la preferencia guardada del mando
+  virtual activada (SPEC-010 W10) o, si no hay preferencia, con
+  `TWINPAD_VIRTUAL_PAD=dualsense` (también `ds5`, `1` o `true`); el kernel debe
+  exponer `/dev/uhid` escribible. La página local lo enciende y apaga en
+  caliente (SPEC-010 W10) y un fallo de `/dev/uhid` no cambia el estado.
+- **Flow:** por cada `input_report` aceptado del dueño de inputs de la sesión el Servidor
+  actualiza un DualSense virtual (report id `0x01`, 64 bytes, repetido a 100 Hz)
+  con sticks, D-pad, los 12 botones —`Home` → `PS`, `extra_2` → click del
+  touchpad—, triggers, touch y muestras inerciales; responde los feature reports
+  `0x05` (calibración), `0x09` (emparejamiento) y `0x20` (firmware) que pide el
+  host. Al terminar la sesión deja el mando en neutro.
+- **Result:** el SO de la PC lista «Twinpad DualSense» (VID `054C`, PID `0CE6`,
+  bus USB) con touchpad, giroscopio, acelerómetro y botón PS; Steam lo reconoce
+  como DualSense. Sin la variable, sin `/dev/uhid` o sin permiso sobre él, el
+  Servidor opera igual y no hay mando virtual: su ausencia no es un error de
+  sesión ni cambia el resto del contrato.
+- **Nota:** solo consume los `input_report` de la sesión LAN. Mientras el
+  transporte de §8.3 (BT HID) esté operativo, esos reportes no llegan al
+  Servidor y el mando virtual queda en reposo; forzar la ruta LAN exigiría un
+  cambio en la app, fuera del alcance de CR-113.
 
 ## 9. Errors
 
@@ -227,3 +250,5 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.10.0 | 2026-10-29 | Product owner + Twinpad team (CR-037) | El marco AndroidDSU de referencia pasa a landscape, exclusivo de la orientación landscape fija de la app: accel `(y, -z, x)`, gyro `(-y, -z, x)`; wire y unidades sin cambios |
 | 1.11.0 | 2026-11-01 | Owner + Buffy (agente) (CR-059, ADR-009) | Doble transporte de la Signature: ruta LAN + ruta Bluetooth HID nativa (alternativa completa sin Wi-Fi y failover automático con histórisis de 5 s); touch/giroscopio/rumble exclusivos de LAN; Test Map TEST-0126/0127 |
 | 1.12.0 | 2026-11-24 | Owner + Buffy (agente) (CR-111) | §8.3: BT HID primero para inputs, LAN como respaldo; gyro y touch siempre por LAN; vibración por BT |
+| 1.13.0 | 2026-11-25 | Owner + Buffy (agente) (CR-113) | §8.4: mando virtual DualSense opcional del Servidor (Linux `/dev/uhid`, opt-in por `TWINPAD_VIRTUAL_PAD`); consume solo los `input_report` de LAN |
+| 1.14.0 | 2026-11-25 | Owner + Buffy (agente) (CR-114) | §8.4: el mando se gobierna en caliente desde la página local (SPEC-010 W10) y la preferencia guardada manda sobre `TWINPAD_VIRTUAL_PAD`; sin cambio de reporte |

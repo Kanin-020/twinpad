@@ -64,6 +64,11 @@ expone el gamepad a Windows y Steam como mando estándar, sin permisos extra.
 2. Inputs por Bluetooth HID, LAN para el resto — sin permisos extra; depende del emparejamiento BT. **Elegida.**
 3. Do nothing — Steam sólo ve el mando por Bluetooth sin Wi-Fi.
 
+> **Revisión (CR-113, 2026-11-25):** el owner autoriza la opción 1, en su
+> variante Linux por `/dev/uhid` y solo en el Servidor PC (opt-in con
+> `TWINPAD_VIRTUAL_PAD`). Esta decisión sobre la opción 1 no cambia la elección
+> de la opción 2 como transporte por defecto (SPEC-004 §8.3/§8.4).
+
 ## 6. Decision
 
 - **Outcome:** `Approved`

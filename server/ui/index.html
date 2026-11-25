@@ -86,6 +86,20 @@
               La parada termina el servidor; las sesiones activas se desconectan.
             </p>
           </section>
+
+          <section class="panel">
+            <h2 class="panel__title">Mando virtual</h2>
+            <p class="panel__row">
+              Mando virtual (DualSense):
+              <strong id="pad-state">__PAD_STATE__</strong>
+            </p>
+            <button class="btn btn--ghost" id="pad-toggle" type="button">__PAD_ACTION__</button>
+            <p class="panel__note" id="pad-note">
+              Con el mando activado, este PC (y Steam) lo ven como un DualSense
+              con botón PS, touchpad y giroscopio (VID 054C:0CE6). Al desactivarlo
+              desaparece del sistema. Solo Linux con acceso a /dev/uhid.
+            </p>
+          </section>
         </div>
       </div>
     </main>
@@ -207,6 +221,52 @@
             })
             .finally(function () {
               autostartToggle.disabled = false;
+            });
+        });
+
+        // Mando virtual (W10, CR-114): enciende/apaga el HID DualSense del
+        // servidor y recuerda la elección para el próximo arranque. Si el
+        // kernel no da /dev/uhid (E8), el estado NO cambia y se ve el motivo.
+        var padOn = __PAD_ENABLED__;
+        var padState = document.getElementById("pad-state");
+        var padToggle = document.getElementById("pad-toggle");
+        var padNote = document.getElementById("pad-note");
+        var PAD_NOTE =
+          "Con el mando activado, este PC (y Steam) lo ven como un DualSense " +
+          "con botón PS, touchpad y giroscopio (VID 054C:0CE6). Al desactivarlo " +
+          "desaparece del sistema. Solo Linux con acceso a /dev/uhid.";
+
+        function paintPad() {
+          padState.textContent = padOn ? "Activado" : "Desactivado";
+          padToggle.textContent = padOn ? "Desactivar mando virtual" : "Activar mando virtual";
+        }
+
+        padToggle.addEventListener("click", function () {
+          var next = !padOn;
+          padToggle.disabled = true;
+          fetch("/virtual-pad", {
+            method: "POST",
+            headers: {
+              "X-Twinpad-Action": "1",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: "enabled=" + (next ? "1" : "0"),
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                return response.text().then(function (text) {
+                  throw new Error(text || "no se pudo cambiar el mando virtual");
+                });
+              }
+              padOn = next;
+              padNote.textContent = PAD_NOTE;
+              paintPad();
+            })
+            .catch(function (error) {
+              padNote.textContent = "No se pudo cambiar: " + error.message;
+            })
+            .finally(function () {
+              padToggle.disabled = false;
             });
         });
 

@@ -9,13 +9,13 @@
 |---|---|
 | ID | SPEC-010 |
 | Title | Interfaz local de gestión del Servidor PC |
-| Version | 0.4.1 |
+| Version | 0.5.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-001 (AC-1, AC-2) y operación/detención de CR-061 |
 | Realized by | DES-005 |
-| Verified by | TEST-0135, TEST-0136, TEST-0137, TEST-0146, TEST-0147, TEST-0148 |
-| Last updated | 2026-11-04 |
+| Verified by | TEST-0135, TEST-0136, TEST-0137, TEST-0146, TEST-0147, TEST-0148, TEST-0204, TEST-0205 |
+| Last updated | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -56,14 +56,18 @@ usuario y parada con gracia (CR-061).
 | `GET /stop` (botón) acción stop | HTTP request | desde 127.0.0.1 | activa la parada con gracia (§5 W6) |
 | `GET /qr` (contador/regeneración) | HTTP request | desde 127.0.0.1 | vencimiento JSON del QR vigente (§5 W9) |
 | `GET /qr/rotate` (botón «Regenerar QR») | HTTP request | desde 127.0.0.1 | rotación del QR vigente (§5 W9 manual, CR-073 0.2.0) |
-| Menú del tray | usuario local | {Abrir interfaz, Iniciar al arrancar el equipo, Detener servidor} | §5 W1–W4 |
+| Menú del tray | usuario local | {Abrir interfaz, ¿Dónde está el URI?, Iniciar al arrancar el equipo, Mando virtual (DualSense), Detener servidor} | §5 W1–W4, W10 |
 | Toggle de autoarranque | usuario local | off/on | instala/elimina entrada XDG autostart (§5 W5) |
+| Toggle del mando virtual | usuario local | off/on | crea/destruye el HID DualSense del servidor y persiste la elección (§5 W10) |
 
 ## 5. Behavior (rules)
 
 - **W1 — Tray persistente:** mientras el Servidor PC corre, existe un
   icono de bandeja. Su tooltip indica el estado «Twinpad — activo» y el
-  URI vigente queda accesible vía el menú (W3) y la página (W2).
+  URI vigente queda accesible vía el menú (W3) y la página (W2). El icono
+  puede aparecer DESPUÉS que el proceso (el host de bandeja aún no existe) y
+  debe reaparecer si el host se reinicia: el servicio de bandeja no se rinde
+  ante un `StatusNotifierWatcher` ausente (CR-114; ver W7).
 - **W2 — Página muestra estado:** `GET /` desde loopback responde 200 con
   contenido HTML que incluye: (a) el QR de vinculación vigente renderizado
   como imagen; (b) el URI en una casilla de texto copiable; (c) el estado
@@ -93,10 +97,14 @@ usuario y parada con gracia (CR-061).
   interfaz loopback (`127.0.0.1`). Cualquier consulta desde otro interfaz
   es rechazada (conexión no establecida) — la página no expone tokens ni
   configs a la LAN (NFR-004).
-- **W7 — Fail-soft del tray:** si el entorno no ofrece un host de
+- **W7 — Fail-soft del tray:** si el entorno no ofrece (todavía) un host de
   StatusNotifier/bandeja, el servidor arranca igual, imprime el URI por
   stdout (comportamiento previo intacto) y la página de gestión sigue
-  operativa.
+  operativa. La ausencia del host NO es un fallo definitivo: el servicio de
+  bandeja espera y registra el icono en cuanto el host aparece, y vuelve a
+  registrarlo si el host se reinicia (CR-114). Los fallos duros (sin bus de
+  sesión, p. ej. dentro de un sandbox) se reintentan unas pocas veces y, si
+  persisten, el log lo dice junto con la URL local de la página.
 - **W8 — QR siempre fresco:** la página (y el URI del tooltip) muestran
   el URI vigente del momento de la consulta; si el token de 300 s (R7)
   venció, la consulta fuerza la emisión de uno nuevo. El QR en pantalla y
@@ -114,6 +122,21 @@ usuario y parada con gracia (CR-061).
   válida (incluido 503 cuando el SVG no es renderizable), la página
   conserva el QR y el URI vigentes y reintenta con cadencia fija (15 s;
   el reintento SOLO consulta, no rota).
+- **W10 — Mando virtual on/off desde la página (CR-114):** la página muestra
+  «Mando virtual (DualSense): Activado|Desactivado» y un botón que conmuta el
+  HID del servidor por `POST /virtual-pad` con cuerpo
+  `enabled=1|0` y cabecera `X-Twinpad-Action` (misma regla S1 que W5).
+  Encender crea el DualSense de SPEC-004 §8.4; apagar lo destruye de inmediato.
+  El menú del tray ofrece el mismo interruptor con marca de verificación,
+  leyendo siempre el estado vigente del servidor.
+  La elección se persiste en la carpeta de datos (fichero `virtual-pad` con
+  `on`/`off`) y manda sobre la variable de entorno en el siguiente arranque;
+  sin fichero, `TWINPAD_VIRTUAL_PAD` decide. Si el HID no se puede crear
+  (`/dev/uhid` ausente o sin permiso), la respuesta es 500 con el motivo, el
+  estado no cambia y la nota del panel muestra el error (E9). El mismo
+  interruptor, con su marca de verificación, está en el menú del tray
+  («Mando virtual (DualSense)») y comparte estado y preferencia con la
+  página.
 
 ## 6. Outputs
 
@@ -123,6 +146,7 @@ usuario y parada con gracia (CR-061).
 | Vencimiento JSON | `GET /qr` (200) | W9 |
 | QR rotado JSON | `GET /qr/rotate` (200) | W9 manual |
 | Respuesta de parada | `GET /stop` | 200 al cliente y proceso en fin de gracia |
+| Respuesta del mando virtual | `POST /virtual-pad` | 204 al conmutar; 500 con motivo si el HID no está disponible (W10) |
 | Entrada de autoarranque | W5 on | archivo de desktop entry presente bajo la configuración de usuario |
 | Ausencia de entrada | W5 off | archivo ausente |
 | URI por stdout | W7 (sin bandeja) | línea con `twinpad://v1#…` en el terminal |
@@ -143,6 +167,9 @@ usuario y parada con gracia (CR-061).
   fin de stream (W4).
 - **E7 — SVG no renderizable en `GET /qr`:** 503; la página conserva el
   QR y el URI vigentes en pantalla (W7) hasta la próxima consulta.
+- **E9 — Mando virtual no disponible (W10):** `/dev/uhid` ausente, sin
+  permiso o fuera de Linux; el toggle (página o menú del tray) informa del
+  motivo, el estado del mando NO cambia y el servidor sigue vivo.
 
 ## 8. Errors
 
@@ -155,12 +182,14 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 | Puerto local ocupado | log explicativo, servidor continúa (E1) |
 | Sin host de bandeja | servidor continúa con stdout (E4) |
 | Directorio autostart no escribible | error propagado al usuario en la acción (E5) |
+| `/dev/uhid` no disponible | 500 con motivo en la página y aviso en el log desde el tray; mando apagado (E9) |
 
 ## 9. Acceptance criteria (testable)
 
 - AC-1: dado el server activo, `GET /` en el puerto local responde 200 con el URI vigente presente en la respuesta, y el mismo URI sirve al QR renderizado (W2, W8).
 - AC-2: dado el server activo, la página muestra el número de sesiones activas y los juegos compatibles (W2).
 - AC-3: dada la acción de parada (tray o botón), el proceso del server termina y no se aceptan nuevas sesiones (W4).
+- AC-7: dado el servidor activo con `/dev/uhid` disponible, el toggle del mando virtual responde 204 y el dispositivo HID existe o deja de existir según el estado; apagado y con el fichero de preferencia `off`, un arranque posterior no lo crea (W10).
 - AC-4: dado el toggle de autoarranque activado, la entrada de autoarranque existe; desactivado, ausente; repetir no duplica (W5).
 - AC-5: dado el server activo, `GET /qr` desde loopback responde 200 con JSON que contiene el uri vigente, ttl_ms ∈ (0; 300 000] y el svg del MISMO token (W8); desincronizar QR y casilla es imposible por diseño (misma respuesta, única consulta). TEST-0146. La cadencia del contador y el swap visual sin recarga son verificación manual (owner).
 - AC-6: dado el server activo, `GET /qr/rotate` desde loopback invalida el token vigente no consumido, emite uno nuevo (distinto por llamada) y es idempotente en la condescendencia (sin vigente: emite); el URI anterior queda fuera (E2/E3 via `lookup`). TEST-0147/0148.
@@ -187,3 +216,4 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 | 0.3.0 | 2026-11-02 | Buffy (agente) | `Approved` — W3 abre en el WEBVIEW del sistema (WebKitGTK del host vía flatpak-spawn+PyGObject); navegadores bajan a fallback (0.2.0 CR-063); TEST-0141/0142 |
 | 0.4.0 | 2026-11-04 | Buffy (agente) | W9: continuidad del QR sin recargar (contador + regeneración automática/manual, `GET /qr`, E7/AC-5; NFR-003 reescrito); CR-073; TEST-0146 |
 | 0.4.1 | 2026-11-04 | Buffy (agente) | W9 manual corregido por decisión del owner: «Regenerar QR» ROTA el token (`GET /qr/rotate`; §8.3 reutilizada; el vencimiento automático no rota); AC-6; CR-073 0.2.0; TEST-0147/0148 |
+| 0.5.0 | 2026-11-25 | Owner + Buffy (agente) (CR-114) | W10: mando virtual DualSense on/off desde la página y el menú del tray (`POST /virtual-pad`, preferencia persistida, E9/AC-7); W1/W7: la bandeja espera al host SNI y se re-registra si reaparece |
