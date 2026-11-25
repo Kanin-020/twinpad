@@ -2,19 +2,32 @@
 
 Twinpad convierte un teléfono Android en la segunda pantalla y el gamepad de tu PC: el servidor captura la pantalla del juego, el celular la muestra y envía los controles por la red local, y la vinculación se hace con un QR.
 
-Esta release trae tres piezas. Cada una se instala por separado; abajo se explica qué es y cómo configurarla. El fork de Cemu se publica y compila en su propio repositorio, no en esta release.
+Esta release trae dos piezas del repositorio principal, con la misma etiqueta: El server y Android. Cada una se instala por separado; abajo se explica qué es y cómo configurarla. Las integraciones (Cemu, Dusklight y Decky) se compilan y publican en sus propios repositorios, no en esta release.
 
 | Pieza | Archivo | Dónde corre |
 |---|---|---|
 | El server | `twinpad-server-<versión>-x86_64.AppImage` | PC con Linux x86_64 |
 | Android | `twinpad-android-<versión>-debug-signed.apk` | Teléfono Android |
-| Decky | `decky-twinpad-<versión>.zip` | Steam Deck / SteamOS |
+
+---
+
+## Integraciones compatibles
+
+El servidor y Android de esta release comparten la etiqueta y el contrato `twinpad.v1`. Las integraciones se publican por separado y deben hablar ese mismo contrato; descarga siempre la última release de su repositorio.
+
+| Integración | Qué aporta | Última release |
+|---|---|---|
+| Cemu | Fork de Cemu con segunda pantalla, entrada, audio y micrófono | <https://github.com/Kanin-020/Cemu/releases/latest> |
+| Dusklight | Fork de Dusklight para Android con pantalla dual y entrada Twinpad | <https://github.com/Kanin-020/dusklight/releases/latest> |
+| Decky | Panel de Twinpad en el Quick Access Menu de Steam Deck | <https://github.com/Kanin-020/decky-twinpad/releases/latest> |
+
+El archivo `compatibility.json` adjunto a esta release registra la etiqueta del servidor y Android, el contrato común y el repositorio de cada integración. Si una integración publica un contrato distinto, no es compatible con esta release hasta que se actualice.
 
 ---
 
 ## El server
 
-**Qué es.** El proceso que corre en el PC. Captura el escritorio o la ventana del juego, atiende la sesión con el teléfono, sirve la página de gestión local y emite el QR de vinculación. Es la pieza que hay que arrancar primero: sin él, Cemu, Android y Decky no tienen a quién conectarse.
+**Qué es.** El proceso que corre en el PC. Captura el escritorio o la ventana del juego, atiende la sesión con el teléfono, sirve la página de gestión local y emite el QR de vinculación. Es la pieza que hay que arrancar primero: sin él, Cemu, Dusklight, Android y Decky no tienen a quién conectarse.
 
 **Cómo configurarlo.**
 
@@ -36,9 +49,17 @@ El firewall del PC debe permitir el tráfico entrante del teléfono en la red lo
 
 **Qué es.** Un fork de Cemu (el emulador de Wii U) con el soporte de Twinpad integrado: reenvía a la segunda pantalla lo que el juego dibuja en el GamePad y suma los canales de entrada, audio y micrófono del teléfono.
 
-**Dónde descargarlo.** El fork de Cemu se compila y publica en su repositorio original: <https://github.com/Kanin-020/Cemu/releases/latest>. Descarga el paquete para Linux x86_64 de ahí.
+**Dónde descargarlo.** El fork de Cemu se compila y publica en su propio repositorio: <https://github.com/Kanin-020/Cemu/releases/latest>. Descarga el paquete para Linux x86_64 de ahí.
 
 Arranca **primero El server** y deja la página de gestión abierta para vincular el teléfono. El fork se conecta a los canales locales del servidor cuando inicia una partida.
+
+---
+
+## Dusklight
+
+**Qué es.** Un fork de Dusklight con pantalla dual para Android y soporte de Twinpad como dispositivo de entrada. El teléfono muestra la segunda pantalla y sus controles se aplican al juego.
+
+**Dónde descargarlo.** El fork se compila y publica en su propio repositorio: <https://github.com/Kanin-020/dusklight/releases/latest>. Descarga el APK de ahí.
 
 ---
 
@@ -63,11 +84,7 @@ Arranca **primero El server** y deja la página de gestión abierta para vincula
 
 **Cómo configurarlo.**
 
-1. Descarga `decky-twinpad-<versión>.zip` y extrae la carpeta `Twinpad`:
-   ```bash
-   unzip decky-twinpad-<versión>.zip
-   cp -r Twinpad ~/homebrew/plugins/
-   ```
+1. Descarga la última release desde <https://github.com/Kanin-020/decky-twinpad/releases/latest> y sigue las instrucciones de instalación de ese repositorio.
 2. Recarga Decky (`Ajustes → Decky → Recargar`). El plugin aparece como **Twinpad** en el menú de acceso rápido.
 3. El servidor debe correr **en el mismo dispositivo** que Decky: la página de gestión es solo local (loopback) y no se publica a la red. Si el binario no está en el `PATH`, indica su ruta con `TWINPAD_SERVER_BIN`; el puerto local se cambia con `TWINPAD_LOCAL_PORT`.
 4. El autoarranque del servidor funciona en modo escritorio; en modo juego SteamOS no ejecuta el autoarranque XDG, así que ahí hay que arrancarlo desde el propio panel.
@@ -76,8 +93,8 @@ Arranca **primero El server** y deja la página de gestión abierta para vincula
 
 ## Requisitos comunes
 
-- PC con Linux x86_64 para El server y para el fork de Cemu.
+- PC con Linux x86_64 para El server y para las integraciones de Cemu y Dusklight.
 - Teléfono Android y PC en la misma red local.
 - Puertos de la red local accesibles desde el teléfono.
 
-Los binarios de esta release se compilan desde el código de la etiqueta publicada. Para reportar fallos o revisar el código, usa el repositorio.
+El servidor y el APK se compilan desde el código de la etiqueta publicada. Las integraciones se publican desde sus propios repositorios. Para reportar fallos o revisar el código, usa el repositorio correspondiente.

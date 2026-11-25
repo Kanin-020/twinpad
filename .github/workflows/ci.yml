@@ -6,6 +6,14 @@ on:
   pull_request:
 
 jobs:
+  compatibility:
+    name: Compatibility manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifest and protocol schemas
+        run: python3 scripts/check-compatibility.py
+
   rust:
     name: Rust gates (fmt, clippy, test)
     runs-on: ubuntu-latest

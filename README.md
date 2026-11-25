@@ -25,7 +25,7 @@ Segunda pantalla y gamepad HID para PC, controlados desde un celular Android. Se
 
 ### Steam Deck / SteamOS
 
-El plugin de Decky Loader muestra en el Quick Access Menu el mismo QR, el estado y los botones de arrancar, detener y autoarranque. Sus instrucciones están en [`integrations/decky-twinpad/README.md`](integrations/decky-twinpad/README.md). El servidor debe correr en el mismo equipo que Decky, porque la página de gestión solo acepta conexiones locales.
+El plugin de Decky Loader muestra en el Quick Access Menu el mismo QR, el estado y los botones de arrancar, detener y autoarranque. Se publica en su propio repositorio: [Kanin-020/decky-twinpad](https://github.com/Kanin-020/decky-twinpad/releases/latest). Descarga la última release y sigue sus instrucciones. El servidor debe correr en el mismo equipo que Decky, porque la página de gestión solo acepta conexiones locales.
 
 ### Estado actual
 

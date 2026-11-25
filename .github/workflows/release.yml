@@ -36,6 +36,24 @@ jobs:
             exit 1
           fi
 
+  compatibility:
+    name: Validate compatibility manifest
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifest and protocol schemas
+        run: python3 scripts/check-compatibility.py
+      - name: Generate release manifest
+        env:
+          RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+        run: python3 scripts/check-compatibility.py "$RELEASE_VERSION" > compatibility.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compatibility
+          path: compatibility.json
+          if-no-files-found: error
+
   android:
     name: Build Android APK
     needs: validate
@@ -127,46 +145,9 @@ jobs:
           path: dist/*.AppImage
           if-no-files-found: error
 
-  decky:
-    name: Build Decky plugin (Twinpad)
-    needs: validate
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Build plugin
-        working-directory: integrations/decky-twinpad
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run build
-      - name: Package plugin as zip
-        env:
-          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
-        run: |
-          set -euo pipefail
-          plugin=integrations/decky-twinpad
-          stage=dist/decky/Twinpad
-          mkdir -p "$stage/dist"
-          cp "$plugin/plugin.json" "$plugin/package.json" "$plugin/main.py" "$plugin/LICENSE" "$plugin/README.md" "$stage/"
-          cp -a "$plugin/assets" "$plugin/defaults" "$plugin/py_modules" "$stage/"
-          cp "$plugin/dist/index.js" "$stage/dist/"
-          (cd dist/decky && zip -qr "../decky-twinpad-${RELEASE_TAG#v}.zip" Twinpad)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: decky-twinpad
-          path: dist/decky-twinpad-*.zip
-          if-no-files-found: error
-
   publish:
     name: Publish GitHub release
-    needs: [validate, android, server, decky]
+    needs: [validate, compatibility, android, server]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

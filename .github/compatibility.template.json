@@ -1,0 +1,27 @@
+{
+  "schema": "twinpad.compatibility.v1",
+  "protocol": "twinpad.v1",
+  "release": "release",
+  "server": "release",
+  "android": "release",
+  "integrations": {
+    "cemu": {
+      "name": "Cemu",
+      "repository": "https://github.com/Kanin-020/Cemu",
+      "releases": "https://github.com/Kanin-020/Cemu/releases/latest",
+      "protocol": "twinpad.v1"
+    },
+    "dusklight": {
+      "name": "Dusklight",
+      "repository": "https://github.com/Kanin-020/dusklight",
+      "releases": "https://github.com/Kanin-020/dusklight/releases/latest",
+      "protocol": "twinpad.v1"
+    },
+    "decky": {
+      "name": "Decky",
+      "repository": "https://github.com/Kanin-020/decky-twinpad",
+      "releases": "https://github.com/Kanin-020/decky-twinpad/releases/latest",
+      "protocol": "twinpad.v1"
+    }
+  }
+}

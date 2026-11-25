@@ -21,6 +21,9 @@
 
 artifacts
 
+# Manifiesto generado por scripts/check-compatibility.py
+/compatibility.json
+
 reference
 
 session.txt
