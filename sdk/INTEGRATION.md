@@ -144,8 +144,6 @@ integrations/
 │       │                        # teclado (TwinpadMicChannel, TwinpadKeyboardChannel)
 │       └── Tests/               # Pruebas stand-alone del módulo (Base64Url,
 │                                # GyroMonitor, Motion; binarios de CMake)
-├── cemu-vcpkg-overlay-linux/    # Overlays de dependencias de construcción
-│                                # del host (al lado del fork, no adentro)
 └── dusklight/                   # Port nativo (C++/Aurora): misma capa, adaptada
     └── src/dusk/twinpad/        # (ver §9) Core/Client/Video/Channels + Tests
 ```
