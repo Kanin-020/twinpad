@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-119 |
+| CR | CR-120 |
 
 ## Open / In review
 
@@ -54,6 +54,7 @@
 | CR-116 | Identidad de mando por `vendorId`/`productId`/`name` del `InputDevice` (no existen fabricante/producto como texto), con `descriptor` de respaldo | SPEC-011 §3, código `ui/GamepadProfileStore`, traceability (TEST-0209) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-116-gamepad-identity-inputdevice-fields.md](CR-116-gamepad-identity-inputdevice-fields.md) |
 | CR-117 | La captura de una fila reemplaza su entrada física (aclaración de SPEC-011 §6 M3/§7.3 frente a AC-2); los duplicados son entre filas | SPEC-011 §6/§7, código `hid/GamepadMapping`, traceability (TEST-0209) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-117-gamepad-capture-replaces-row-binding.md](CR-117-gamepad-capture-replaces-row-binding.md) |
 | CR-118 | El mapeador se abre solo la primera vez que se detecta cada modelo; la marca se persiste y no se repite al reiniciar ni al reconectar | SPEC-011 §6 M1/§7.1/AC-1, código `ui/GamepadProfileStore` y `ui/PhysicalGamepadController`, traceability (TEST-0212) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-118-gamepad-mapper-once-per-model.md](CR-118-gamepad-mapper-once-per-model.md) |
+| CR-119 | Cemu: auto-conexión fija sin preferencia, «Iniciar conexión» solo muestra/rota el QR (arranca el servidor si falta) y H.264 activo por defecto | SPEC-006 R4/R5, DES-004, código Cemu/servidor, traceability (TEST-046/047) | Approved (2026-11-25); código aplicado; texto SPEC/DES pendiente | Buffy (agente) | [CR-119-cemu-fixed-auto-connect-and-qr-menu.md](CR-119-cemu-fixed-auto-connect-and-qr-menu.md) |
 
 ## Applied
 
