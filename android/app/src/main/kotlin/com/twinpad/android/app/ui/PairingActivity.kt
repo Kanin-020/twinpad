@@ -557,6 +557,7 @@ class PairingActivity : AppCompatActivity() {
                 // en caliente); el origen vigente (PC u otro) los alimenta.
                 val streamingNow = viewModel.streamState.value.state == StreamState.STREAMING
                 metricsSlider.setStreaming(streamingNow, drawer.load().metricsSliderOverStream)
+                keepDisplayAwake(viewModel.uiState.value is PairingUiState.Linked)
                 if (viewModel.uiState.value is PairingUiState.Linked &&
                     (!streamingNow || metricsSlider.sheetActive)
                 ) {
@@ -596,15 +597,16 @@ class PairingActivity : AppCompatActivity() {
             applyVideoScale(drawer.load())
         }
         val streaming = state.state == StreamState.STREAMING
-        sessionView<View>(R.id.drc_content).isVisible = streaming
-        // Sin transmisión: se ve el tapete de mesa en vez del SurfaceView negro.
+        // CR-112: el contenedor del video queda SIEMPRE visible. Sin transmisión
+        // hace de tapete de mesa (capa por debajo de los controles) en vez del
+        // SurfaceView negro; ocultarlo era la causa de la pantalla negra.
         sessionView<View>(R.id.video_surface_container).background =
-            if (streaming) null else ContextCompat.getDrawable(this, R.drawable.bg_table_logo)
+            if (streaming) null else ContextCompat.getDrawable(this, R.drawable.bg_table)
         sessionView<SurfaceView>(R.id.video_view).isVisible = streaming
         // CR-079: la vista de espera CR-076 ahora tiene dos modos (fullscreen
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)
-        keepDisplayAwake(state.state)
+        keepDisplayAwake(viewModel.uiState.value is PairingUiState.Linked)
     }
 
     private fun renderHudChip() {
@@ -920,8 +922,10 @@ class PairingActivity : AppCompatActivity() {
     }
 }
 
-private fun PairingActivity.keepDisplayAwake(state: StreamState) {
-    if (state == StreamState.STREAMING || state == StreamState.INTERRUPTED) {
+private fun PairingActivity.keepDisplayAwake(sessionActive: Boolean) {
+    // CR-112: basta con tener sesión —la pantalla no se apaga aunque no haya
+    // transmisión en curso—; sin sesión se devuelve el control al sistema.
+    if (sessionActive) {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     } else {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

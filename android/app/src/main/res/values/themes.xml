@@ -14,16 +14,54 @@
         <item name="colorOnSurface">@color/design_frost_text</item>
         <item name="android:textColorPrimary">@color/design_cloud_white</item>
         <item name="android:textColorSecondary">@color/design_misted_slate</item>
+
+        <!-- CR-112: roles de color de M3 desde los tokens de DESIGN.md. Sin
+             ellos los componentes Material (ripple, sliders, switches,
+             checkboxes) caen al morado de la línea base de M3, que la guía
+             reserva solo para Signal Violet como acento de marca. -->
+        <item name="colorPrimary">@color/design_cloud_white</item>
+        <item name="colorOnPrimary">@color/design_charcoal_panel</item>
+        <item name="colorPrimaryContainer">@color/design_steel_panel</item>
+        <item name="colorOnPrimaryContainer">@color/design_cloud_white</item>
+        <item name="colorSecondary">@color/design_slate_edge</item>
+        <item name="colorOnSecondary">@color/design_cloud_white</item>
+        <item name="colorSecondaryContainer">@color/design_steel_panel</item>
+        <item name="colorOnSecondaryContainer">@color/design_frost_text</item>
+        <item name="colorSurface">@color/design_ink_surface</item>
+        <item name="colorOnSurface">@color/design_frost_text</item>
+        <item name="colorSurfaceVariant">@color/design_steel_panel</item>
+        <item name="colorOnSurfaceVariant">@color/design_misted_slate</item>
+        <item name="colorSurfaceContainer">@color/design_charcoal_panel</item>
+        <item name="colorSurfaceContainerHigh">@color/design_steel_panel</item>
+        <item name="colorOutline">@color/design_slate_edge</item>
+        <item name="colorOutlineVariant">@color/design_slate_edge</item>
+        <item name="colorControlActivated">@color/design_cloud_white</item>
+        <item name="colorControlNormal">@color/design_misted_slate</item>
     </style>
 
-    <!-- CR-077: botón de conversión lleno de DESIGN.md (Header/Hero White
+    <!-- CR-077/CR-112: botón de conversión lleno de DESIGN.md (Header White
          Conversion Button) — fill rgba(255,255,255,0.92), texto Charcoal
-         Panel en 14sp/500, radio 12 px. -->
+         Panel en Inter 14px/600, padding 8×16 y radio 12 px. Plano (la guía
+         no usa sombras en controles) y sin ripple morado de M3. -->
     <style name="Widget.Twinpad.Button.Filled" parent="Widget.Material3.Button">
-        <item name="android:backgroundTint">#EBFFFFFF</item>
+        <item name="android:backgroundTint">@color/design_white_92</item>
         <item name="android:textColor">@color/design_charcoal_panel</item>
         <item name="android:textSize">14sp</item>
+        <item name="android:textFontWeight">600</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:letterSpacing">0</item>
         <item name="cornerRadius">12dp</item>
-        <item name="android:textFontWeight">500</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/design_white_92</item>
+        <item name="rippleColor">@color/design_charcoal_panel</item>
+        <item name="elevation">0dp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:paddingLeft">16dp</item>
+        <item name="android:paddingRight">16dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
     </style>
 </resources>

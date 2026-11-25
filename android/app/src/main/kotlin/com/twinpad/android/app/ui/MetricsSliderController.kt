@@ -12,13 +12,14 @@ import com.twinpad.android.app.R
 
 /**
  * CR-107: barra de rendimiento como `BottomSheetBehavior` de Material.
- * Modos: WAITING (vista fullscreen antes del stream), SHEET (bottom sheet
- * sobre el video, plegada al asa) y HIDDEN (slider desactivado).
+ * Modos: WAITING (monitor abierto antes del stream, sobre el tapete de
+ * mesa), SHEET (bottom sheet sobre el video, plegada al asa) y HIDDEN
+ * (slider desactivado).
  */
 internal class MetricsSliderController(
     private val activity: Activity,
 ) {
-    private enum class SheetMode { SHEET, HIDDEN }
+    private enum class SheetMode { WAITING, SHEET, HIDDEN }
 
     private val slider: View = activity.findViewById(R.id.metrics_slider)
     private val sheet: View = activity.findViewById(R.id.metrics_sheet)
@@ -46,7 +47,10 @@ internal class MetricsSliderController(
                     bottomSheet: View,
                     slideOffset: Float,
                 ) {
-                    if (mode == SheetMode.SHEET) {
+                    // CR-112: el fundido del panel acompaña al arrastre en
+                    // cualquier modo visible (antes solo en SHEET y el monitor
+                    // de espera se quedaba opaco al plegarlo).
+                    if (mode != SheetMode.HIDDEN) {
                         applySheetAlpha(slideOffset)
                     }
                 }
@@ -54,42 +58,59 @@ internal class MetricsSliderController(
         )
     }
 
-    /** Transparente a 0 % (plegada) y sólido a 100 % (expandida). */
+    /** Transparente a 0 % (plegada, se ve el tapete/video detrás) y sólido a
+     * 100 % (expandida): el mismo efecto en espera y sobre el stream. */
     private fun applySheetAlpha(slideOffset: Float) {
         val fraction = slideOffset.coerceIn(0f, 1f)
         sheet.background?.mutate()?.alpha = (fraction * OPAQUE_ALPHA).toInt()
     }
 
-    /** `true` en modo SHEET: el tick pinta los gauges. */
+    /** `true` con el monitor visible (WAITING o SHEET): el tick pinta los gauges. */
     val sheetActive: Boolean
-        get() = mode == SheetMode.SHEET
+        get() = mode != SheetMode.HIDDEN
 
     /** Idempotente: solo re-aplica cuando cambia el estado. */
     fun setStreaming(
         streaming: Boolean,
         sliderEnabled: Boolean,
     ) {
-        // Sin stream la hoja es la misma que con stream: solo cambia el video de fondo.
+        // Sin transmisión el monitor se abre (WAITING); con transmisión es
+        // la hoja arrastrable sobre el video, o HIDDEN si el slider está apagado.
         val target =
             when {
-                !streaming || sliderEnabled -> SheetMode.SHEET
+                !streaming -> SheetMode.WAITING
+                sliderEnabled -> SheetMode.SHEET
                 else -> SheetMode.HIDDEN
             }
         if (target == mode) {
             return
         }
         mode = target
-        this.streaming = streaming
         applyCurrent()
     }
 
-    private var streaming = false
-
     private fun applyCurrent() {
-        // Sin transmisión, el fondo es el tapete de mesa con el logo; con
-        // transmisión la hoja queda transparente sobre el video.
         slider.background = null
         when (mode) {
+            // Sin sesión: monitor abierto sobre el tapete de mesa, NO sobre un
+            // color plano (eso era la «pantalla negra»). Se abre y se cierra a
+            // voluntad: se queda en COLLAPSED (asa visible) en vez de HIDDEN,
+            // porque escondido y sin asa ya no había forma de volver a abrirlo.
+            SheetMode.WAITING -> {
+                slider.isVisible = true
+                setSheetFullLayout(Gravity.BOTTOM)
+                sheet.background =
+                    ContextCompat.getDrawable(activity, R.drawable.bg_table)?.mutate()?.apply {
+                        alpha = OPAQUE_ALPHA
+                    }
+                content.background = null
+                handle.isVisible = true
+                behavior.isHideable = false
+                behavior.isDraggable = true
+                behavior.peekHeight = peekHeightPx()
+                behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                applySheetAlpha(1f)
+            }
             SheetMode.SHEET -> {
                 slider.isVisible = true
                 setSheetFullLayout(Gravity.BOTTOM)

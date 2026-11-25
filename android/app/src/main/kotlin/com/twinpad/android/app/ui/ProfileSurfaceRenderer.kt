@@ -33,6 +33,15 @@ internal class ProfileSurfaceRenderer(context: Context) {
     private val stickThumbDrawable =
         context.resources.getDrawable(com.twinpad.android.app.R.drawable.stick_thumb, context.theme).mutate()
 
+    /** CR-112: Home/Select/Start se dibujan con icono en lugar de etiqueta
+     * (los tres botones que en un mando no llevan texto). */
+    private val iconDrawables: Map<String, android.graphics.drawable.Drawable> =
+        mapOf(
+            HID_HOME to drawableOf(context, com.twinpad.android.app.R.drawable.ic_control_home),
+            HID_SELECT to drawableOf(context, com.twinpad.android.app.R.drawable.ic_control_select),
+            HID_START to drawableOf(context, com.twinpad.android.app.R.drawable.ic_control_start),
+        )
+
     /** CR-077 v2: color del texto/chevron sobre cara clara — Charcoal Panel
      * de DESIGN.md («dark text on white controls»); Inter para las etiquetas. */
     private val labelColor =
@@ -41,8 +50,12 @@ internal class ProfileSurfaceRenderer(context: Context) {
             com.twinpad.android.app.R.color.design_charcoal_panel,
         )
     private val labelTypeface: android.graphics.Typeface =
-        androidx.core.content.res.ResourcesCompat.getFont(context, com.twinpad.android.app.R.font.inter)
-            ?: DEFAULT_LABEL_TYPEFACE
+        android.graphics.Typeface.create(
+            androidx.core.content.res.ResourcesCompat.getFont(context, com.twinpad.android.app.R.font.inter)
+                ?: DEFAULT_LABEL_TYPEFACE,
+            LABEL_WEIGHT,
+            false,
+        )
     private val textPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFFFFFFF.toInt()
@@ -84,18 +97,47 @@ internal class ProfileSurfaceRenderer(context: Context) {
             else -> drawButton(frame)
         }
         if (control.kind != ControlProfileCodec.KIND_DPAD) {
-            // Etiqueta del control (refs: ~45 % de la cara del botón,
-            // gris oscuro, letra normal); se autoescala con el tamaño.
-            textPaint.textSize = minOf(control.w * width, control.h * height) * LABEL_SCALE
-            textPaint.alpha = alpha
-            textPaint.color = labelColor
-            canvas.drawText(
-                control.label,
-                labelX(control, width),
-                labelY(control, height, textPaint.textSize),
-                textPaint,
-            )
+            val side = minOf(control.w * width, control.h * height)
+            val icon = iconDrawables[control.hid]
+            if (icon != null) {
+                drawIcon(frame, icon, side)
+            } else {
+                // Etiqueta del control (refs: ~45 % de la cara del botón,
+                // gris oscuro, Inter Medium); se autoescala con el tamaño.
+                textPaint.textSize = side * LABEL_SCALE
+                textPaint.alpha = alpha
+                textPaint.color = labelColor
+                canvas.drawText(
+                    control.label,
+                    labelX(control, width),
+                    labelY(control, height, textPaint.textSize),
+                    textPaint,
+                )
+            }
         }
+    }
+
+    /** Icono centrado en la cara del botón (CR-112), mismo ancho que la etiqueta. */
+    private fun drawIcon(
+        frame: ControlFrame,
+        icon: android.graphics.drawable.Drawable,
+        side: Float,
+    ) {
+        val control = frame.control
+        val cx = labelX(control, frame.width)
+        val cy = (control.y + control.h / 2) * frame.height
+        val half = side * ICON_SCALE / 2f
+        drawDrawable(
+            frame.canvas,
+            icon,
+            DrawableFrame(
+                (cx - half).roundToInt(),
+                (cy - half).roundToInt(),
+                (cx + half).roundToInt(),
+                (cy + half).roundToInt(),
+                frame.alpha,
+            ),
+        )
     }
 
     /** Botón circular estilo referencia: halo oscuro + cara clara centrada. */
@@ -327,9 +369,21 @@ internal class ProfileSurfaceRenderer(context: Context) {
     }
 }
 
-private const val DIMMED_ALPHA = 77
-private const val PRESSED_ALPHA = 235
-private const val NORMAL_ALPHA = 115
+/** Drawable propio (mutado) para pintar en canvas sin afectar al recurso. */
+private fun drawableOf(
+    context: Context,
+    resId: Int,
+): android.graphics.drawable.Drawable = context.resources.getDrawable(resId, context.theme).mutate()
+
+/**
+ * CR-112: opacidades en los valores de DESIGN.md, no por debajo.
+ * Las caras ya llevan el token blanco 92 % (`design_white_92`) y el pulsado
+ * Cloud White: escalarlos a ~45 % dejaba los controles grises y fuera de
+ * DESIGN.md. Solo el control sin asignación se atenúa (SPEC-008 §5).
+ */
+private const val DIMMED_ALPHA = 110
+private const val PRESSED_ALPHA = 255
+private const val NORMAL_ALPHA = 255
 private const val DPAD_DOT_ALPHA = 75
 
 /** Botones del D-pad: radio y distancia al centro (× radio del plato).
@@ -354,5 +408,16 @@ private const val BUTTON_HALO_RADIUS = 0.72f
 
 /** Altura de la etiqueta como fracción del lado menor del control (refs). */
 private const val LABEL_SCALE = 0.44f
+
+/** Lado del icono (Home/Select/Start) como fracción del lado menor (CR-112). */
+private const val ICON_SCALE = 0.50f
+
+/** DESIGN.md: el peso 500 lleva etiquetas y navegación. */
+private const val LABEL_WEIGHT = 500
+
+/** Elementos HID (SPEC-004 §2) que se dibujan con icono en lugar de etiqueta. */
+private const val HID_HOME = "button_extra_1"
+private const val HID_SELECT = "button_select"
+private const val HID_START = "button_start"
 private const val TEXT_SIZE_SP = 14f
 private const val TEXT_SIZE_DIVISOR = 3

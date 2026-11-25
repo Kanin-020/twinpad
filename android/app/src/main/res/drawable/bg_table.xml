@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CR-112: tapete de mesa (solo superficie, sin logo) para el panel del
+     monitor de recursos sin sesión. Es el mismo degradado que
+     bg_table_logo (Void Canvas → Slate Edge) sin el logo, que en el monitor
+     quedaba recortado por las tarjetas de gauges. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="@color/design_void_canvas"
+                android:endColor="@color/design_slate_edge"
+                android:type="linear" />
+        </shape>
+    </item>
+</layer-list>

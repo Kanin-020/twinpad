@@ -31,6 +31,13 @@ Fija el comportamiento observable de la superficie de controles táctiles del te
 > `design_white_92`, presionado Cloud White), etiquetas y chevrons en
 > Charcoal Panel con la familia Inter. El estilo NO altera geometrías,
 > hit-areas ni comportamiento (CR-071/CR-072 intactos).
+>
+> **Nota (CR-112, 2026-11-24):** las etiquetas usan Inter Medium (peso 500),
+> el peso que DESIGN.md asigna a etiquetas; Home (`button_extra_1`), Select
+> (`button_select`) y Start (`button_start`) se dibujan con icono Charcoal
+> Panel centrado en la cara en lugar de texto, porque en un mando físico
+> esos tres botones no llevan etiqueta. Sigue sin alterar geometrías,
+> hit-areas ni comportamiento.
 
 ## 3. Preconditions
 

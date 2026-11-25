@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono del control Home del perfil: el logo de Twinpad (los dos trapecios
+     enfrentados de ic_launcher_foreground, sin reducción ni desplazamiento)
+     en Charcoal Panel sobre la cara clara del botón (DESIGN.md: «dark text on
+     white controls»). Viewport = caja del logo (712×536) con 24 de margen. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="@color/design_charcoal_panel"
+    android:viewportWidth="760"
+    android:viewportHeight="584">
+    <group
+        android:translateX="-247"
+        android:translateY="-304">
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M530,340
+                C565,328 601,352 601,392
+                L601,815
+                C601,850 575,870 540,864
+                L312,778
+                C285,768 271,745 271,720
+                L271,478
+                C271,450 288,428 312,420
+                Z" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M724,340
+                C689,328 653,352 653,392
+                L653,815
+                C653,850 679,870 714,864
+                L942,778
+                C969,768 983,745 983,720
+                L983,478
+                C983,450 966,428 942,420
+                Z" />
+    </group>
+</vector>

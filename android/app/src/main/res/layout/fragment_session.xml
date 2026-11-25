@@ -62,7 +62,7 @@
             android:id="@+id/metrics_sheet"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@color/design_void_canvas"
+            android:background="@drawable/bg_table"
             android:orientation="vertical"
             app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
             app:behavior_peekHeight="0dp"
@@ -77,8 +77,8 @@
                 android:layout_width="72dp"
                 android:layout_height="24dp"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginBottom="10dp"
-                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginTop="8dp"
                 android:background="@drawable/bg_metrics_handle" />
 
             <!-- CR-079 v8 (prueba del owner): la franja del asa queda
@@ -91,7 +91,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:padding="12dp">
+                android:padding="16dp">
 
                 <LinearLayout
                     android:id="@+id/gauge_grid"
@@ -162,16 +162,18 @@
                                 android:id="@+id/txt_fps_value"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:letterSpacing="-0.02"
                                 android:textColor="@color/design_cloud_white"
-                                android:textSize="40sp"
-                                android:textStyle="bold" />
+                                android:textFontWeight="500"
+                                android:textSize="36sp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/metrics_fps"
                                 android:textColor="@color/design_quiet_slate"
-                                android:textSize="10sp" />
+                                android:textFontWeight="500"
+                                android:textSize="13sp" />
                         </LinearLayout>
 
                         <LinearLayout
@@ -193,15 +195,16 @@
                                     android:layout_height="wrap_content"
                                     android:text="@string/metrics_cpu"
                                     android:textColor="@color/design_quiet_slate"
-                                    android:textSize="10sp" />
+                                    android:textFontWeight="500"
+                                    android:textSize="13sp" />
 
                                 <TextView
                                     android:id="@+id/txt_cpu_temp"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:textColor="@color/design_cloud_white"
-                                    android:textSize="20sp"
-                                    android:textStyle="bold" />
+                                    android:textFontWeight="600"
+                                    android:textSize="18sp" />
                             </LinearLayout>
 
                             <LinearLayout
@@ -216,15 +219,16 @@
                                     android:layout_height="wrap_content"
                                     android:text="@string/metrics_gpu"
                                     android:textColor="@color/design_quiet_slate"
-                                    android:textSize="10sp" />
+                                    android:textFontWeight="500"
+                                    android:textSize="13sp" />
 
                                 <TextView
                                     android:id="@+id/txt_gpu_temp"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:textColor="@color/design_cloud_white"
-                                    android:textSize="20sp"
-                                    android:textStyle="bold" />
+                                    android:textFontWeight="600"
+                                    android:textSize="18sp" />
                             </LinearLayout>
                         </LinearLayout>
                     </LinearLayout>
@@ -241,8 +245,9 @@
         android:background="@drawable/bg_hud_chip"
         android:paddingHorizontal="8dp"
         android:paddingVertical="4dp"
-        android:textColor="@android:color/white"
-        android:textSize="12sp"
+        android:textColor="@color/design_cloud_white"
+        android:textFontWeight="500"
+        android:textSize="13sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
@@ -256,8 +261,9 @@
         android:background="@drawable/bg_hud_chip"
         android:paddingHorizontal="8dp"
         android:paddingVertical="4dp"
-        android:textColor="@android:color/white"
-        android:textSize="11sp"
+        android:textColor="@color/design_cloud_white"
+        android:textFontWeight="500"
+        android:textSize="13sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/hud_chip" />
 
@@ -271,8 +277,9 @@
         android:background="@drawable/bg_hud_chip"
         android:paddingHorizontal="8dp"
         android:paddingVertical="4dp"
-        android:textColor="@android:color/white"
-        android:textSize="11sp"
+        android:textColor="@color/design_cloud_white"
+        android:textFontWeight="500"
+        android:textSize="13sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/hud_stage" />
 
@@ -301,7 +308,7 @@
         android:visibility="gone"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="@color/keyboard_overlay_background"
+        android:background="@drawable/bg_table_logo"
         android:orientation="vertical"
         android:padding="8dp"
         app:layout_constraintBottom_toBottomOf="parent"

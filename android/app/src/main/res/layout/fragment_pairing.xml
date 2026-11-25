@@ -14,6 +14,9 @@
         android:layout_marginTop="32dp"
         android:text="@string/app_name"
         android:textColor="@color/design_cloud_white"
+        android:textFontWeight="500"
+        android:textSize="36sp"
+        android:letterSpacing="-0.02"
         android:fontFamily="@font/inter"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -70,6 +73,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
+        android:textColor="@color/design_frost_text"
+        android:textSize="16sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/progress_pairing" />
@@ -113,9 +118,10 @@
     <TextView
         android:id="@+id/txt_error"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:visibility="gone"
+        android:layout_height="wrap_content"            android:layout_marginTop="12dp"
+            android:textColor="@color/design_misted_slate"
+            android:textSize="14sp"
+            android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btn_retry" />

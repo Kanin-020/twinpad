@@ -19,13 +19,13 @@
         espejo comparten y exacta y sus centros cumplen cx_d = 1 − cx_i;
         select/start son simétricos respecto a cx=0.5 (gap 0.286);
         stick_left/right y L3/R3 comparten fila (cy 0.801 / 0.815);
-        el D-pad alinea su centro con la fila del clúster de cara
-        Y/X/A/B (cy 0.3515 ambos: CR-071 ronda 2, ambos clústeres suben
-        ~1.5 %; el D-pad en vertical_bias 0.2879 →
-        cy = 0.2879·0.70 + 0.15 = 0.3515), que va en dp formando un
-        rombo cuadrado en px alrededor de su eje invisible
-        `face_axis` (cx 0.824, cy 0.3515); ver la sección del
-        clúster para los detalles.
+        el D-pad va un poco por encima y a la izquierda del clúster de
+        cara Y/X/A/B (CR-112 ronda 3, pedido del owner: más grande y
+        arriba-izquierda; antes compartía la fila cy 0.3515), con
+        vertical_bias 0.26 → cy = 0.26·0.68 + 0.16 = 0.3368;
+        el clúster de cara va en dp formando un rombo cuadrado en px
+        alrededor de su eje invisible `face_axis` (cx 0.824,
+        cy 0.3515); ver la sección del clúster para los detalles.
       * Formas y colores: res/drawable (touch_button = cara clara,
         bg_control = plato/halo oscuro, stick_thumb = pulgar del stick;
         el D-pad toma el mismo estilo del renderer).
@@ -172,23 +172,25 @@
 
     <!-- ===== cruz + sticks (L3/R3 junto a cada stick, misma fila) =====
 
-         CR-071: plato mayor (width_percent 0.27; el radio del plato es
-         el lado menor) y centro alineado a la fila del clúster de cara
-         (vertical_bias 0.2879 → cy = 0.2879·(1−0.30) + 0.15 = 0.3515;
-         ronda 2: antes 0.24 y fila 0.3665). -->
+         CR-071: plato mayor (el radio del plato es el lado menor).
+         CR-112 ronda 3 (pedido del owner): plato más grande
+         (width 0.30 / height 0.32, antes 0.27 / 0.30) y centro
+         arriba-izquierda — vertical_bias 0.26 → cy = 0.26·0.68 + 0.16 =
+         0.3368 y horizontal_bias 0.049 → cx = 0.049·0.70 + 0.15 = 0.1843
+         (antes cx 0.1992, cy 0.3515). -->
 
     <com.twinpad.android.app.surface.TwinpadControlView
         android:id="@+id/dpad_cross"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintHeight_percent="0.30"
-        app:layout_constraintHorizontal_bias="0.088"
+        app:layout_constraintHeight_percent="0.32"
+        app:layout_constraintHorizontal_bias="0.049"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.2879"
-        app:layout_constraintWidth_percent="0.27"
+        app:layout_constraintVertical_bias="0.26"
+        app:layout_constraintWidth_percent="0.30"
         app:twinpadHid="dpad"
         app:twinpadKind="dpad"
         app:twinpadLabel="D-pad" />

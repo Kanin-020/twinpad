@@ -18,6 +18,10 @@
     <color name="design_quiet_slate">#8F94A6</color>
     <color name="design_signal_violet">#7064F2</color>
 
+    <!-- Charcoal Panel al 90 %: plato/base de los controles táctiles, que
+         deben dejar ver el video por debajo. -->
+    <color name="design_charcoal_panel_soft">#E60F1219</color>
+
     <!-- CR-077 v2: superficie del control lleno claro (Header/Hero White
          Conversion Button = rgba(255,255,255,0.92)) para las caras de los
          botones táctiles y el pulgar del stick; texto/chevron sobre cara

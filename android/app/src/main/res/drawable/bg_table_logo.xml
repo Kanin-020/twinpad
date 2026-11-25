@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Fondo sin transmisión: tapete de mesa oscuro con el logo de la app
-     (ic_launcher_foreground) centrado y atenuado. Todo en XML, sin raster. -->
+     (ic_launcher_foreground) centrado y atenuado. Todo en XML, sin raster.
+     CR-112: el degradado llega a Slate Edge para que el tapete se distinga
+     del negro puro (antes Void Canvas → #0B0D14 se leía como pantalla negra). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
             <gradient
                 android:angle="270"
                 android:startColor="@color/design_void_canvas"
-                android:endColor="#0B0D14"
+                android:endColor="@color/design_slate_edge"
                 android:type="linear" />
         </shape>
     </item>
@@ -16,5 +18,5 @@
         android:gravity="center"
         android:width="220dp"
         android:height="220dp"
-        android:alpha="0.12" />
+        android:alpha="0.18" />
 </layer-list>

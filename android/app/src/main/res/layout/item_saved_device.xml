@@ -25,14 +25,14 @@
             android:layout_height="wrap_content"
             android:textColor="@color/design_cloud_white"
             android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textFontWeight="500" />
 
         <TextView
             android:id="@+id/saved_device_addr"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/design_misted_slate"
-            android:textSize="12sp" />
+            android:textSize="13sp" />
 
         <Button
             android:id="@+id/saved_device_action"
