@@ -7,7 +7,7 @@ enum class StreamState {
     /** Sin stream: la vista muestra "sin segunda pantalla activa" (AC-3). */
     INACTIVE,
 
-    /** Llegan frames: presentar el Frame activo. */
+    /** Llegan AUs por el canal media: presentar el Frame activo. */
     STREAMING,
 
     /** Sin frames en ≥ 2 s o corte; esperando recuperación (§8.2). */
@@ -19,16 +19,15 @@ enum class StreamState {
  */
 data class StreamUiState(
     val state: StreamState = StreamState.INACTIVE,
-    /** Último frame válido decodificado (ARGB), listo para render. */
-    val lastFrame: Any? = null,
     val width: Int = 0,
     val height: Int = 0,
 )
 
 /**
- * Máquina del stream (SPEC-003 §6/§10): orden exclusivo por `fn` (R2),
- * frames corruptos/tardíos descartados sin tocar el Frame activo, y
- * transiciones V0↔V1↔V2 según lleguen mensajes o expiren tiempos.
+ * Máquina del stream (SPEC-003 §6/§10): orden exclusivo por `fn` (R2) y
+ * transiciones V0↔V1↔V2. Desde CR-014 el video H.264 llega por el canal
+ * media, así que del socket de control solo entran `stream_start` y
+ * `stream_stop`; los frames se registran con [acceptFrame].
  */
 class StreamStateMachine {
     var state: StreamState = StreamState.INACTIVE
@@ -46,64 +45,25 @@ class StreamStateMachine {
     /** Última actualización del Frame activo (ms del reloj del sistema). */
     private var lastFrameAtMs: Long = 0
 
-    /**
-     * Procesa una línea NDJSON del socket (ya fuera del Handshake).
-     * Devuelve el bitmap ARGB a presentar, o `null` si nada cambió en la
-     * vista (frame descartado, mensaje de control, etc.).
-     */
-    fun onLine(line: String): Any? {
-        val msg =
-            try {
-                com.twinpad.android.app.wire.StreamCodec.decode(line)
-            } catch (e: com.twinpad.android.app.core.PairingException) {
-                return null // §9: frame/mensaje inválido se descarta
-            }
-        return handleMessage(msg)
-    }
-
-    private fun handleMessage(msg: com.twinpad.android.app.wire.StreamMessage): Any? =
-        when (msg) {
-            is com.twinpad.android.app.wire.StreamMessage.Start -> onStart(msg)
-            is com.twinpad.android.app.wire.StreamMessage.Frame -> onFrame(msg)
-            is com.twinpad.android.app.wire.StreamMessage.Patch -> {
-                null // aplicado por TileComposer, que posee la base bitmap
-            }
-            is com.twinpad.android.app.wire.StreamMessage.Stop -> {
-                reset()
-                null
-            }
-        }
-
-    private fun onStart(msg: com.twinpad.android.app.wire.StreamMessage.Start): Any? {
-        width = msg.width
-        height = msg.height
+    /** `stream_start` vigente (SPEC-003 §4.1): fija dimensiones y entra en V1. */
+    fun onStreamStart(
+        width: Int,
+        height: Int,
+    ) {
+        this.width = width
+        this.height = height
         lastFrameNumber = null // §8.1: `fn` continúa, pero el render
         // se re-encuadra; aceptamos frames desde el próximo recibido.
         state = StreamState.STREAMING
         lastFrameAtMs = System.currentTimeMillis()
-        return null
     }
 
-    private fun onFrame(msg: com.twinpad.android.app.wire.StreamMessage.Frame): Any? {
-        val last = lastFrameNumber
-        val stale = last != null && msg.frameNumber <= last // §10: idempotencia
-        // Los bytes ya vienen decodificados por el codec (UN base64).
-        val bitmap =
-            if (!stale) FrameRenderer.decode(msg.dataBytes, msg.width, msg.height, msg.fmt) else null
-        if (bitmap == null) {
-            return null // frame inconsistente descartado; se mantiene el activo
-        }
-        lastFrameNumber = msg.frameNumber
-        width = msg.width
-        height = msg.height
-        state = StreamState.STREAMING
-        lastFrameAtMs = System.currentTimeMillis()
-        return bitmap
-    }
+    /** `stream_stop` (§4.1): vuelve a V0 y suelta el Frame activo. */
+    fun onStreamStop() = reset()
 
-    /** Registra un frame aceptado que ya fue decodificado fuera de la
-     * máquina (pipeline, R2: `fn` monotónico). Devuelve `false` si era
-     * tardío (el llamante lo descarta). */
+    /** Registra un frame aceptado que ya fue decodificado por MediaCodec
+     * (R2: `fn` monotónico). Devuelve `false` si era tardío (el llamante lo
+     * descarta). */
     fun acceptFrame(
         frameNumber: Long,
         frameWidth: Int,

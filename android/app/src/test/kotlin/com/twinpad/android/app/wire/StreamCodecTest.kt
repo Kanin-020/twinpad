@@ -1,40 +1,10 @@
 package com.twinpad.android.app.wire
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** TEST-025 — verifies SPEC-003 §4: frame ordering metadata is read without decoding payload bytes. */
+/** TEST-074 — verifies SPEC-003/CR-014: H.264 start contract and fail-closed parsing. */
 class StreamCodecTest {
-    @Test
-    fun frame_number_fast_path_reads_canonical_frame_and_rejects_invalid_values() {
-        assertEquals(
-            42L,
-            StreamCodec.frameNumber(
-                """{"type":"video_frame","fn":42,"ts":1,"w":16,"h":16,"fmt":"jpeg","data":"large-payload"}""",
-            ),
-        )
-        assertNull(StreamCodec.frameNumber("""{"type":"video_frame","fn":"bad"}"""))
-        assertNull(StreamCodec.frameNumber("""{"type":"video_frame"}"""))
-    }
-
-    // TEST-027 — verifies SPEC-003/CR-002: strict patch parsing and tile geometry.
-    @Test
-    fun patch_codec_accepts_valid_edge_tile_and_rejects_bad_base_or_duplicates() {
-        val validTile =
-            """{"x":64,"y":64,"w":16,"h":6,"fmt":"jpeg","data":"_9j_2Q"}"""
-        val valid =
-            """{"type":"video_patch","fn":2,"base_fn":1,"ts":1,"w":80,"h":70,"tile_size":64,"patches":[$validTile]}"""
-        val patch = StreamCodec.decode(valid) as StreamMessage.Patch
-        assertEquals(1, patch.tiles.size)
-        assertEquals(16, patch.tiles[0].width)
-        assertEquals(6, patch.tiles[0].height)
-        val duplicate = valid.replace("[$validTile]", "[$validTile,$validTile]")
-        assertInvalid(duplicate)
-        assertInvalid(valid.replace("\"base_fn\":1", "\"base_fn\":2"))
-    }
-
-    // TEST-074 — verifies SPEC-003/CR-014: H.264 start contract and fail-closed parsing.
     @Test
     fun stream_start_accepts_h264_media_contract_and_rejects_legacy_or_unknown_formats() {
         val startLine =
@@ -58,6 +28,7 @@ class StreamCodecTest {
         assertEquals(255, maxMeta.fps)
         assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":-1,"media_port":8425}""")
         assertInvalid("""{"type":"stream_start","w":1280,"h":720,"fmt":"h264","fps":256,"media_port":8425}""")
+        // SPEC-003 §4.1: `video_patch` no forma parte de la v1.5.0.
         assertInvalid("""{"type":"video_patch","fn":3,"base_fn":2,"w":64,"h":64,"tile_size":64,"patches":[]}""")
     }
 

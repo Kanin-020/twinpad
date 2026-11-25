@@ -108,7 +108,7 @@ internal class PairingMediaSession(
         // CR-029: el fps del `stream_start` es metadata (unlimited=0) y no
         // configura el decoder; el pacing ya no existe.
         streamStats.resetVideoStream()
-        streamMachine.onLine(line)
+        streamMachine.onStreamStart(message.width, message.height)
         val current = currentStreamState()
         setStreamState(
             current.copy(state = StreamState.INTERRUPTED, width = message.width, height = message.height),
@@ -119,12 +119,12 @@ internal class PairingMediaSession(
 
     /** Registra el `stream_stop` del server (SPEC-003 §4): termina el
      * canal vigente y refleja el estado del stream machine. */
-    fun onStreamStop(line: String) {
+    fun onStreamStop() {
         cancelReconnectJob()
         closeChannel()
         streamStartLine = null
         dimensions = null
-        streamMachine.onLine(line)
+        streamMachine.onStreamStop()
         val current = currentStreamState()
         setStreamState(current.copy(state = streamMachine.state, width = 0, height = 0))
     }

@@ -2,15 +2,10 @@
 <!-- Textos canónicos de SPEC-002 §9 (R4: i18n-ready; cambio de texto → CR). -->
 <resources>
     <string name="app_name">Twinpad</string>
-    <string name="pairing_title">Vinculación con la PC</string>
     <string name="pairing_scan_button">Escanear QR</string>
     <string name="pairing_cancel_button">Cancelar</string>
     <string name="pairing_disconnect_button">Desconectar</string>
-    <string name="pairing_saved_title">Dispositivos guardados</string>
     <string name="pairing_saved_empty">Aún no hay dispositivos guardados.</string>
-    <string name="nav_current_session">Sesión actual</string>
-    <string name="tab_new_connection">Nueva conexión</string>
-    <string name="tab_connection_list">Conexiones</string>
     <string name="pairing_saved_forget">Olvidar</string>
     <string name="pairing_saved_disconnect">Desconectar</string>
     <string name="pairing_retry_button">Reintentar</string>
@@ -41,11 +36,9 @@
     <string name="metrics_ram">RAM</string>
     <string name="metrics_vram">VRAM</string>
     <string name="metrics_fps">FPS</string>
-    <!-- CR-077: alternador del origen de los gauges de espera — marcado =
-         PC (host_metrics, CR-076); desmarcado = el teléfono Gamepad. -->
+    <!-- CR-079: fila del drawer que muestra u oculta la hoja de gauges sobre
+         el stream; los gauges son siempre del HOST (host_metrics, CR-076). -->
     <string name="settings_metrics_slider">Mostrar slider de métricas</string>
-    <string name="settings_connection_view">Ir a la vista de conexión</string>
-    <string name="settings_session_view">Volver a la sesión</string>
     <string name="settings_title">Ajustes de transmisión</string>
     <string name="settings_resolution">Resolución</string>
     <string name="settings_gyro">Giroscopio</string>
@@ -77,13 +70,9 @@
     <string name="settings_camera_front">Frontal</string>
     <string name="settings_camera_back">Trasera</string>
     <string name="settings_audio">Volumen GamePad local</string>
-    <string name="editor_title">Editor de controles</string>
-    <string name="editor_save">Guardar</string>
-    <string name="editor_done">Listo</string>
     <string name="hud_chip_text">%1$s render · %2$s recibidos · %3$s Mbps</string>
     <!-- CR-054: bloque separado del HUD con las etapas del Plugin. -->
     <string name="hud_stage_title">Métricas avanzadas</string>
-    <string name="settings_advanced_metrics">Métricas avanzadas</string>
     <string name="settings_show_advanced_metrics">Mostrar métricas avanzadas</string>
     <!-- CR-044: overlay del teclado del juego; la escritura vive en el IME. -->
     <string name="keyboard_hint">Teclado del juego…</string>

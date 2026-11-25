@@ -337,7 +337,7 @@ internal class PairingViewModel(
             }
             "stream_stop" -> {
                 val message = runCatching { StreamCodec.decode(line) as? StreamMessage.Stop }.getOrNull()
-                if (message == null) streamStats.onFrameRejected() else mediaSession.onStreamStop(line)
+                if (message == null) streamStats.onFrameRejected() else mediaSession.onStreamStop()
             }
         }
     }
