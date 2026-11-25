@@ -28,7 +28,6 @@
         <item name="colorSecondaryContainer">@color/design_steel_panel</item>
         <item name="colorOnSecondaryContainer">@color/design_frost_text</item>
         <item name="colorSurface">@color/design_ink_surface</item>
-        <item name="colorOnSurface">@color/design_frost_text</item>
         <item name="colorSurfaceVariant">@color/design_steel_panel</item>
         <item name="colorOnSurfaceVariant">@color/design_misted_slate</item>
         <item name="colorSurfaceContainer">@color/design_charcoal_panel</item>

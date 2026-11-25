@@ -296,7 +296,7 @@
         android:scaleType="fitCenter"
         android:contentDescription="@string/settings_title"
         android:src="@drawable/ic_settings"
-        android:tint="@color/design_misted_slate"
+        app:tint="@color/design_misted_slate"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
