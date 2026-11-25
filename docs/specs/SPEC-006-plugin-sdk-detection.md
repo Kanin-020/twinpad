@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.28.0 |
+| Version | 1.29.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-006 (AC-1..AC-6) |
-| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017, Draft; adaptador Cemu) |
+| Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017/CR-119, Draft; adaptador Cemu) |
 | Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079, TEST-092, TEST-093, TEST-094, TEST-095, TEST-096, TEST-097, TEST-098, TEST-099, TEST-0100, TEST-0101, TEST-0102, TEST-0103, TEST-0104, TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -25,7 +25,7 @@ Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `
 
 ## 3. Preconditions
 
-- La integración host del Plugin inicia/reutiliza el Servidor PC y presenta el QR de vinculación.
+- La integración host que usa Pairing por QR inicia/reutiliza el Servidor PC y presenta el QR de vinculación. Cemu no gestiona el proceso ni muestra QR (CR-119).
 - Un juego con SDK integrado arranca en el mismo PC; el SDK conecta y anuncia su Plugin (Cemu es la primera integración host; el fork Dusklight es la segunda, CR-091).
 - El host de Dusklight arranca su cliente contra el canal primario (`127.0.0.1:8421`), sin gestionar el proceso del Servidor ni presentar QR: el inicio es manual y la conexión se reintenta cada 2 s (R14).
 
@@ -36,7 +36,7 @@ Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `
 | `game_id` | string | 1–64 chars, `[a-z0-9_.-]`, único por juego | yes |
 | `game_name` | string | 1–128 chars legibles | yes |
 | `capabilities` | conjunto | subconjunto de `second_screen`, `audio`, `input_consumption` | yes |
-| Inicio host del Servidor PC | acción de integración host | inicia si falta, reutiliza si está activo y presenta QR vigente | al comenzar Pairing |
+| Inicio host del Servidor PC | acción de integración host con Pairing por QR | inicia si falta, reutiliza si está activo y presenta QR vigente; Cemu no realiza esta acción (CR-119) | al comenzar Pairing |
 | `game_select` | mensaje Android→Servidor de sesión | `type:"game_select"`, `game_id` de 1–64 chars válido | al seleccionar fuente |
 | `game_selected` | mensaje Servidor→Android de sesión | `type:"game_selected"`, `game_id` vivo previamente solicitado | sí, al aceptar selección |
 | `games_available` | mensaje Servidor→Android de sesión | lista completa ordenada de Plugins vivos | al conectar sesión y al cambiar liveness |
@@ -78,7 +78,7 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 
 ## 7. Main flow
 
-1. La integración host de cada Plugin SDK solicita iniciar o reutilizar el Servidor PC y presenta el QR vigente. El SDK Rust es headless y no administra procesos ni UI. Cemu es la primera integración host y ejecuta este paso mediante su adaptador.
+1. La integración host que usa Pairing por QR solicita iniciar o reutilizar el Servidor PC y presenta el QR vigente. El SDK Rust es headless y no administra procesos ni UI. Cemu no ejecuta este paso: se conecta automáticamente al cargar el título contra el servidor disponible, sin QR ni inicio manual (CR-119).
 2. Tras el Pairing, el SDK envía `game_announce` con `game_id`, `game_name` y `capabilities`. El Servidor registra liveness y publica `games_available` al conectar una sesión y ante cambios.
 3. Android autoelige el Plugin único o presenta una lista si hay varios; envía `game_select`. El Servidor valida liveness y confirma el id con `game_selected`. Si el id ya no está vivo, envía `games_available` vigente y conserva la fuente previamente confirmada si aún vive.
 4. El Plugin seleccionado publica `game_frame` y PCM. Para `fmt:"h264"`, `game_frame` incluye además `ts_capture_us` e `idr`; el Servidor retransmite la AU y esta metadata conforme a SPEC-003 sin sustituir el reloj del encoder. El Servidor adapta/retransmite únicamente esos medios. Sin fuente seleccionada no transmite video ni audio, no captura escritorio ni genera demo/PCM sintético.
@@ -88,7 +88,7 @@ Invariant: solo juegos con anuncio vivo figuran como disponibles; un crash nunca
 
 El host de Dusklight (CR-091) usa el mismo canal primario y el mismo contrato, sin tocar el wire. Al conectar, Twinpad se selecciona como dispositivo del puerto 1 en Ajustes → Controles → Device (`game.twinpadInputPort`): se suelta el mando SDL o el teclado que ocupara el puerto y cada `input_report` se aplica solo a ese puerto mediante el pad virtual. Al desconectar se libera el pad y se restaura el dispositivo previo; elegir otro dispositivo en «Device» devuelve el control al usuario. La Segunda pantalla se publica como `game_frame` con `fmt:"h264"` (Annex B, Baseline y nivel ≤4.2, SPS/PPS precediendo a cada IDR) con `ts_capture_us` e `idr`, emite un keyframe de respaldo cada ~2 s y, si recibe `video_force_idr`, fuerza un IDR en el siguiente frame (hoy el Servidor solo lo dirige a Cemu); nunca emite JPEG, conforme a SPEC-003 §4.
 
-El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su política de auto/manual start se mantiene salvo donde contradiga este flujo. Bajo CR-016/CR-017, Configuraciones permite activar un monitor de orientación en una ventana Cemu separada y redimensionable, inicialmente apagado; muestra yaw/pitch/roll recibido y su mapeo al VPAD desde el último snapshot. Sin gyro válido, la ventana indica que espera entrada. No se superpone al juego ni requiere cambiar inputs o contrato wire.
+El menú Twinpad de Cemu solo ofrece Configuraciones y Cemu se conecta automáticamente al cargar cada título, sin QR ni inicio manual (CR-119). Bajo CR-016/CR-017, Configuraciones permite activar un monitor de orientación en una ventana Cemu separada y redimensionable, inicialmente apagado; muestra yaw/pitch/roll recibido y su mapeo al VPAD desde el último snapshot. Sin gyro válido, la ventana indica que espera entrada. No se superpone al juego ni requiere cambiar inputs o contrato wire.
 
 
 ## 8. Alternative flows
@@ -127,16 +127,16 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 
 ## 11. Business rules
 
-- **R1:** el host solicita el Servidor/QR, pero una vez establecida la conexión del Plugin, el anuncio y liveness son automáticos y no requieren habilitación manual por juego.
+- **R1:** la integración host que usa Pairing por QR solicita el Servidor/QR; Cemu se conecta sin ese paso. Una vez establecida la conexión del Plugin, el anuncio y liveness son automáticos y no requieren habilitación manual por juego.
 - **R2:** la disponibilidad exige anuncio vivo (liveness verificado por el server).
 - **R3:** el crash de un juego jamás rompe la sesión de SPEC-001 (REQ-006 §8).
-- **R4 (CR-006):** auto-connect Cemu persistente y opt-in, inicialmente desactivado; desactivarlo no cierra una conexión actual.
-- **R5 (CR-007/CR-009/CR-010):** la integración host inicia/reutiliza el Servidor PC y presenta el QR vigente; el SDK Rust no incorpora UI ni gestión de procesos. Cemu confirma `cemu_live=true` por loopback antes del QR. El endpoint QR permanece loopback-only.
+- **R4 (CR-006/CR-119):** Cemu se conecta automáticamente al cargar el título; no existe preferencia de auto-connect ni inicio manual. El menú Twinpad solo ofrece Configuraciones.
+- **R5 (CR-007/CR-009/CR-010/CR-119):** la integración host que usa Pairing por QR inicia/reutiliza el Servidor PC y presenta el QR vigente; el SDK Rust no incorpora UI ni gestión de procesos. Cemu no muestra QR, no gestiona el proceso del Servidor y se conecta automáticamente al cargar el título. El endpoint QR permanece loopback-only para la web local y Decky.
 - **R6 (CR-008/CR-010/CR-029):** Cemu publica internamente la textura DRC/GamePad sin tope de framerate ni pacing (la tasa es la que sostengan captura+encoder); no abre ni requiere “Separate GamePad View” y no altera el render visible normal.
 - **R7 (CR-010):** el Servidor retransmite únicamente los medios del Plugin confirmado para la sesión; ningún medio audiovisual se captura/genera en el Servidor.
 - **R8 (CR-010):** el snapshot válido más reciente de input se retiene por sesión, se entrega al Plugin seleccionado y se consulta con polling no bloqueante en el SDK; los estados intermedios pueden coalescerse.
 - **R9 (CR-010):** una selección obsoleta no interrumpe la fuente actual si aún sigue viva; el Servidor devuelve la lista vigente.
-- **R10 (CR-010):** el host de cada Plugin SDK inicia/reutiliza el Servidor PC y presenta el QR; la librería SDK permanece headless.
+- **R10 (CR-010/CR-119):** el host de cada Plugin SDK que usa Pairing por QR inicia/reutiliza el Servidor PC y presenta el QR; Cemu queda fuera de ese flujo. La librería SDK permanece headless.
 - **R11 (CR-012):** en el adaptador Cemu, TV solo usa la salida local PC y PCM Android procede solo de DRC/GamePad. Las salidas y volúmenes son independientes; no se mezclan ni se altera TV cuando el transporte Android se detiene. No se añade un segundo stream de sesión.
 - **R12 (CR-013):** al conectar Cemu/Twinpad, crear un VPAD temporal en memoria para Jugador 1 solo si no existe uno; reutilizar sin modificar el VPAD existente; nunca persistir el temporal; retirarlo al desconectar y preservar cualquier controlador configurado que haya reemplazado ese temporal.
 - **R13 (CR-016/CR-017):** el host Cemu permite activar por preferencia local un monitor visual de orientación en una ventana wxWidgets independiente y redimensionable (640×480 inicial, mínimo 480×360), inicialmente apagado. Presenta el snapshot recibido y las tres vueltas mapeadas al VPAD; se actualiza al llegar nuevos snapshots. Sin gyro válido indica que espera entrada. Desactivar la preferencia o cerrar la ventana la cierra y deja la preferencia apagada; habilitarla abre la ventana. No cambia input, A/V, selección ni contrato wire.
@@ -148,19 +148,24 @@ El host de Cemu conserva “Iniciar conexión” y “Configuraciones”; su pol
 |---|---|---|
 | Campos del anuncio y selección (`game_select`/`game_selected`/`games_available`) | este documento §4/§12 | NDJSON estricto; selección obsoleta conserva fuente viva y retorna lista |
 | Canal IPC SDK ↔ Servidor | este documento §4/§12; ADR-008; CR-015 para metadata H.264 | local al PC; medios Plugin→Servidor y snapshot input Servidor→Plugin |
-| Consulta de QR Cemu ↔ Servidor | DES-004 (CR-007/CR-009) | TCP 127.0.0.1:8423; petición `GET_QR\n`, respuesta NDJSON `{uri, modules, cemu_live}` |
+| Consulta de QR de integraciones host ↔ Servidor | Servidor PC / Decky (CR-007/CR-009/CR-119) | TCP 127.0.0.1:8423; petición `GET_QR\n`, respuesta NDJSON `{uri, modules, cemu_live}`; Cemu no la consume |
 | Streams que el juego alimenta | SPEC-003 (video), SPEC-005 (audio) | referenciados |
 | Diagnóstico de orientación Cemu (CR-016/CR-017) | SPEC-004 §4 | La ventana externa se alimenta del snapshot de `input_report`; no crea un mensaje nuevo ni se transmite fuera del PC. |
 
 ## 13. Examples (Given / When / Then)
 
 ```gherkin
-Scenario: El host de Plugin inicia el servidor y presenta el QR (REQ-006 AC-6)
+Scenario: El host con Pairing por QR inicia el servidor y presenta el QR (REQ-006 AC-6)
   Given la integración host del Plugin SDK se inicia
   When el Servidor PC no existe
   Then el host inicia el Servidor y presenta el QR vigente
   When el Servidor PC ya está activo
   Then el host reutiliza la instancia y presenta el QR sin crear otro proceso
+
+Scenario: Cemu se conecta automáticamente sin QR (CR-119)
+  Given Cemu carga un título
+  When el Servidor PC está disponible
+  Then Cemu solicita la conexión sin menú de inicio ni QR
 
 Scenario: Selección automática de fuente única
   Given una sesión vinculada y un único Plugin vivo
@@ -217,12 +222,12 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Selección automática de una fuente y lista Android para varias | TEST-053 |
 | Fuente PCM separada del SDK y protocolo `game_audio_*` | TEST-036 |
 | Conexión Cemu title-scoped, reintento, framing IPC y recepción de input | TEST-044 |
-| Preferencia Cemu persistente, estado inicial false, activación/desactivación en vivo y opciones del menú | TEST-046 |
-| QR vigente consultado por loopback y errores locales observables | TEST-047 |
+| Cemu con auto-conexión fija, menú de solo Configuraciones y H.264 activo por defecto | TEST-046 |
+| QR vigente consultado por loopback para hosts que lo usan; Cemu no lo consume | TEST-047 |
 | Relay Cemu del DRC sin tope de framerate (CR-029), sin selección de pantalla ni captura/demo Server | TEST-054 |
 | Resolución de emisión del GamePad aplicada en Cemu: escala del DRC a w/h de `video_config` antes del encode, en ambas direcciones (upscale permitido, CR-074); `0/0` = nativo (TEST-0149/0150) | TEST-088 |
 | Cemu TV→PC y DRC/GamePad→Android independientes, sin mezcla y con volúmenes/rutas separados (CR-012) | TEST-062 (gate de banco físico) |
-| Anuncio Cemu confirmado antes de mostrar QR; cancelación manual limpia | TEST-050 |
+| Anuncio Cemu confirmado antes de la conexión; sin inicio manual que cancelar | TEST-050 |
 | IPC H.264 conserva timestamp monotónico del encoder e indicador IDR (CR-015) | TEST-073 |
 | VPAD temporal de Jugador 1 solo cuando falta, sin sobreescribir ni persistir perfil local (CR-013) | TEST-064 |
 | Monitor Cemu opt-in en ventana externa, con orientación recibida y mapeada a VPAD (CR-016/CR-017) | TEST-079 |
@@ -273,3 +278,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.26.0 | 2026-11-06 | Buffy (agente) (CR-090) | `mic_chunk` añade el gate del interruptor del drawer («Enviar micrófono al GamePad», activado por defecto) al juego seleccionado + `mic_request` de CR-035; wire sin cambios; TEST-069 |
 | 1.27.0 | 2026-11-06 | Owner (CR-091) | Segundo host experimental Dusklight: inicio manual con reintento, Twinpad como dispositivo seleccionable/auto-seleccionado por puerto y Segunda pantalla H.264 conforme a SPEC-003 §4 (sin JPEG); sin cambio de wire |
 | 1.28.0 | 2026-11-06 | Owner (CR-092) | R14: la auto-selección del puerto 1 exige que esté libre; el host consume el táctil del `input_report` sobre su capa táctil local y aplica `video_config` (resolución escalada y bitrate) con IDR al reconfigurar; sin cambio de wire |
+| 1.29.0 | 2026-11-25 | Owner (CR-119) | Cemu: conexión automática fija, menú Twinpad de solo Configuraciones, sin QR ni inicio manual; el canal QR loopback queda para la web local y Decky; sin cambio de wire |

@@ -1,33 +1,33 @@
-# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-034/CR-035/CR-038)
+# DES-004 — Adaptador Cemu bidireccional (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-034/CR-035/CR-038/CR-119)
 
 | | |
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.17.0 |
+| Version | 1.19.0 |
 | Status | `Draft` |
 | Owner | Eng |
-| Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021) |
+| Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-119) |
 | Depends on | DES-003, ADR-007, ADR-008 |
-| Last updated | 2026-10-31 |
+| Last updated | 2026-11-25 |
 
 ## 1. Overview
 
-Cemu es la primera integración host del Plugin SDK. El host Cemu inicia `twinpad-server` desde PATH si no existe una instancia activa, o reutiliza la que responde; consulta el QR vigente en `127.0.0.1:8423`, inicia el anuncio `cemu` y espera `cemu_live=true` antes de presentar el QR. El SDK/Plugin es headless. Al cancelar el diálogo, Cemu cancela la solicitud manual y cierra sus conexiones; auto-connect opt-in existente permanece según CR-006.
+Cemu es la primera integración host del Plugin SDK. Al cargar un título inicia `TwinpadClient` y solicita la conexión automáticamente contra el Servidor PC ya disponible; no inicia ni reutiliza el proceso del Servidor, no consulta el QR y no ofrece un inicio de conexión manual (CR-119). El menú Twinpad solo ofrece Configuraciones. El SDK/Plugin es headless.
 
-Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el readback DRC alimenta OpenH264 software por defecto o un encoder H.264 hardware cuando la preferencia persistente `twinpad_hardware_acceleration` está activada y existe un backend utilizable. CR-036: el readback Vulkan del DRC acepta los formatos RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K (buffer de 3840×2160×4 por slot, 3 slots), convierte BGRA a RGB copiando/intercambiando los canales B↔R en el FrameLoop, registra todo descarte en el log (una vez por sesión, con motivo) y repite el último frame ya escalado cada ≤100 ms sin frame nuevo del DRC; el encoder no se recrea por cadencia medida. La dependencia ffmpeg del build requiere backend VAAPI completo en Linux/AMD (CR-039). La ruta hardware verifica el contrato AVC Baseline (66) o Main (77), nivel ≤4.2, 4:2:0, sin B-frames, Annex B e IDR con SPS/PPS (CR-041); si la inicialización, configuración o codificación no lo cumple, reinicia con OpenH264 CPU conservando dimensiones y FPS; Cemu publica AU Annex B al IPC SDK y el Servidor las relaya cifradas sin transcodificar al Android que se autenticó por TCP 8425. Inputs y `stream_start/stop` siguen por el canal Pairing NDJSON. No se envía `session_key` a Cemu. Los callbacks de audio TV y DRC conservan las rutas locales/Android independientes de CR-012. Screenshots independientes de Cemu no cambian.
+Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el readback DRC alimenta H.264 hardware por defecto cuando la preferencia persistente `twinpad_hardware_acceleration` está activa y existe un backend utilizable, con fallback a OpenH264 CPU; la preferencia puede desactivarse. CR-036: el readback Vulkan del DRC acepta los formatos RGB8/RGBA8/BGRA8 (unorm/srgb) hasta 4K (buffer de 3840×2160×4 por slot, 3 slots), convierte BGRA a RGB copiando/intercambiando los canales B↔R en el FrameLoop, registra todo descarte en el log (una vez por sesión, con motivo) y repite el último frame ya escalado cada ≤100 ms sin frame nuevo del DRC; el encoder no se recrea por cadencia medida. La dependencia ffmpeg del build requiere backend VAAPI completo en Linux/AMD (CR-039). La ruta hardware verifica el contrato AVC Baseline (66) o Main (77), nivel ≤4.2, 4:2:0, sin B-frames, Annex B e IDR con SPS/PPS (CR-041); si la inicialización, configuración o codificación no lo cumple, reinicia con OpenH264 CPU conservando dimensiones y FPS; Cemu publica AU Annex B al IPC SDK y el Servidor las relaya cifradas sin transcodificar al Android que se autenticó por TCP 8425. Inputs y `stream_start/stop` siguen por el canal Pairing NDJSON. No se envía `session_key` a Cemu. Los callbacks de audio TV y DRC conservan las rutas locales/Android independientes de CR-012. Screenshots independientes de Cemu no cambian.
 
 ## 2. Fit with the architecture
 
 - Components touched: Adaptador experimental Cemu y Servidor PC.
-- Boundary rules respected: app → sesión autenticada → servidor → IPC localhost; Cemu no accede a la sesión LAN ni elude Pairing. El endpoint QR se enlaza a `127.0.0.1` solamente.
-- New components introduced: endpoint TCP de consulta local del QR en el Servidor PC; `TwinpadClient` lanza/reutiliza y dibuja la respuesta en Cemu.
+- Boundary rules respected: app → sesión autenticada → servidor → IPC localhost; Cemu no accede a la sesión LAN ni elude Pairing. El endpoint QR se enlaza a `127.0.0.1` solamente y queda para la web local/Decky; Cemu no lo consulta (CR-119).
+- New components introduced: ninguno; `TwinpadClient` solo conecta al Servidor disponible y no gestiona su proceso ni dibuja QR.
 
 ## 3. Domain model
 
 - `TwinpadInputState`: último snapshot válido y secuencia recibido del Servidor; se reinicia al terminar la conexión del título.
-- `Cemu host lifecycle`: inicia/reutiliza el Servidor PC, anuncia `cemu` y presenta QR; la conexión SDK se mantiene por título bajo las preferencias Cemu existentes.
-- `twinpad_auto_connect`: preferencia persistente Cemu, false por defecto.
+- `Cemu host lifecycle`: se conecta automáticamente al cargar el título, anuncia `cemu` y reintenta mientras el título siga activo; no inicia/reutiliza el Servidor ni presenta QR.
+- `twinpad_hardware_acceleration`: preferencia persistente Cemu, true por defecto.
 - `VPADStatus_t`: recibe el estado Twinpad más reciente mientras el Plugin Cemu es el destino seleccionado; controles locales no se combinan.
 - `Temporary Player 1 VPAD`: InputManager crea un VPAD en memoria al conectarse Twinpad solo si no hay uno para Jugador 1; el objeto es propiedad temporal del adaptador, no se persiste y se retira al desconectar. Un VPAD existente nunca se reemplaza.
 - `DRC source`: textura GamePad publicada por el adaptador a la tasa configurada del stream, máximo 60 fps; Separate GamePad View permanece independiente.
@@ -37,7 +37,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 
 | Interface | Contract | Notes |
 |---|---|---|
-| Host Cemu → Servidor PC | Inicio/reutilización del proceso y consulta QR, CR-010 / SPEC-006 | QR loopback `127.0.0.1:8423`; espera `cemu_live=true` antes de mostrar |
+| Host Cemu → Servidor PC | Conexión automática al cargar el título, CR-119 / SPEC-006 | cliente 8421; sin gestión del proceso ni QR |
 | Android session → Servidor PC | SPEC-004 `input_report`; SPEC-006 `game_select` | sesión autenticada, selección por `game_id` |
 | Servidor PC → Cemu Plugin | SPEC-006 `input_report` snapshot por NDJSON/LF | conexión primaria IPC; snapshot inicial + cada actualización aceptada |
 | Cemu → Servidor PC | SPEC-006 anuncio + `game_frame(fmt=h264,ts_capture_us,idr)` | IPC TCP localhost NDJSON; AU Annex B Base64URL, timestamp monotónico de encoder e indicador IDR (CR-015) |
@@ -61,18 +61,13 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 ```mermaid
 sequenceDiagram
   participant H as Cemu host
-  participant Q as QR loopback
   participant S as Servidor PC
   participant A as Android session
   participant C as Cemu Plugin
   participant V as VPADController
-  H->>S: iniciar o reutilizar twinpad-server
-  H->>Q: GET_QR
-  Q-->>H: URI, matriz, cemu_live
-  H->>C: iniciar SDK/Plugin y esperar anuncio vivo
+  H->>C: iniciar SDK/Plugin al cargar el título y solicitar conexión
   C->>S: game_announce + game_frame + game_audio_* (PCM DRC/GamePad solamente)
   C->>C: callback TV → salida local del PC; callback DRC → salida local GamePad + publicación IPC
-  H->>H: presentar QR vigente
   A->>S: game_select(game_id=cemu)
   S-->>A: game_selected(game_id=cemu)
   A->>S: input_report(seq creciente)
@@ -236,7 +231,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 
 | Concern | Approach |
 |---|---|
-| Inicio/reutilización del servidor y presentación QR | El host Cemu reutiliza el proceso local o lo inicia; consulta loopback y espera el anuncio Cemu antes de presentar QR |
+| Conexión automática | El host Cemu conecta al Servidor disponible al cargar cada título y reintenta cada 2 s; no gestiona el proceso ni presenta QR |
 | Lectura/escritura IPC primary | TCP full-duplex; líneas NDJSON atómicas con LF |
 | Escrituras al Plugin (CR-052) | El Servidor escribe con writer por entrada (`Arc<Mutex<TcpStream>>`) SUELTO del lock del registro: una escritura lenta (cámara/mic hasta ~4 MiB) bloquea solo su entrada; inputs, listas y bajas de cualquier juego nunca esperan detrás de un socket que no drena |
 | Captura DRC, inputs y polling | La publicación DRC y el polling SDK no esperan por el socket Android; el snapshot input se protege con lock corto |
@@ -253,12 +248,8 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | EOF, framing inválido o error de socket | marcar desconectado, descartar buffer parcial, resetear estado de input y reintentar |
 | `seq` repetido/antiguo | descartar el reporte sin alterar VPAD |
 | Muestra de sensor ausente o inactiva por más de 200 ms | no integrar datos incompletos/obsoletos; conservar la ruta local de movimiento y mostrar espera en monitor |
-| Sin título activo | “Iniciar conexión” está deshabilitado; cerrar sockets al salir del título y no reintentar hasta nueva solicitud válida |
-| Auto-connect desactivado | no iniciar al comenzar títulos; solicitud manual sigue disponible |
-| Auto-connect desactivado mientras conexión activa | conservar la conexión actual y aplicar la preferencia al próximo título |
-| No existe servidor local | lanzar `twinpad-server` desde PATH y reintentar QR hasta 3 s; si falla, mostrar error y no solicitar adaptador |
-| QR IPC inaccesible/malformado | descartar respuesta, mostrar error observable y no solicitar conexión |
-| Cierre Cemu con proceso servidor propio | preguntar si detener el proceso iniciado por Cemu; no detener una instancia reutilizada |
+| Al salir del título | cerrar sockets y no reintentar hasta cargar otro título |
+| Servidor no disponible | reintentar la conexión cada 2 s mientras el título permanezca activo; no iniciar el servidor ni mostrar QR |
 
 ## 9. Caching
 
@@ -293,12 +284,12 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | SPEC-006 selección por sesión y relay A/V | `GameRegistry`, handler de sesión, escritor de streams | TEST-051 |
 | SPEC-004/006 snapshot inicial, retención y polling SDK | sesión PC, IPC primary, `TwinpadGame::poll_input` | TEST-052 |
 | SPEC-002 selección Android única/múltiple y liveness | `PairingViewModel`, `PairingActivity` | TEST-053 |
-| Cemu host inicia/reutiliza Server, presenta QR y PCM | `TwinpadClient`, renderer Cemu y server relay | TEST-054; build/E2E físico pendiente |
+| Cemu host se conecta automáticamente, publica PCM y no gestiona Server/QR | `TwinpadClient`, renderer Cemu y server relay | TEST-054; build/E2E físico pendiente |
 | H.264 hardware opcional/OpenH264 → relay binario autenticado → MediaCodec Surface | `TwinpadClient`, `server::media`, Android MediaCodec | TEST-071..074, TEST-082; CR-020 |
 | IPC del frame Cemu y encoding Base64URL sin padding | `TwinpadClient::Base64Url` y `FrameLoop` | TEST-065; microbenchmark CPU aislado documentado, debug assertion en build pendiente |
 | TV local independiente y PCM DRC/GamePad únicamente hacia Android, sin mezcla/dependencia de transporte | `AIInitDMA` / `AIInitDRCDMA`, `g_tvAudio` / `g_padAudio`, `TwinpadClient::PublishAudioBlock` | TEST-062; audición en banco físico pendiente |
 | camera_frame de la lente seleccionada del teléfono → superficie CAM en NV12 (CR-034, §7.2) | `TwinpadCameraDecoder` (`DecodeLine`/`ConvertToNv12`/`CopyLatestNv12`), HLE `camera`, relay del Servidor y `CameraStreamEncoder` Android | TEST-093, TEST-094, TEST-095, TEST-096 |
-| Ciclo Cemu anterior, configuración y QR loopback | `MainWindow`, `TwinpadClient`, listener QR | TEST-046, TEST-047, TEST-050 |
+| Ciclo Cemu, configuración, menú de solo Configuraciones y conexión automática | `MainWindow`, `TwinpadClient` | TEST-046, TEST-050 |
 | VPAD Player 1 temporal cuando falta, restauración de asignación y no persistencia | `InputManager::update_twinpad_vpad`, `InputManager::save` | TEST-064; compilado en Cemu debug, assertions y smoke de título pendientes |
 | Micrófono del teléfono bajo demanda: transiciones MICOpen/MICClose → `mic_request`, cola s16 drop-old de 1 s, consumo de 96 muestras por frame AX con precedencia sobre el micrófono local | `mic.cpp`, `TwinpadClient::PublishMicRequest/FeedMicChunk/ConsumeMicSamples`, `PairingMicController` | TEST-0101, TEST-0102, TEST-0103, TEST-0104 |
 | Teclado del juego como Android IME (CR-044, §7.3): transiciones del HLE `swkbd` → `keyboard_request` (texto+techo, `on=false` al cerrar suprimen el teclado emulado), overlay Twinpad con demanda vigente y `keyboard_input` (update/confirm/cancel) aplicado al formString en el hilo de render | `swkbd.cpp` (`swkbd_publishKeyboardRequest`, `swkbd_applyTwinpadKeyboardInput`, `swkbd_cancelInput`), `TwinpadClient::PublishKeyboardRequest/FeedKeyboardInput/ConsumeKeyboardInput`, `KeyboardCodec`, `KeyboardOverlayController` | TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
@@ -310,10 +301,11 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 
 - CR-004 — integración experimental Cemu; sus límites iniciales de 5 fps fueron reemplazados por CR-010.
 - CR-005 — retry 2 s tras inicio y mapeo directo; el fallback de video fue supersedido por CR-010.
-- CR-006 — preferencia persistente opt-in, start manual y menú de dos opciones.
-- CR-007 — inicio/reutilización del Servidor PC desde Cemu, consulta QR solo loopback y pregunta por detener el proceso propio al cerrar.
+- CR-006 — preferencia persistente opt-in, start manual y menú de dos opciones; reemplazados por CR-119.
+- CR-007 — inicio/reutilización del Servidor PC desde Cemu, consulta QR solo loopback y pregunta por detener el proceso propio al cerrar; retirados por CR-119.
 - CR-008 — captura interna automática del DRC, sin ventana separada ni selección de pantalla; su máximo histórico de 5 fps fue supersedido por CR-010 (hasta 60 fps configurados).
-- CR-009 — Cemu se anuncia antes de presentar QR; cancelación limpia y captura desktop limitada a pruebas explícitas.
+- CR-009 — Cemu se anuncia antes del Pairing; la presentación de QR en Cemu fue retirada por CR-119.
+- CR-119 — Cemu se conecta automáticamente al cargar el título, el menú Twinpad solo ofrece Configuraciones, no hay QR ni inicio manual, y H.264 queda activo por defecto.
 - ADR-007 — primera ruta de inputs por sesión LAN autenticada.
 - ADR-008 — IPC localhost TCP NDJSON.
 - CR-016 — monitores de orientación opt-in en Android y Cemu, sin cambio de wire.
@@ -331,8 +323,8 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 - [x] Realizes SPEC-004 y SPEC-006 dentro del alcance CR-005.
 - [x] Respeta la frontera sesión autenticada → servidor → IPC localhost.
 - [x] Retry, desconexión, secuencia y framing descritos.
-- [x] Auto-connect persistente opt-in y conexión manual descritos (CR-006).
-- [x] Menú Twinpad descrito con “Iniciar conexión” y “Configuraciones”.
+- [x] Auto-conexión fija y menú de solo Configuraciones descritos (CR-119).
+- [x] Menú Twinpad descrito únicamente con “Configuraciones”, sin QR ni inicio manual.
 - [ ] Probar visualmente ventana de ajustes, persistencia y conexión en vivo en Cemu; verificar la ventana gyro externa/redimensionable conforme a CR-017.
 - [x] TEST-043/044, TEST-046/047, TEST-051…054, TEST-064/065, TEST-082, TEST-084 registrados en trazabilidad; assertions TEST-064/065/082/084 incorporadas al debug unit-test entrypoint; ejecución runtime pendiente.
 - [ ] Verificar build Cemu y ejecutar assertions TEST-082; el rebuild requiere resolver el manifest/baseline vcpkg. Tests Rust/Clippy no son afectados por CR-020.
@@ -378,3 +370,4 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | 1.1.5 | 2026-10-22 | Product owner + Twinpad team (CR-019) | Aplica ganancia 0.5× al gyro que Cemu mapea al VPAD, sin cambiar wire ni monitor |
 | 1.2.0 | 2026-10-23 | Product owner (CR-020) | Encoder hardware opt-in, fallback OpenH264 CPU y contrato AVC constante |
 | 1.3.0 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Mapea muestras inerciales AndroidDSU a la fusión Cemu VPAD y actualiza monitor/test traceability |
+| 1.19.0 | 2026-11-25 | Owner (CR-119) | Cemu: auto-conexión fija al cargar el título, menú Twinpad de solo Configuraciones, sin QR ni inicio manual; H.264 activo por defecto |
