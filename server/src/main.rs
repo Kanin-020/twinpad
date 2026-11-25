@@ -1508,10 +1508,19 @@ fn serve_qr_request<R: RandomBytes, C: Clock>(
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
     let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
     let mut request = String::new();
-    if BufReader::new(&stream).read_line(&mut request).is_err() || request.trim_end() != "GET_QR" {
+    if BufReader::new(&stream).read_line(&mut request).is_err() {
         return;
     }
-    let response = cemu_qr_response(store, games).to_string();
+    let response = match request.trim_end() {
+        "GET_QR" => cemu_qr_response(store, games),
+        // CR-007: el menú de Cemu pide un QR nuevo sin pasar por la web local.
+        "ROTATE_QR" => {
+            let current = store.rotate_qr().0;
+            cemu_qr_response_for(&current.qr_uri, games)
+        }
+        _ => return,
+    }
+    .to_string();
     if response.len() <= QR_IPC_RESPONSE_LIMIT {
         let _ = stream.write_all(response.as_bytes());
         let _ = stream.write_all(b"\n");
@@ -1523,9 +1532,16 @@ fn cemu_qr_response<R: RandomBytes, C: Clock>(
     games: &twinpad_server::games::GameRegistry,
 ) -> serde_json::Value {
     let current = store.ensure_fresh_qr();
-    match twinpad_server::qr_render::encode_matrix(&current.qr_uri) {
+    cemu_qr_response_for(&current.qr_uri, games)
+}
+
+fn cemu_qr_response_for(
+    uri: &str,
+    games: &twinpad_server::games::GameRegistry,
+) -> serde_json::Value {
+    match twinpad_server::qr_render::encode_matrix(uri) {
         Ok(modules) => serde_json::json!({
-            "uri": current.qr_uri,
+            "uri": uri,
             "modules": modules,
             "cemu_live": games.has_live_game("cemu"),
         }),
@@ -1822,10 +1838,11 @@ mod tests {
     // TEST-047 — verifies the current Pairing URI and QR modules over loopback.
     #[test]
     fn cemu_qr_ipc_returns_current_uri_and_matrix_only_on_loopback() {
-        struct TestRng;
+        struct TestRng(std::sync::atomic::AtomicU8);
         impl RandomBytes for TestRng {
             fn fill(&self, buf: &mut [u8]) {
-                buf.fill(0x2a);
+                let value = self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                buf.fill(value);
             }
         }
         struct TestClock;
@@ -1835,7 +1852,7 @@ mod tests {
             }
         }
         let store = Arc::new(TokenStore::new(
-            TestRng,
+            TestRng(std::sync::atomic::AtomicU8::new(0x2a)),
             TestClock,
             "192.168.1.8".into(),
             8420,
@@ -1847,23 +1864,35 @@ mod tests {
         let server_store = Arc::clone(&store);
         let server_games = Arc::clone(&games);
         let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            serve_qr_request(stream, &server_store, &server_games);
+            for _ in 0..2 {
+                let (stream, _) = listener.accept().unwrap();
+                serve_qr_request(stream, &server_store, &server_games);
+            }
         });
+        use std::io::{BufRead, Write};
         let mut client = std::net::TcpStream::connect(address).unwrap();
         client
             .set_read_timeout(Some(std::time::Duration::from_secs(2)))
             .unwrap();
-        use std::io::{BufRead, Write};
         client.write_all(b"GET_QR\n").unwrap();
         let mut response = String::new();
         std::io::BufReader::new(client)
             .read_line(&mut response)
             .unwrap();
+        let current = store.ensure_fresh_qr();
+
+        let mut rotate_client = std::net::TcpStream::connect(address).unwrap();
+        rotate_client
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+        rotate_client.write_all(b"ROTATE_QR\n").unwrap();
+        let mut rotated_response = String::new();
+        std::io::BufReader::new(rotate_client)
+            .read_line(&mut rotated_response)
+            .unwrap();
         server.join().unwrap();
 
         let response: serde_json::Value = serde_json::from_str(response.trim_end()).unwrap();
-        let current = store.ensure_fresh_qr();
         assert_eq!(response["uri"], current.qr_uri);
         assert_eq!(response["cemu_live"], false);
         assert_eq!(
@@ -1871,6 +1900,12 @@ mod tests {
             serde_json::json!(twinpad_server::qr_render::encode_matrix(&current.qr_uri).unwrap())
         );
         assert!(twinpad_core::qr::parse(response["uri"].as_str().unwrap()).is_ok());
+
+        let rotated: serde_json::Value =
+            serde_json::from_str(rotated_response.trim_end()).unwrap();
+        assert_ne!(rotated["uri"], current.qr_uri);
+        assert_eq!(rotated["cemu_live"], false);
+        assert_eq!(store.ensure_fresh_qr().qr_uri, rotated["uri"]);
     }
 
     // TEST-050 — verifies SPEC-006/CR-009: Cemu registration is reported before QR pairing.
