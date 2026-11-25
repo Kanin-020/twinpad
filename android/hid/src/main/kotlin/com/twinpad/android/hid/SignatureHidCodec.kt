@@ -24,8 +24,10 @@ package com.twinpad.android.hid
  *
  * Los botones van en el orden de usages HID 1…15 (bit n = Usage n+1),
  * que es el orden que el SO y Steam esperan de un gamepad estándar:
- * A=1, B=2, X=4, Y=5, L1=7, R1=8, L3=14, R3=15, Select=11, Start=12 y
- * los dos extra en 3 y 6. Los ejes siguen la disposición Xbox
+ * A=1, B=2, X=4, Y=5, L1=7, R1=8, L3=14, R3=15, Select=11, Start=12,
+ * Home=13 (Guide de Xbox / PS de PlayStation, tanto en el reporte BT del
+ * mando de Xbox como en el descriptor del DualShock 4) y extra_2=6. Los
+ * ejes siguen la disposición Xbox
  * (X/Y izq, Rx/Ry der, Z/Rz gatillos): con Z/Rz en el stick derecho el SO
  * los tomaba por gatillos y viceversa.
  * ```
@@ -96,8 +98,10 @@ object SignatureHidCodec {
             11,
             // button_select → Usage 11 (Select)
             10,
-            // button_extra_1 → Usage 3 (C)
-            2,
+            // button_extra_1 (Home) → Usage 13: Guide de Xbox / PS de
+            // PlayStation. El Usage 3 (C) que usaba antes lo dejaba como un
+            // botón de cara más y el SO nunca lo trataba como Home.
+            12,
             // button_extra_2 → Usage 6 (Z)
             5,
         )

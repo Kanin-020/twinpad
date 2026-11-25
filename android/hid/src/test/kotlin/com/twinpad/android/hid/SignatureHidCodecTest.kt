@@ -61,6 +61,13 @@ class SignatureHidCodecTest {
         val thumb = SignatureHidCodec.encode(0, 0, 0, 0, 8, (1 shl 6) or (1 shl 7), 0, 0)
         assertEquals(0x06, thumb[9].toInt() and 0xFF)
 
+        // Home (bit 10 canónico) → Usage 13 = Guide/PS (h12, bit 0 del byte 9),
+        // igual que el reporte BT de Xbox y el DualShock 4; no un botón de cara.
+        val home = SignatureHidCodec.encode(0, 0, 0, 0, 8, 1 shl 10, 0, 0)
+        assertEquals(0x01, home[9].toInt() and 0xFF)
+        assertEquals(0x00, home[7].toInt() and 0xF0)
+        assertEquals(0x00, home[8].toInt() and 0xFF)
+
         // Start (bit 8) y Select (bit 9) → Usage 12/11 = h11/h10 (byte 8).
         val start = SignatureHidCodec.encode(0, 0, 0, 0, 8, 1 shl 8, 0, 0)
         assertEquals(0x80, start[8].toInt() and 0xFF)
