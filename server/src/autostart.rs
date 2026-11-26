@@ -16,7 +16,7 @@ fn desktop_entry(exec: &str) -> String {
         "[Desktop Entry]\n\
 Type=Application\n\
 Name=Twinpad Servidor PC\n\
-Comment=Servidor Twinpad: acepta sesiones de Pairing en segundo plano (CR-061, SPEC-010 W5)\n\
+Comment=Servidor de Twinpad: recibe la Segunda pantalla y los controles de la app\n\
 Exec={exec}\n\
 Terminal=false\n\
 Categories=Utility;\n\
