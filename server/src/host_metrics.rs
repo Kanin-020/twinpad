@@ -344,7 +344,11 @@ impl Default for HostMetricsSampler {
 
 /// FPS de publicación del Plugin: `Δgfn/Δs` entre observaciones;
 /// `None` sin juego, sin frames, con gfn retrocedido (reinicio de la
-/// conexión) o con tasa sobre el techo
+/// conexión) o sin tiempo transcurrido. Una tasa por encima de [FPS_MAX]
+/// se satura en el techo en vez de descartar la muestra: con un compositor
+/// sin vsync (gamescope) el juego publica muy por encima del panel y el
+/// gauge «FPS» del teléfono se quedaba en «—». El techo sigue acotando
+/// valores absurdos de un contador roto.
 pub fn fps_from_gfn(
     prev: Option<(u64, u64)>,
     now: Option<(u64, u64)>,
@@ -354,11 +358,10 @@ pub fn fps_from_gfn(
         return None;
     };
     let delta = now_gfn.checked_sub(prev_gfn)?;
-    if elapsed_s <= 0.0 {
+    if delta == 0 || elapsed_s <= 0.0 {
         return None;
     }
-    let fps = delta as f32 / elapsed_s;
-    (delta > 0 && fps <= FPS_MAX).then_some(fps)
+    Some((delta as f32 / elapsed_s).min(FPS_MAX))
 }
 
 /// Intervalo de producción (2 s: los gauges son diagnóstico, no telemetría).
@@ -490,7 +493,12 @@ mod tests {
         assert_eq!(fps_from_gfn(Some((100, 0)), Some((100, 0)), 2.0), None);
         assert_eq!(fps_from_gfn(None, Some((160, 0)), 1.0), None);
         assert_eq!(fps_from_gfn(Some((160, 0)), Some((100, 0)), 1.0), None);
-        assert_eq!(fps_from_gfn(Some((0, 0)), Some((2_400, 0)), 1.0), None);
+        // Tasa por encima del techo: se satura, no se oculta el gauge
+        // (gamescope sin vsync publica muy por encima del panel).
+        assert_eq!(
+            fps_from_gfn(Some((0, 0)), Some((2_400, 0)), 1.0),
+            Some(FPS_MAX)
+        );
     }
 
     #[test]
