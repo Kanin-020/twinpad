@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-120 |
+| CR | CR-122 |
 
 ## Open / In review
 
@@ -55,6 +55,9 @@
 | CR-117 | La captura de una fila reemplaza su entrada física (aclaración de SPEC-011 §6 M3/§7.3 frente a AC-2); los duplicados son entre filas | SPEC-011 §6/§7, código `hid/GamepadMapping`, traceability (TEST-0209) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-117-gamepad-capture-replaces-row-binding.md](CR-117-gamepad-capture-replaces-row-binding.md) |
 | CR-118 | El mapeador se abre solo la primera vez que se detecta cada modelo; la marca se persiste y no se repite al reiniciar ni al reconectar | SPEC-011 §6 M1/§7.1/AC-1, código `ui/GamepadProfileStore` y `ui/PhysicalGamepadController`, traceability (TEST-0212) | Approved (2026-11-25); código aplicado | Buffy (agente) | [CR-118-gamepad-mapper-once-per-model.md](CR-118-gamepad-mapper-once-per-model.md) |
 | CR-119 | Cemu: auto-conexión fija, menú de solo Configuraciones (sin QR ni inicio manual) y H.264 activo por defecto | SPEC-006 R4/R5/R10, DES-004, código Cemu/servidor, traceability (TEST-046/047) | Approved (2026-11-25); código y SPEC/DES aplicados | Buffy (agente) | [CR-119-cemu-fixed-auto-connect-and-qr-menu.md](CR-119-cemu-fixed-auto-connect-and-qr-menu.md) |
+| CR-122 | Descubrimiento BT HID más rápido: reintento del registro cuando el SO lo rechaza sin callback, último host conectado primero y reintento de enlace sin reprogramarse en cada caída | SPEC-004 1.16.0 (§8.3), código `hid/BluetoothHidGamepad`, `hid/HidHostOrder`, traceability (TEST-0215) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-122-bt-hid-discovery-early-and-fast.md](CR-122-bt-hid-discovery-early-and-fast.md) |
+| CR-121 | Notificación de la sesión visible en segundo plano: permiso `POST_NOTIFICATIONS` al entrar en sesión y texto que distingue transmisión (V1/V2) de sesión conectada | SPEC-002 1.14.0 (§11 R23), código `session/SessionForegroundService`, `session/SessionNotificationSync`, `ui/PairingActivity`, `res/values/strings.xml`, traceability (TEST-0214) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-121-session-notification-background-transmission.md](CR-121-session-notification-background-transmission.md) |
+| CR-120 | Home físico = Guide/PS del mando (`KEYCODE_BUTTON_MODE`, no L3), Home asignable por defecto, un solo transporte de `input_report` por reporte (fin del doble input BT+LAN) y conexión BT HID a todos los emparejados en cada ronda | SPEC-004 1.15.0 (§4, §8.3), SPEC-011 0.2.4 (§4), código `hid/GamepadMapping`, `hid/PhysicalGamepadAlgo`, `ui/GamepadMapperDialog`, `pairing/PairingViewModel`, `hid/BluetoothHidGamepad`, traceability (TEST-0213) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-120-home-guide-single-input-transport-bt-discovery.md](CR-120-home-guide-single-input-transport-bt-discovery.md) |
 
 ## Applied
 

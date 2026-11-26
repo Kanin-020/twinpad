@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-011 |
 | Title | Reconocimiento y ajuste de los controles de un mando físico, con perfiles por fabricante y modelo |
-| Version | 0.2.3 |
+| Version | 0.2.4 |
 | Status | `Approved` |
 | Owner | Product owner |
 | Implements | REQ-003 |
 | Realized by | `-` (DES pendiente de asignar) |
 | Verified by | TEST-0209, TEST-0210, TEST-0212 |
-| Last updated | 2026-11-25 |
+| Last updated | 2026-11-26 |
 
 > Decisiones del owner (chat, 2026-11-25): el perfil pertenece a **fabricante + modelo** y admite **perfiles propios nombrados por el usuario**, guardados; la reasignación se hace tocando la entrada y pulsando el botón **o moviendo el eje**; el cambio se **aplica y guarda al instante**; se **permiten duplicados** (una misma entrada física puede activar varias entradas canónicas); el acceso está **en Ajustes y se abre al detectar un mando nuevo**.
 
@@ -59,6 +59,12 @@ Fijar cómo la app reconoce los controles que emite un mando físico conectado a
 | Acción «seleccionar perfil» | evento de usuario | perfil existente del modelo o predeterminado | mapeador |
 
 **Entradas canónicas ajustables** (todas las de la Signature salvo el giroscopio): 12 botones (`A`, `B`, `X`, `Y`, `L1`, `R1`, `L3`, `R3`, `Start`, `Select`, `extra_1`, `extra_2`), 4 ejes de stick (`stick_lx`, `stick_ly`, `stick_rx`, `stick_ry`), 2 gatillos (`L2`, `R2`) y 4 direcciones de cruceta (`up`, `down`, `left`, `right`).
+
+> **Nota (CR-120, 2026-11-26):** `extra_1` es el botón **Home** del mando
+> (Guide de Xbox / PS del DualShock), se rotula «Home» en el mapeador y su
+> keycode físico estándar es `KEYCODE_BUTTON_MODE` (110), que el mapeo
+> predeterminado asigna a esa fila. `L3` y `R3` usan `KEYCODE_BUTTON_THUMBL`
+> (106) y `KEYCODE_BUTTON_THUMBR` (107).
 
 ## 5. Outputs
 
@@ -143,3 +149,4 @@ Invariante: la captura nunca bloquea la sesión ni el `input_report`; el mapeado
 | 0.2.1 | 2026-11-25 | Buffy (agente) (CR-116) | §3: la identidad usa `vendorId`/`productId`/`name` porque `InputDevice` no expone fabricante/producto como texto |
 | 0.2.2 | 2026-11-25 | Buffy (agente) (CR-117) | §6 M3 y §7.3: capturar reemplaza la entrada de esa fila; los duplicados son entre filas (AC-2) |
 | 0.2.3 | 2026-11-25 | Buffy (agente) (CR-118) | §6 M1, §7.1 y AC-1: la autoapertura ocurre una sola vez por modelo y se persiste; no se repite al reiniciar ni al reconectar |
+| 0.2.4 | 2026-11-26 | Buffy (agente) (CR-120) | §4: `extra_1` = Home con `KEYCODE_BUTTON_MODE` y rótulo «Home»; L3/R3 con `BUTTON_THUMBL`/`BUTTON_THUMBR` |

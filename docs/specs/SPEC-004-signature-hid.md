@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.14.0 |
+| Version | 1.17.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205 |
-| Last updated | 2026-11-25 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215 |
+| Last updated | 2026-11-26 |
 
 ## 1. Purpose
 
@@ -46,7 +46,7 @@ Fija el contrato de la Signature HID (CTA-C5: la composición exacta del gamepad
 | `touch_x`, `touch_y` | integer (uint16) | posición normalizada sobre la imagen DRC, 0…65535; al soltar se conserva la última coordenada | yes |
 | `touch_pressed` | boolean | true mientras hay contacto con la imagen DRC | yes |
 
-Canal: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007) y/o el canal Bluetooth HID nativo (CR-059, ADR-009). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado. Los inputs del gamepad viajan únicamente por el canal Bluetooth HID (CR-096, §8.3); la sesión LAN no transporta el gamepad ni como respaldo. El Servidor PC no crea gamepad virtual del sistema operativo.
+Canal: sesión LAN autenticada de SPEC-001, NDJSON (ADR-007) y/o el canal Bluetooth HID nativo (CR-059, ADR-009). El Servidor conserva el último `input_report` aceptado por sesión y lo reenvía como snapshot al Plugin seleccionado conforme a SPEC-006; no requiere que exista selección previa para retener el estado. El SDK del Plugin expone polling del snapshot más reciente. El adaptador Cemu aplica el estado recibido directamente al GamePad Wii U emulado. Los inputs del gamepad salen por una sola ruta por reporte (CR-120, §8.3): el canal Bluetooth HID si está operativo; si no, la sesión LAN. El Servidor PC no crea gamepad virtual del sistema operativo salvo el mando opcional de §8.4.
 
 Transporte Bluetooth HID nativo (CR-059, ADR-009): el teléfono expone el gamepad al SO del PC vía HID Device role (BluetoothHidDevice, descriptor del Report Map §2), que Windows lista como gamepad estándar SIN software adicional; los elementos del mando (standes, D-pad, 12 botones, triggers L2/R2) llegan al juego por el HID del sistema.
 
@@ -102,16 +102,39 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 ### 8.3 Canal Bluetooth HID como único transporte del gamepad (CR-096; CR-059, ADR-009)
 
-- **Trigger:** la app arranca el canal BT HID al entrar en sesión LAN `Linked`,
-  o ante un handshake fallido sin Wi-Fi (`Failure`), si el canal no está operativo.
-- **Flow:** los reportes del gamepad se envían por la ruta BT HID (por defecto);
-  si el canal BT no está operativo, los inputs (botones, sticks, gatillos, D-pad)
-  salen por LAN como respaldo. Gyro y touch siempre por LAN (no viajan por BT).
-  La vibración va por BT. Sin ninguna ruta operativa, el gamepad está en H0 y no envía.
+- **Trigger:** la app arranca el canal BT HID al abrir si el canal no está
+  operativo (CR-122; también rearma al entrar en sesión LAN `Linked`, ante un
+  handshake fallido sin Wi-Fi (`Failure`) o al concederse `BLUETOOTH_CONNECT`).
+  El rearme nunca recrea el canal: si ya existe se reintenta el registro o el
+  enlace pendiente (conectado o registrado, no se toca), porque desregistrar y
+  volver a crear el perfil cerraba el enlace HID recién abierto y el registro
+  anterior seguía ocupando el rol en el SO.
+- **Descubrimiento del host (CR-122):** si el SO rechaza el registro del perfil
+  (`registerApp` devuelve false o el registro se pierde) se reintenta con backoff
+  de 5 s a 20 s, sin límite de intentos. Si el rechazo llega sin callback y el
+  rol lo ocupa un registro huérfano de la propia app (mismo UID, por ejemplo tras
+  cerrar el proceso con force-stop, que no lo libera), la app lo libera con
+  `unregisterApp` y vuelve a registrar pasados 250 ms; si el rol lo detenta otra
+  app, `unregisterApp` falla y se mantiene el backoff. Con el perfil registrado,
+  la app intenta conectar con todos los emparejados clásicos en cada ronda,
+  empezando por el último host que conectó (recordado entre ejecuciones) y
+  omitiendo los equipos `AUDIO_VIDEO` (radio de coche, auriculares) mientras
+  quede algún candidato plausible, porque no aceptan HID y cada uno gasta un
+  page timeout; si ningún enlace cuaja, la ronda se reintenta con backoff de
+  1,5 s a 8 s sin reprogramar el reintento ya pendiente. El nombre del adaptador
+  pasa a «Twinpad» solo si es distinto, para no reiniciar el anuncio Bluetooth
+  en cada arranque.
+- **Flow:** cada reporte sale por **una sola** ruta (CR-120). Con el canal BT HID
+  operativo, el reporte se envía por BT y la sesión LAN no recibe `input_report`;
+  si el canal BT no está operativo y la sesión está Linked, el reporte completo
+  (botones, sticks, gatillos, D-pad, touch e inercia) sale por LAN. Nunca se envían
+  las dos rutas para el mismo reporte: el juego vería dos mandos. La vibración va
+  por BT. Sin ninguna ruta operativa, el gamepad está en H0 y no envía.
 - **Result:** los inputs salen por Bluetooth HID y, si no está operativo, por LAN;
-  gyro y touch siempre por LAN. La Segunda pantalla, el audio y el micrófono
-  siguen por la LAN cuando hay sesión, y quedan indisponibles sin ella (ADR-002),
-  no como error.
+  mientras el canal BT está operativo, touch DRC e inercia no llegan al Plugin
+  (no viajan por BT; extender el descriptor exige otro CR). La Segunda pantalla,
+  el audio y el micrófono siguen por la LAN cuando hay sesión, y quedan
+  indisponibles sin ella (ADR-002), no como error.
 
 ### 8.4 Mando virtual del Servidor (opcional, solo Linux; CR-113, CR-114)
 
@@ -221,6 +244,8 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | Latencia NFR-002 (p95 ≤ 15 ms) | pruebas de performance en banco físico con inyección HID sintética |
 | Codec Report Map → bytes HID y clamps de la Signature (CR-059, ADR-009) | TEST-0126 |
 | Handover failover/alternativa completa: conmutación de ruta e histórisis de 5 s (CR-059) | TEST-0127 |
+| Home físico = Guide/PS (`BUTTON_MODE`), L3/R3 con sus keycodes y ruta única por reporte (CR-120) | TEST-0213 |
+| Orden de hosts del canal BT HID: el último host conectado se intenta primero (CR-122) | TEST-0215 |
 | Snapshot input conservado y sondeable por Plugin | TEST-052 |
 | Snapshot de input retenido antes de selección y polling del Plugin | TEST-052 |
 
@@ -252,3 +277,6 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.12.0 | 2026-11-24 | Owner + Buffy (agente) (CR-111) | §8.3: BT HID primero para inputs, LAN como respaldo; gyro y touch siempre por LAN; vibración por BT |
 | 1.13.0 | 2026-11-25 | Owner + Buffy (agente) (CR-113) | §8.4: mando virtual DualSense opcional del Servidor (Linux `/dev/uhid`, opt-in por `TWINPAD_VIRTUAL_PAD`); consume solo los `input_report` de LAN |
 | 1.14.0 | 2026-11-25 | Owner + Buffy (agente) (CR-114) | §8.4: el mando se gobierna en caliente desde la página local (SPEC-010 W10) y la preferencia guardada manda sobre `TWINPAD_VIRTUAL_PAD`; sin cambio de reporte |
+| 1.16.0 | 2026-11-26 | Buffy (agente) (CR-122) | §8.3: arranque del canal BT HID al abrir y descubrimiento del host — reintento del registro cuando el SO lo rechaza sin callback, último host primero y reintento de enlace sin reprogramarse en cada caída; TEST-0215 |
+| 1.17.0 | 2026-11-26 | Buffy (agente) (CR-122) | §8.3: rearme idempotente del canal (no se recrea al concederse el permiso), liberación del registro huérfano de la propia app y omisión de emparejados `AUDIO_VIDEO`; banco físico: app abierta → gamepad en el SO del PC en 0,96 s |
+| 1.15.0 | 2026-11-26 | Owner + Buffy (agente) (CR-120) | §4/§8.3: una sola ruta por reporte (BT si está operativo; si no, LAN) para que el juego no vea dos mandos; mientras hay BT, touch e inercia no llegan al Plugin |
