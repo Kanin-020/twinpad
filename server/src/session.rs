@@ -16,6 +16,7 @@ use twinpad_core::error::{PairError, PairResult};
 use twinpad_core::handshake::{ServerEntropy, ServerHandshake, StepIn, StepOut, TokenRecord};
 use twinpad_core::message::{self, HandshakeMsg};
 use twinpad_core::resume::{RetainedSession, evaluate_resume};
+use twinpad_core::revoke::verify_revoke_proof;
 use twinpad_core::{Nonce, SessionId, SessionKey};
 
 /// Timeout de espera de `pair_proof` tras el challenge: 10 s (SPEC-001 §9).
@@ -26,6 +27,20 @@ pub const PROOF_TIMEOUT: Duration = Duration::from_secs(10);
 /// retenida si sigue viva (§10: doble resume simultáneo → el segundo falla).
 pub trait ControlRetention {
     fn take_retained(&self, session_id: &SessionId, now_ms: u64) -> Option<RetainedSession>;
+
+    /// CR-102 (SPEC-001 §8.3): ligadura vigente sin consumirla — la necesita
+    /// `pair_revoke` para verificar el proof antes de borrar nada.
+    fn lookup(&self, session_id: &SessionId, now_ms: u64) -> Option<RetainedSession> {
+        let _ = (session_id, now_ms);
+        None
+    }
+
+    /// CR-102: borra el registro persistente y la retención de la ligadura.
+    /// `false` si el `session_id` no era conocido.
+    fn revoke(&self, session_id: &SessionId) -> bool {
+        let _ = session_id;
+        false
+    }
 }
 
 /// Proveedores de entropía y reloj del servidor (inyectados, DES-001 §11).
@@ -49,6 +64,9 @@ pub enum SessionOutcome {
         session_id: SessionId,
         session_key: SessionKey,
     },
+    /// Revocación exitosa (§8.3, CR-102): el `pair_ack` ya fue enviado y la
+    /// ligadura borrada; el socket de revocación se cierra al salir.
+    Revoked { session_id: SessionId },
     /// Rechazo: el `pair_error` ya fue enviado al cliente.
     Rejected(PairError),
 }
@@ -75,10 +93,20 @@ pub fn run_control_session(
         Ok(msg) => msg,
         Err(e) => return reject(stream, e),
     };
-    if matches!(first_msg, HandshakeMsg::PairResume { .. }) {
-        return run_pair_resume(stream, &first_msg, retention, deps);
+    // §8.2 (CR-099/CR-102): la primera línea de un socket nuevo admite solo
+    // `pair_request`, `pair_proof`, `pair_resume` o `pair_revoke`; cualquier
+    // otro `type` es E4. `pair_proof` sigue el handshake normal y recibe E3
+    // (§8.1: atacante sin token); los mensajes de handshake fuera de rol
+    // (`pair_challenge`, `pair_ack`, `pair_error`) no deben llegar a la
+    // máquina, que en `WaitRequest` los respondería E3.
+    match &first_msg {
+        HandshakeMsg::PairResume { .. } => run_pair_resume(stream, &first_msg, retention, deps),
+        HandshakeMsg::PairRequest { .. } | HandshakeMsg::PairProof { .. } => {
+            run_handshake_from(stream, &mut reader, record, deps, first_msg)
+        }
+        HandshakeMsg::PairRevoke { .. } => run_pair_revoke(stream, &first_msg, retention, deps),
+        _ => reject(stream, PairError::MalformedMessage),
     }
-    run_handshake_from(stream, &mut reader, record, deps, first_msg)
 }
 
 /// Compatibilidad: la forma anterior sin reanudación (los tests existentes).
@@ -137,6 +165,41 @@ fn run_pair_resume(
         }
         // §9 (CR-056): E3 sin desglosar causa (desconocida/expirada/proof).
         Err(_) => reject(stream, PairError::AuthRejected),
+    }
+}
+
+/// Revocación desde la app §8.3 (CR-102): verifica el proof sobre la
+/// ligadura vigente y, solo entonces, borra el registro persistente y la
+/// retención. `session_id` desconocido o proof inválido → E3 sin efectos.
+fn run_pair_revoke(
+    stream: &mut TcpStream,
+    revoke_msg: &HandshakeMsg,
+    retention: &dyn ControlRetention,
+    deps: &mut SessionDeps<'_>,
+) -> SessionOutcome {
+    let HandshakeMsg::PairRevoke { session_id, proof } = revoke_msg else {
+        return reject(stream, PairError::MalformedMessage);
+    };
+    let sid = match twinpad_core::resume::session_id_from_b64(session_id) {
+        Ok(sid) => sid,
+        Err(e) => return reject(stream, e),
+    };
+    let Some(retained) = retention.lookup(&sid, (deps.now_ms)()) else {
+        return reject(stream, PairError::AuthRejected); // §9: sin desglosar causa
+    };
+    let proof = match message::nonce_bytes(proof) {
+        Ok(proof) => proof,
+        Err(e) => return reject(stream, e),
+    };
+    if !verify_revoke_proof(&retained.session_key, &sid, &proof.0) || !retention.revoke(&sid) {
+        return reject(stream, PairError::AuthRejected);
+    }
+    let ack = HandshakeMsg::PairAck {
+        session_id: message::b64_16(&sid.0),
+    };
+    match message::encode(&ack).and_then(|l| write_line(stream, &l)) {
+        Ok(()) => SessionOutcome::Revoked { session_id: sid },
+        Err(_) => SessionOutcome::Rejected(PairError::ServerUnavailable),
     }
 }
 
@@ -279,6 +342,45 @@ mod tests {
                 .filter(|_| now_ms >= self.at_ms)
                 .cloned()
         }
+    }
+
+    /// CR-102: retención de prueba que registra si el revoke llegó a ejecutarse.
+    struct RevokeRetention {
+        item: Option<RetainedSession>,
+        revoked: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl ControlRetention for RevokeRetention {
+        fn take_retained(&self, _session_id: &SessionId, _now_ms: u64) -> Option<RetainedSession> {
+            None
+        }
+
+        fn lookup(&self, session_id: &SessionId, _now_ms: u64) -> Option<RetainedSession> {
+            self.item
+                .as_ref()
+                .filter(|retained| retained.session_id == *session_id)
+                .cloned()
+        }
+
+        fn revoke(&self, session_id: &SessionId) -> bool {
+            if self
+                .item
+                .as_ref()
+                .is_some_and(|r| r.session_id == *session_id)
+            {
+                self.revoked
+                    .store(true, std::sync::atomic::Ordering::Release);
+                return true;
+            }
+            false
+        }
+    }
+
+    fn revoke_line(session_id: &SessionId, proof: [u8; 32]) -> String {
+        format!(
+            "{{\"type\":\"pair_revoke\",\"session_id\":\"{}\",\"proof\":\"{}\"}}",
+            message::b64_16(&session_id.0),
+            message::b64_32(&proof)
+        )
     }
 
     fn deps() -> SessionDeps<'static> {
@@ -444,6 +546,105 @@ mod tests {
         let mut buf = [0_u8; 128];
         let n = client.read(&mut buf).unwrap();
         assert!(String::from_utf8_lossy(&buf[..n]).contains("\"E3\""));
+    }
+
+    // TEST-0190 — verifies SPEC-001 §8.2 (CR-099): en un socket nuevo, un
+    // `type` de handshake fuera de rol como primera línea → E4 y cierre.
+    #[test]
+    fn first_line_out_of_role_is_e4() {
+        for line in [
+            format!(
+                "{{\"type\":\"pair_challenge\",\"nonce_s\":\"{}\"}}",
+                message::b64_32(&[7_u8; 32])
+            ),
+            format!(
+                "{{\"type\":\"pair_ack\",\"session_id\":\"{}\"}}",
+                message::b64_16(&[0_u8; 16])
+            ),
+        ] {
+            let (mut server, mut client) = loopback_pair();
+            client.write_all(line.as_bytes()).unwrap();
+            client.write_all(b"\n").unwrap();
+            let outcome = run_control_session(&mut server, record(), &NoRetention, &mut deps());
+            assert!(
+                matches!(
+                    outcome,
+                    SessionOutcome::Rejected(PairError::MalformedMessage)
+                ),
+                "esperaba E4 para {line}, obtuve {outcome:?}"
+            );
+            let mut buf = [0_u8; 256];
+            let n = client.read(&mut buf).unwrap();
+            let response = String::from_utf8_lossy(&buf[..n]);
+            assert!(
+                response.contains("\"E4\""),
+                "esperaba pair_error E4 para {line}, obtuve {response}"
+            );
+        }
+    }
+
+    // TEST-0195 — verifies SPEC-001 §8.3 (CR-102): un `pair_revoke` con proof
+    // válido borra la ligadura y responde `pair_ack`; la conexión no se
+    // convierte en sesión activa.
+    #[test]
+    fn valid_pair_revoke_deletes_the_link_and_acks() {
+        let (mut server, mut client) = loopback_pair();
+        let sid = retained_sid();
+        let proof = twinpad_core::revoke::revoke_proof(&SessionKey([9; 32]), &sid);
+        let line = revoke_line(&sid, proof);
+        client.write_all(line.as_bytes()).unwrap();
+        client.write_all(b"\n").unwrap();
+        let revoked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let retention = RevokeRetention {
+            item: Some(retained_session()),
+            revoked: std::sync::Arc::clone(&revoked),
+        };
+        let outcome = run_control_session(&mut server, record(), &retention, &mut deps());
+        assert!(matches!(
+            outcome,
+            SessionOutcome::Revoked { session_id } if session_id == sid
+        ));
+        assert!(revoked.load(std::sync::atomic::Ordering::Acquire));
+        let mut buf = [0_u8; 225];
+        let n = client.read(&mut buf).unwrap();
+        let ack = String::from_utf8_lossy(&buf[..n]);
+        assert!(ack.contains("pair_ack"));
+        assert!(ack.contains(&message::b64_16(&sid.0)));
+    }
+
+    // TEST-0195 — verifies SPEC-001 §8.3/§9 (CR-102): proof inválido o
+    // `session_id` desconocido → E3 SIN borrar nada.
+    #[test]
+    fn pair_revoke_with_bad_proof_or_unknown_link_is_e3_without_effect() {
+        let sid = retained_sid();
+        let mut forged = twinpad_core::revoke::revoke_proof(&SessionKey([9; 32]), &sid);
+        forged[0] ^= 0x01;
+        for (item, proof) in [
+            (Some(retained_session()), forged),
+            (
+                None,
+                twinpad_core::revoke::revoke_proof(&SessionKey([9; 32]), &sid),
+            ),
+        ] {
+            let (mut server, mut client) = loopback_pair();
+            let line = revoke_line(&sid, proof);
+            client.write_all(line.as_bytes()).unwrap();
+            client.write_all(b"\n").unwrap();
+            let revoked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let retention = RevokeRetention {
+                item,
+                revoked: std::sync::Arc::clone(&revoked),
+            };
+            let outcome = run_control_session(&mut server, record(), &retention, &mut deps());
+            assert!(matches!(
+                outcome,
+                SessionOutcome::Rejected(PairError::AuthRejected)
+            ));
+            assert!(!revoked.load(std::sync::atomic::Ordering::Acquire));
+            let mut buf = [0_u8; 256];
+            let n = client.read(&mut buf).unwrap();
+            assert!(String::from_utf8_lossy(&buf[..n]).contains("\"E3\""));
+        }
     }
 
     // §7 sin cambios: la primera línea puede seguir siendo `pair_request`.

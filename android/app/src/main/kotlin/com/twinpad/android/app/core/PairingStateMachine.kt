@@ -254,9 +254,10 @@ class PairingStateMachine {
                 ->
                     // Mensaje fuera de secuencia (SPEC-001 §9 E3).
                     failAttempt(PairingError.Rejected)
-                // CR-056: `pair_resume` es app→servidor; recibido por la app
-                // es fuera de secuencia (E3).
-                is HandshakeMessage.Resume -> failAttempt(PairingError.Rejected)
+                // CR-056/CR-102: `pair_resume` y `pair_revoke` son
+                // app→servidor; recibidos por la app son fuera de secuencia (E3).
+                is HandshakeMessage.Resume, is HandshakeMessage.Revoke ->
+                    failAttempt(PairingError.Rejected)
             }
         } catch (e: PairingException) {
             failAttempt(e.error)

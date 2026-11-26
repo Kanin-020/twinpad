@@ -1,5 +1,8 @@
 package com.twinpad.android.app.pairing.network
 
+import com.twinpad.android.app.wire.HandshakeCodec
+import com.twinpad.android.app.wire.HandshakeCrypto
+import com.twinpad.android.app.wire.HandshakeMessage
 import com.twinpad.android.app.wire.ProtocolConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -210,6 +213,40 @@ class TcpPairingClient(
     fun armSessionWatchdog() {
         sessionMode.set(true)
         runCatching { socket?.soTimeout = sessionSilenceTimeoutMs }
+    }
+
+    /** CR-102 (SPEC-001 §8.3): revoca la vinculación en el servidor por un
+     * socket nuevo de una sola operación, sin esperar `pair_ack`. Best-effort:
+     * el olvido local de la app no depende de que la red responda. */
+    fun revoke(
+        addr: String,
+        port: Int,
+        sessionId: String,
+        sessionKey: ByteArray,
+    ) {
+        scope.launch {
+            runCatching {
+                val proof =
+                    HandshakeCrypto.computeRevokeProof(
+                        sessionKey,
+                        HandshakeCrypto.decodeB64(sessionId),
+                    )
+                val line =
+                    HandshakeCodec.encode(
+                        HandshakeMessage.Revoke(sessionId, HandshakeCrypto.encodeB64(proof)),
+                    )
+                Socket().use { revokeSocket ->
+                    revokeSocket.connect(InetSocketAddress(addr, port), FIVE_SECONDS_MS)
+                    revokeSocket.soTimeout = FIVE_SECONDS_MS
+                    revokeSocket.tcpNoDelay = true
+                    val writer =
+                        BufferedWriter(OutputStreamWriter(revokeSocket.getOutputStream(), Charsets.UTF_8))
+                    writer.write(line)
+                    writer.write("\n")
+                    writer.flush()
+                }
+            }
+        }
     }
 
     fun disconnect() {

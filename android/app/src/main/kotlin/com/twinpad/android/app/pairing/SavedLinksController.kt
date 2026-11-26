@@ -17,6 +17,9 @@ internal class SavedLinksController(
     private val linkStore: PairingLinkStore,
     private val currentState: () -> PairingUiState,
     private val feed: (PairingEvent) -> Unit,
+    /** CR-102: envía `pair_revoke` por un socket nuevo (resuelve el host
+     * como la conexión normal, SPEC-009), sin esperar el `pair_ack`. */
+    private val revokeLink: (SavedLink) -> Unit,
 ) {
     /** CR-094: al abrir la app, si hay una vinculación guardada, entra en U6 y
      * reanuda con `pair_resume` (el temporizador de reconexión la completa).
@@ -35,14 +38,18 @@ internal class SavedLinksController(
         resumeLink(saved)
     }
 
-    /** Olvida un dispositivo guardado (fila inactiva). Si era el activo, cierra su sesión. */
+    /** Olvida un dispositivo guardado (fila inactiva). Si era el activo,
+     * revoca la ligadura en el servidor (CR-102, SPEC-001 §8.3) y cierra su
+     * sesión; el `pair_ack` no se espera. */
     fun forget(sessionId: String) {
-        linkStore.remove(sessionId)
         val active = (currentState() as? PairingUiState.Linked)?.sessionId
+        val saved = linkStore.loadAll().firstOrNull { it.sessionId == sessionId }
         if (active == sessionId) {
+            if (saved != null) revokeLink(saved)
             network.disconnect()
             feed(PairingEvent.Cancelled)
         }
+        linkStore.remove(sessionId)
     }
 
     /** CR-094: guarda la vinculación cifrada para reconectar al abrir la app.

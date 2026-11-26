@@ -991,6 +991,15 @@ fn main() {
                         }
                     }
                 }
+                SessionOutcome::Revoked { session_id } => {
+                    // CR-102 (SPEC-001 §8.3): el registro persistente y la
+                    // retención ya se borraron; este socket de una sola
+                    // operación se cierra al volver del hilo.
+                    println!(
+                        "Vinculación revocada desde la app: session_id={}.",
+                        twinpad_core::message::b64_16(&session_id.0)
+                    );
+                }
                 SessionOutcome::Rejected(e) => {
                     println!("Vinculación rechazada ({}).", e.code());
                 }

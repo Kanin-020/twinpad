@@ -17,6 +17,9 @@ object HandshakeCrypto {
     /** Dominio fijo del proof de reanudación (CR-056, SPEC-001 §4.2). */
     private val RESUME_PROOF_DOMAIN: ByteArray = "twinpad.v1 resume".toByteArray(Charsets.UTF_8)
 
+    /** Dominio fijo del proof de revocación (CR-102, SPEC-001 §4.2). */
+    private val REVOKE_PROOF_DOMAIN: ByteArray = "twinpad.v1 revoke".toByteArray(Charsets.UTF_8)
+
     private const val KEY_BYTES: Int = 32
 
     /** Deriva la clave de sesión: HKDF-SHA256(ikm = token, salt = nonce_s) —
@@ -74,6 +77,19 @@ object HandshakeCrypto {
         mac.update(RESUME_PROOF_DOMAIN)
         mac.update(sessionId)
         mac.update(nonceC)
+        return mac.doFinal()
+    }
+
+    /** Proof de revocación (CR-102, SPEC-001 §4.2/§8.3): HMAC-SHA256 con la
+     * session_key sobre `"twinpad.v1 revoke" ‖ session_id_raw` — paridad bit a
+     * bit con `core::revoke::revoke_proof`. */
+    fun computeRevokeProof(
+        sessionKey: ByteArray,
+        sessionId: ByteArray,
+    ): ByteArray {
+        val mac = CryptoPrimitives.macSha256(sessionKey)
+        mac.update(REVOKE_PROOF_DOMAIN)
+        mac.update(sessionId)
         return mac.doFinal()
     }
 

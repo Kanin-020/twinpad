@@ -78,6 +78,15 @@ pub enum HandshakeMsg {
         /// `proof`: 32 bytes base64url sobre `twinpad.v1 resume`.
         proof: String,
     },
+    /// app → servidor: revoca el emparejamiento y el registro persistente
+    /// (§8.3, CR-102). PRIMERA línea de una conexión de control nueva.
+    #[serde(rename = "pair_revoke")]
+    PairRevoke {
+        /// `session_id`: 16 bytes base64url de la ligadura a revocar.
+        session_id: String,
+        /// `proof`: 32 bytes base64url sobre `twinpad.v1 revoke`.
+        proof: String,
+    },
 }
 
 /// Serializa un mensaje a su línea NDJSON canónica (sin `\n` final).
@@ -140,6 +149,13 @@ fn validate(msg: &HandshakeMsg) -> PairResult<()> {
                 return Err(PairError::MalformedMessage);
             }
             expect_len32(nonce_c)?;
+            expect_len32(proof)
+        }
+        HandshakeMsg::PairRevoke { session_id, proof } => {
+            let bytes = decode_b64_32(session_id)?;
+            if bytes.len() != 16 {
+                return Err(PairError::MalformedMessage);
+            }
             expect_len32(proof)
         }
     }

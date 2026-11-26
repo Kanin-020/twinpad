@@ -101,6 +101,16 @@ internal class PairingViewModel(
             linkStore = linkStore,
             currentState = { _uiState.value },
             feed = { feed(it) },
+            revokeLink = { saved ->
+                // SPEC-009: el socket de revocación resuelve el host igual que
+                // la conexión normal (`addr` puede ser `twinpad.local.`).
+                viewModelScope.launch {
+                    val target = collaborators.resolveServerHost(saved.addr, saved.port)
+                    if (target != null) {
+                        network.revoke(target.first, target.second, saved.sessionId, saved.sessionKey)
+                    }
+                }
+            },
         )
 
     /** HUD del stream (fps/kbps); los mensajes se aplican en orden para

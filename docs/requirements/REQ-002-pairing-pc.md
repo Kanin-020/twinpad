@@ -4,13 +4,13 @@
 |---|---|
 | ID | REQ-002 |
 | Title | Pairing PC–celular vía QR |
-| Version | 0.1.0 |
+| Version | 0.3.0 |
 | Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Vinculación PC ↔ celular (pairing mediante QR)" |
 | Implemented by | `-` |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-26 |
 
 ## 1. Objective
 
@@ -45,6 +45,7 @@ El usuario debe poder vincular su Android device con el PC Host escaneando un QR
 - [ ] AC-2: Dado un dispositivo que no escaneó el QR, cuando intenta conectarse directamente al servidor, entonces es rechazado (NFR-004).
 - [ ] AC-3: Dado un QR mostrado hace más del tiempo de validez definido en su SPEC, cuando se escanea, entonces la vinculación es rechazada con un mensaje de "QR expirado, generar uno nuevo".
 - [ ] AC-4 (CR-057): Dado un teléfono ya emparejado con el PC y una IP del PC renovada tras un reinicio del router, cuando la app intenta conectar o reanudar (SPEC-001 §8.2), entonces resuelve el servidor vía mDNS (SPEC-009) usando el nombre anunciado y la sesión se restablece sin re-escanear.
+- [ ] AC-5 (CR-102): Dado un teléfono emparejado, cuando el usuario pulsa «Desconectar dispositivo» en la app, entonces el servidor revoca el registro de esa ligadura y un intento posterior de reanudar recibe E3, exigiendo un QR nuevo.
 
 ## 7. Non-functional concerns
 
@@ -86,3 +87,4 @@ El usuario debe poder vincular su Android device con el PC Host escaneando un QR
 |---|---|---|---|
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
 | 0.2.0 | 2026-11-01 | Buffy (agente) (CR-057) | AC-4: re-resolución mDNS del servidor tras cambio de IP DHCP, sin re-scan (SPEC-009) |
+| 0.3.0 | 2026-11-26 | Buffy (agente) (CR-102) | AC-5: «Desconectar dispositivo» revoca la ligadura en el servidor; un resume posterior exige QR nuevo |

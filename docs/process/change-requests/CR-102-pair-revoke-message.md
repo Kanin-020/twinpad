@@ -5,11 +5,11 @@
 | ID | CR-102 |
 | Title | `pair_revoke`: mensaje app→servidor para revocar el registro persistente al pulsar «Desconectar dispositivo» (CR-094 §2.2) |
 | Type | `Correction` (hueco de contrato en CR-094) |
-| Status | `Open` |
+| Status | `Approved` |
 | Author | Buffy (agente) |
 | Created | 2026-11-17 |
-| Decided | `-` |
-| Decided by | `-` |
+| Decided | 2026-11-26 |
+| Decided by | Product owner (chat) |
 
 ## 1. Target
 
@@ -82,13 +82,14 @@ quedan sin cumplir.
 
 ## 5. Acceptance
 
-- [ ] «Desconectar dispositivo» envía `pair_revoke` con proof válido.
-- [ ] El servidor borra el registro; el dispositivo desaparece de la UI local.
-- [ ] Un `pair_resume` posterior con esa credencial recibe E3.
-- [ ] `proof` inválido o `session_id` desconocido → E3 sin efectos.
+- [x] «Desconectar dispositivo» envía `pair_revoke` con proof válido.
+- [x] El servidor borra el registro; el dispositivo desaparece de la UI local.
+- [x] Un `pair_resume` posterior con esa credencial recibe E3.
+- [x] `proof` inválido o `session_id` desconocido → E3 sin efectos.
 
 ## 6. Changelog
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-17 | Buffy (agente) | Propuesta inicial (hueco de contrato detectado al implementar CR-094 §2.2) |
+| 0.2 | 2026-11-26 | Product owner (chat) | `Approved`; aplicado a SPEC-001 1.5.1, SPEC-002 1.15.0, REQ-002 0.3.0 (AC-5) y DES-001; código core/servidor/Android y TEST-0195 |

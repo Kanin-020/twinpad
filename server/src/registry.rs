@@ -37,6 +37,53 @@ impl crate::session::ControlRetention for SessionRegistry {
             retained_since_ms: now_ms,
         })
     }
+
+    /// CR-102: ligadura vigente sin consumirla (retención viva o dispositivo
+    /// registrado en disco), para verificar el proof del `pair_revoke`.
+    fn lookup(&self, session_id: &SessionId, now_ms: u64) -> Option<RetainedSession> {
+        if let Some(retained) = lock_or_reset(&self.retained).get(session_id).cloned()
+            && retained.retention_alive(now_ms)
+        {
+            return Some(retained);
+        }
+        let devices = self.devices.as_ref()?;
+        let (sid, sk) = devices
+            .load()
+            .ok()?
+            .into_iter()
+            .find(|(sid, _)| sid == session_id)?;
+        Some(RetainedSession {
+            session_id: sid,
+            session_key: sk,
+            retained_since_ms: now_ms,
+        })
+    }
+
+    /// CR-102 (SPEC-001 §8.3): borra la retención, la fila del `DeviceStore`
+    /// y cierra la sesión viva. `false` si el `session_id` no era conocido.
+    fn revoke(&self, session_id: &SessionId) -> bool {
+        // Primero el almacén persistente: si falla la escritura no se borra
+        // nada más (la respuesta será E3 y la ligadura sigue viva).
+        let mut removed_device = false;
+        if let Some(devices) = self.devices.as_ref() {
+            let mut all = devices.load().unwrap_or_default();
+            let before = all.len();
+            all.retain(|(sid, _)| sid != session_id);
+            if all.len() != before {
+                if let Err(error) = devices.save(&all) {
+                    eprintln!("Twinpad: no se pudo revocar el dispositivo: {error}");
+                    return false;
+                }
+                removed_device = true;
+            }
+        }
+        let had_retention = lock_or_reset(&self.retained).remove(session_id).is_some();
+        if !had_retention && !removed_device {
+            return false;
+        }
+        self.remove(session_id); // cierra el socket vivo y apaga el media
+        true
+    }
 }
 
 type StoredMediaCredential = (Arc<SessionKey>, Arc<AtomicBool>);
@@ -109,6 +156,9 @@ impl SessionRegistry {
             eprintln!("Twinpad: no se pudo revocar el dispositivo: {error}");
             return false;
         }
+        // §8.3: la revocación desde la PC también invalida la retención, o un
+        // `pair_resume` dentro de los 60 s siguientes seguiría re-admitiendo.
+        lock_or_reset(&self.retained).remove(&session_id);
         self.remove(&session_id);
         true
     }
@@ -499,6 +549,58 @@ mod tests {
         assert!(
             crate::session::ControlRetention::take_retained(&unswept, &sid, expired_at).is_none()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // TEST-0195 — verifies SPEC-001 §8.3 (CR-094/CR-102): la revocación desde
+    // la PC borra también la retención, así que un `pair_resume` inmediato ya
+    // no re-admite la ligadura.
+    #[test]
+    fn pc_revocation_drops_the_retention_too() {
+        let dir = std::env::temp_dir().join(format!("twinpad-pc-revoke-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let registry = SessionRegistry::with_device_store(&dir);
+        let (sid, _) = session(13);
+        registry.remember_device(sid, SessionKey([4; 32]));
+        registry.retain(&sid, &SessionKey([4; 32]), 0);
+
+        assert!(registry.revoke_device(&twinpad_core::message::b64_16(&sid.0)));
+        assert!(registry.retained(&sid).is_none());
+        assert!(
+            crate::session::ControlRetention::take_retained(&registry, &sid, 1_000).is_none(),
+            "sin retención, el resume posterior es E3 aunque el reloj esté en ventana"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // TEST-0195 — verifies SPEC-001 §8.3 (CR-102): la revocación borra la
+    // retención, la fila persistente y la sesión viva; un segundo intento ya
+    // no encuentra ligadura (E3 en el caller).
+    #[test]
+    fn revoke_removes_retention_device_and_live_session() {
+        let dir = std::env::temp_dir().join(format!("twinpad-revoke-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let registry = SessionRegistry::with_device_store(&dir);
+        let (sid, sess) = session(12);
+        registry.remember_device(sid, SessionKey([7; 32]));
+        registry.retain(&sid, &SessionKey([7; 32]), 0);
+        let (server_side, _client) = loopback_pair();
+        registry.insert(sess, server_side);
+        registry.insert_active_key(sid, SessionKey([7; 32]));
+
+        assert!(
+            crate::session::ControlRetention::lookup(&registry, &sid, 1_000).is_some(),
+            "la ligadura vigente debe encontrarse antes de revocar"
+        );
+        assert!(crate::session::ControlRetention::revoke(&registry, &sid));
+        assert!(registry.retained(&sid).is_none());
+        assert!(!registry.contains(&sid));
+        assert!(registry.media_credential(&sid).is_none());
+        assert!(
+            crate::session::ControlRetention::lookup(&registry, &sid, 1_000).is_none(),
+            "tras revocar, el mismo session_id ya no reanuda"
+        );
+        assert!(!crate::session::ControlRetention::revoke(&registry, &sid));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

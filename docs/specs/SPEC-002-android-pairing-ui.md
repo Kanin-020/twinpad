@@ -7,7 +7,7 @@
 |---|---|
 | ID | SPEC-002 |
 | Title | App Android: escaneo del QR y pantalla de Pairing |
-| Version | 1.14.0 |
+| Version | 1.15.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002; selección de Plugin de REQ-004/005/006 (CR-010) |
@@ -87,6 +87,7 @@ Estados de la Pantalla de Pairing (mapean a SPEC-001 §6): `U1 Inicio`, `U2 Esca
 | U4 | `game_selected` | U4 | marca el Plugin confirmado como fuente activa |
 | U4 | la fuente activa desaparece | U4 | borra el frame/audio de esa fuente y procesa lista vigente |
 | U4 | selección solicitada ya no disponible | U4 | conserva la fuente previamente confirmada si sigue viva; procesa la lista vigente |
+| U4 | acción «Desconectar dispositivo» | U1 | envía `pair_revoke` en un socket nuevo (SPEC-001 §8.3/CR-102), olvida la vinculación local y cierra la sesión; no espera el `pair_ack` |
 | U5 | "reintentar" | U1 | limpia el error; el usuario re-escanea |
 | U2/U3 | app a segundo plano | U1 | cancela el intento y libera recursos (§10) |
 
@@ -188,6 +189,7 @@ La app muestra exactamente estas cadenas, no el campo `message` del `pair_error`
   - Al llegar una muestra nueva, el arco de cada anillo transita desde su valor vigente hasta el nuevo en 700 ms (acelerar-desacelerar); una muestra posterior sustituye la transición anterior. El centro y la etiqueta se actualizan de inmediato con el valor de la muestra.
   - Con dato, un brillo de 36° recorre el arco lleno en sentido horario de forma continua, una vuelta cada 1800 ms (estilo carga de batería): es la señal de que la lectura sigue viva aunque el valor no cambie. El brillo nunca se dibuja sobre la pista vacía; con «—» el anillo queda quieto. Se detiene mientras el gauge no está visible (hoja plegada, vista oculta o actividad en segundo plano) y se reanuda al volver a mostrarse.
   - Ver TEST-0177, TEST-0180, TEST-0181, TEST-0182.
+- **R24 (CR-102):** «Desconectar dispositivo» envía `pair_revoke` (SPEC-001 §4.2/§8.3) con `session_id` y proof HMAC "twinpad.v1 revoke" en un socket nuevo como primera línea y a continuación olvida la vinculación local; la UI vuelve a U1 sin esperar el `pair_ack`. El envío es best-effort: si la red falla, la vinculación local se olvida igual y el servidor conserva la ligadura hasta que se revoque desde la PC. Ver TEST-0195.
 - **R23 (CR-121):** con sesión viva (U4 o U6) la app mantiene el servicio en primer plano de la sesión, que es lo que permite seguir transmitiendo al cambiar de app. Su notificación es la señal visible en segundo plano: al entrar en sesión, en Android 13+ la app pide `POST_NOTIFICATIONS` (negarlo solo deja la sesión sin notificación; el servicio y el stream siguen) y el texto depende del estado del stream (§6 de SPEC-003): «Transmitiendo la Segunda pantalla al teléfono» con frames en V1/V2 y «Segunda pantalla y controles conectados al PC» sin frames (V0). Tocar la notificación vuelve a la app y la notificación desaparece al terminar la sesión. Ver TEST-0214.
 
 ## 12. Contracts
@@ -286,6 +288,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.11.0 | 2026-11-01 | Buffy (agente) (CR-060) | Entrada manual del código de vinculación sin cámara (§3, §4, §8.4, §9-E5, §10, §11-R20); wire y criptografía sin cambios; TEST-0124 |
 | 1.12.0 | 2026-11-01 | Buffy (agente) (CR-056 + CR-057) | U6 «Reconectando»: corte en U4 entra a U6 e intenta `pair_resume` mientras la retención de 60 000 ms viva (SPEC-001 §8.2); U2→U3 y U1→U3 resuelta `s` vía mDNS (SPEC-009) antes de abrir TCP; TEST-0130/0131/0134 |
 | 1.14.0 | 2026-11-26 | Buffy (agente) (CR-121) | R23: notificación de la sesión visible en segundo plano — permiso `POST_NOTIFICATIONS` pedido al entrar en sesión y texto que distingue transmisión (V1/V2) de sesión conectada; TEST-0214 |
+| 1.15.0 | 2026-11-26 | Buffy (agente) (CR-102) | R24/§6: «Desconectar dispositivo» envía `pair_revoke` en un socket nuevo y olvida la vinculación sin esperar `pair_ack`; TEST-0195 |
 | 1.13.0 | 2026-11-06 | Buffy (agente) (CR-085 + CR-086) | R22 definitiva: cuatro anillos compactos GPU · CPU · RAM · VRAM con color propio, FPS grande y temps CPU/GPU; FAN se retira de la UI; VRAM como RAM (usada al centro, arco usada/total) con «—» sin par válido, transición circular de 700 ms y brillo de carga continuo de 1800 ms que solo corre con dato y vista visible (v2); TEST-0177/0180/0181/0182 |
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft: lado app de REQ-002 (escaneo + Pairing UI) sobre el contrato de SPEC-001 |
 | 1.0.0 | 2026-10-07 | Twinpad team | `Approved` (decisión del dueño, 2026-10-07); DoD verificado |

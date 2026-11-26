@@ -51,6 +51,10 @@ sealed class HandshakeMessage {
     /** app → servidor: reanudación de la sesión retenida (CR-056, §8.2).
      * El proof cubre el dominio fijo §4.2 con la session_key ORIGINAL. */
     data class Resume(val sessionId: String, val nonceC: String, val proof: String) : HandshakeMessage()
+
+    /** app → servidor: revoca la vinculación guardada (CR-102, SPEC-001 §8.3).
+     * Se envía sola en un socket nuevo; el proof cubre `"twinpad.v1 revoke"`. */
+    data class Revoke(val sessionId: String, val proof: String) : HandshakeMessage()
 }
 
 /**
@@ -81,6 +85,8 @@ object HandshakeCodec {
             is HandshakeMessage.Resume ->
                 """{"type":"pair_resume","session_id":"${msg.sessionId}",""" +
                     "\"nonce_c\":\"${msg.nonceC}\",\"proof\":\"${msg.proof}\"}"
+            is HandshakeMessage.Revoke ->
+                """{"type":"pair_revoke","session_id":"${msg.sessionId}","proof":"${msg.proof}"}"""
         }
 
     fun decode(line: String): HandshakeMessage {
@@ -99,6 +105,7 @@ object HandshakeCodec {
             "ping" -> HandshakeMessage.Ping(decodeHeartbeatCounter(obj))
             "pong" -> HandshakeMessage.Pong(decodeHeartbeatCounter(obj))
             "pair_resume" -> decodeResume(obj)
+            "pair_revoke" -> decodeRevoke(obj)
             else -> throw unknownType(type)
         }
     }
@@ -136,6 +143,13 @@ object HandshakeCodec {
         val nonceC = obj.stringField("nonce_c").also { expectLen(it, NONCE_BYTES) }
         val proof = obj.stringField("proof").also { expectLen(it, NONCE_BYTES) }
         return HandshakeMessage.Resume(sessionId, nonceC, proof)
+    }
+
+    /** CR-102 (§4.2): session_id 16 B + proof 32 B (decode estricto). */
+    private fun decodeRevoke(obj: JsonObject): HandshakeMessage.Revoke {
+        val sessionId = obj.stringField("session_id").also { expectLen(it, SESSION_ID_BYTES) }
+        val proof = obj.stringField("proof").also { expectLen(it, NONCE_BYTES) }
+        return HandshakeMessage.Revoke(sessionId, proof)
     }
 
     private fun decodeError(obj: JsonObject): HandshakeMessage.Error {

@@ -7,6 +7,7 @@ import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.stream.StreamStats
 import com.twinpad.android.app.wire.HandshakeCodec
+import com.twinpad.android.app.wire.HandshakeCrypto
 import com.twinpad.android.app.wire.HandshakeMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -170,9 +171,11 @@ class PairingViewModelTest {
         }
     }
 
-    /** TEST-0195 — verifies CR-094 §2.3: «Desconectar» cierra la sesión y
-     * quita la vinculación local, así que al reabrir la app no se reanuda lo
-     * que el usuario desconectó. Se usa TCP loopback real (test-strategy §10). */
+    /** TEST-0195 — verifies CR-094 §2.3 + CR-102 (SPEC-001 §8.3):
+     * «Desconectar» envía `pair_revoke` por un socket nuevo (proof válido
+     * sobre la session_key guardada), cierra la sesión y quita la vinculación
+     * local, así que al reabrir la app no se reanuda lo que el usuario
+     * desconectó. Se usa TCP loopback real (test-strategy §10). */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun disconnectForgetsTheSavedLink() {
@@ -232,14 +235,59 @@ class PairingViewModelTest {
                 }
             }
             assertEquals(1, links.size)
+            val saved = links.single()
+            // CR-102: el revoke viaja solo en un socket NUEVO; se acepta aquí,
+            // después de que el socket de sesión ya está establecido.
+            val revokeLine = acceptRevoke(server)
 
             viewModel.onDisconnectRequested()
             assertEquals(PairingUiState.Idle, viewModel.uiState.value)
             assertEquals("Desconectar debe olvidar la vinculación local", 0, links.size)
+            assertRevokeSent(revokeLine.get(10, TimeUnit.SECONDS), saved)
             server.close()
         } finally {
             Dispatchers.resetMain()
         }
+    }
+
+    /** CR-102: acepta el socket de revocación (socket NUEVO, posterior al de
+     * sesión) y devuelve su primera línea. */
+    private fun acceptRevoke(server: ServerSocket): CompletableFuture<String> {
+        val line = CompletableFuture<String>()
+        val thread =
+            Thread {
+                runCatching {
+                    server.accept().use { socket ->
+                        line.complete(
+                            BufferedReader(InputStreamReader(socket.getInputStream())).readLine(),
+                        )
+                    }
+                }
+            }
+        thread.isDaemon = true
+        thread.start()
+        return line
+    }
+
+    /** CR-102: la línea es `pair_revoke` con session_id guardado y proof
+     * recomputado sobre `"twinpad.v1 revoke"` con la session_key guardada. */
+    private fun assertRevokeSent(
+        line: String,
+        saved: com.twinpad.android.app.ui.SavedLink,
+    ) {
+        val revoke = HandshakeCodec.decode(line)
+        assertTrue("el socket de revocación debe llevar pair_revoke", revoke is HandshakeMessage.Revoke)
+        revoke as HandshakeMessage.Revoke
+        assertEquals(saved.sessionId, revoke.sessionId)
+        assertEquals(
+            HandshakeCrypto.encodeB64(
+                HandshakeCrypto.computeRevokeProof(
+                    saved.sessionKey,
+                    HandshakeCrypto.decodeB64(saved.sessionId),
+                ),
+            ),
+            revoke.proof,
+        )
     }
 
     /**
