@@ -674,12 +674,12 @@ class PairingActivity : AppCompatActivity() {
             applyVideoScale(drawer.load())
         }
         val streaming = state.state == StreamState.STREAMING
-        // CR-112: el contenedor del video queda SIEMPRE visible. Sin transmisión
-        // hace de tapete de mesa (capa por debajo de los controles) en vez del
-        // SurfaceView negro; ocultarlo era la causa de la pantalla negra.
+        // CR-112/CR-127: contenedor siempre visible (tapete sin stream) y
+        // SurfaceView sólo oculta en INACTIVE: destruirla en INTERRUPTED cortaba
+        // el canal (attachMediaSurface(null)) y la recuperación no reconectaba.
         sessionView<View>(R.id.video_surface_container).background =
             if (streaming) null else ContextCompat.getDrawable(this, R.drawable.bg_table)
-        sessionView<SurfaceView>(R.id.video_view).isVisible = streaming
+        sessionView<SurfaceView>(R.id.video_view).isVisible = state.state != StreamState.INACTIVE
         // CR-079: la vista de espera CR-076 ahora tiene dos modos (fullscreen
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)

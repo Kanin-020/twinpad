@@ -7,6 +7,7 @@ import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.stream.H264MediaClient
 import com.twinpad.android.app.stream.H264SurfaceDecoder
 import com.twinpad.android.app.stream.MediaClient
+import com.twinpad.android.app.stream.MediaReconnectSchedule
 import com.twinpad.android.app.stream.StreamState
 import com.twinpad.android.app.stream.StreamStats
 import com.twinpad.android.app.stream.StreamUiState
@@ -21,10 +22,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
-
-private const val MEDIA_RECOVERY_WINDOW_MS = 10_000L
-private const val MEDIA_RECONNECT_INITIAL_DELAY_MS = 250L
-private const val MEDIA_RECONNECT_MAX_DELAY_MS = 2_000L
 
 /**
  * Capacidad del canal entre lector media y feeder del decodificador. Con 2
@@ -343,24 +340,27 @@ internal class PairingMediaSession(
         scheduleReconnect()
     }
 
+    /** CR-127 (SPEC-003 §6/§8.2): la recuperación no caduca mientras el
+     * `stream_start` siga vigente. Tras la ventana densa de 10 s el canal
+     * sigue reintentándose cada 10 s y conserva dimensiones/`stream_start`,
+     * de modo que un corte largo no deja el video muerto para siempre. */
     private fun scheduleReconnect() {
         if (reconnectJob?.isActive == true) return
         val expectedStart = streamStartLine ?: return
         val expectedSurface = surface ?: return
         reconnectJob =
             scope.launch(Dispatchers.IO) {
-                val deadline = SystemClock.elapsedRealtime() + MEDIA_RECOVERY_WINDOW_MS
-                var delayMs = MEDIA_RECONNECT_INITIAL_DELAY_MS
-                while (isRecoveryActive(expectedStart, expectedSurface, deadline)) {
+                val lostAt = SystemClock.elapsedRealtime()
+                var attempt = 0
+                while (isRecoveryActive(expectedStart, expectedSurface)) {
                     if (currentStreamState().state == StreamState.STREAMING) {
                         reconnectJob = null
                         return@launch
                     }
                     if (client == null) connectIfReady()
-                    delay(delayMs)
-                    delayMs = (delayMs * 2).coerceAtMost(MEDIA_RECONNECT_MAX_DELAY_MS)
+                    delay(MediaReconnectSchedule.delayMs(SystemClock.elapsedRealtime() - lostAt, attempt))
+                    attempt++
                 }
-                finishRecovery(expectedStart, expectedSurface)
                 reconnectJob = null
             }
     }
@@ -368,28 +368,7 @@ internal class PairingMediaSession(
     private fun isRecoveryActive(
         startLine: String,
         output: Surface,
-        deadline: Long,
-    ): Boolean =
-        streamStartLine == startLine && surface === output &&
-            machine.state is PairingUiState.Linked && SystemClock.elapsedRealtime() < deadline
-
-    private fun finishRecovery(
-        startLine: String,
-        output: Surface,
-    ) {
-        if (
-            streamStartLine != startLine || surface !== output ||
-            currentStreamState().state == StreamState.STREAMING
-        ) {
-            return
-        }
-        closeChannel()
-        streamMachine.reset()
-        val current = currentStreamState()
-        setStreamState(current.copy(state = StreamState.INACTIVE))
-        dimensions = null
-        streamStartLine = null
-    }
+    ): Boolean = streamStartLine == startLine && surface === output && machine.state is PairingUiState.Linked
 
     private fun closeChannel() {
         generation.incrementAndGet()

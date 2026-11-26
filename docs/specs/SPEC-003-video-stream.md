@@ -4,13 +4,13 @@
 |---|---|
 | ID | SPEC-003 |
 | Title | Stream de video de la Segunda pantalla (H.264/AVC) |
-| Version | 1.17.0 |
+| Version | 1.18.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-004 (primario), REQ-005 (parcial: solo video) |
 | Realized by | DES-003 (CR-014; Draft), DES-004 (CR-020; Draft) |
-| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132, TEST-0138, TEST-0139, TEST-0140, TEST-0162, TEST-0163, TEST-0164 |
-| Last updated | 2026-11-12 |
+| Verified by | TEST-071, TEST-072, TEST-073, TEST-074, TEST-082, TEST-051, TEST-054, TEST-088, TEST-0131, TEST-0132, TEST-0138, TEST-0139, TEST-0140, TEST-0162, TEST-0163, TEST-0164, TEST-0224 |
+| Last updated | 2026-11-26 |
 
 ## 1. Purpose
 
@@ -107,7 +107,8 @@ Estados del stream, independientes del estado de sesión de SPEC-002:
 | `V1` | `stream_stop` | `V0` | cierra canal, libera decoder y muestra estado inactivo |
 | `V1` | sin AU ≥2 s o corte del socket media | `V2` | reconecta y reautentica si Pairing continúa activo (§8.2) |
 | `V2` | handshake media nuevo + IDR | `V1` | nueva subclave/counter y recuperación sin re-pairing |
-| `V2` | Pairing finalizado o recuperación ≥10 s | `V0` | libera recursos; estado de sesión según SPEC-002 |
+| `V2` | recuperación ≥10 s | `V2` | mantiene el último frame y la Surface; reintento espaciado cada 10 s mientras siga vigente el `stream_start` (CR-127) |
+| `V2` | Pairing finalizado o `stream_stop` | `V0` | libera recursos; estado de sesión según SPEC-002 |
 
 Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera todos los recursos.
 
@@ -132,6 +133,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 
 - **Trigger:** pérdida del TCP media <10 s con Pairing activo.
 - **Flow:** Android conserva `session_id` y `session_key` solo en memoria, reconecta a `server_addr:8425`, genera `nonce_c` fresco y repite §4.2. El servidor valida el Pairing vivo, genera `nonce_s` y solicita IDR para el nuevo suscriptor. Nonces/subclave/counter son nuevos.
+- **Reintento tras la ventana densa (CR-127):** si a los 10 s no hubo handshake ni IDR, Android mantiene el stream en `V2` con el último frame y la Surface, y repite el intento cada 10 s mientras siga vigente el mismo `stream_start`; `stream_stop` o el fin del Pairing lo terminan.
 - **Result:** decodificación desde IDR sin re-escanear QR. Si Pairing terminó, se requiere Pairing nuevo.
 
 ### 8.3 Cambio de Plugin seleccionado
@@ -164,7 +166,7 @@ Invariant: V1/V2 requieren Pairing activo; cerrar Pairing fuerza V0 y libera tod
 | handshake media sin Pairing activo, SessionId desconocido o HMAC inválido | cierra TCP sin enviar ni aceptar AU | sin respuesta/payload |
 | Pairing cerrado o revocado | socket media asociado se cierra inmediatamente | estado de sesión según SPEC-002 |
 | sin AU ≥2 s con Pairing vivo | V2 e indicador de reconexión mientras se reintenta TCP media | indicador, no error final |
-| recuperación del canal media ≥10 s | permanece Pairing activo pero stream pasa a V0 | indicador "sin segunda pantalla activa" |
+| recuperación del canal media ≥10 s | permanece Pairing activo, stream en V2 con el último frame y reintento espaciado cada 10 s hasta handshake+IDR o `stream_stop` | indicador de reconexión, no error final |
 
 ## 10. Edge cases
 
@@ -300,6 +302,8 @@ La interoperabilidad y las mediciones físicas de FPS, latencia, CPU y energía 
 | 1.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Fuente exclusiva Plugin seleccionado; sin captura/demo Server y reinicio limpio al cambiar fuente |
 | 1.4.0 | 2026-10-20 | Product owner (CR-014) | Sustituye JPEG/tiles por AVC; OpenH264 en Cemu, relay TCP 8425 cifrado AES-256-GCM y MediaCodec SurfaceView |
 | 1.5.0 | 2026-10-23 | Product owner (CR-020) | Añade encoder hardware H.264 opt-in en Cemu con fallback OpenH264 CPU; wire y perfil invariantes |
-| 1.6.0 | 2026-10-27 | Product owner (CR-025) | R9: modo de escalado contain/expand como presentación local de Android || 1.7.0 | 2026-10-27 | Product owner (CR-026) | Pantalla limpia en V1/V2: sin texto superpuesto ni marco de controles || 1.8.0 | 2026-10-29 | Product owner (CR-036) | Continuidad del video: sin recreación de encoder por cadencia medida (solo metadata de rate-control) y repetición del último AU del DRC cada ≤100 ms con plugin conectado; wire y perfil intactos |
+| 1.6.0 | 2026-10-27 | Product owner (CR-025) | R9: modo de escalado contain/expand como presentación local de Android |
+| 1.7.0 | 2026-10-27 | Product owner (CR-026) | Pantalla limpia en V1/V2: sin texto superpuesto ni marco de controles || 1.8.0 | 2026-10-29 | Product owner (CR-036) | Continuidad del video: sin recreación de encoder por cadencia medida (solo metadata de rate-control) y repetición del último AU del DRC cada ≤100 ms con plugin conectado; wire y perfil intactos |
+| 1.18.0 | 2026-11-26 | Buffy (agente) (CR-127) | §6/§8.2/§9: la recuperación del canal media no caduca a los 10 s — V2 conserva el último frame y la Surface y reintenta cada 10 s mientras el `stream_start` siga vigente; TEST-0224 |
 
 
