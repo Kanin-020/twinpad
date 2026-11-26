@@ -324,5 +324,82 @@ fn session_running_true_emits_pings_and_false_stops_them() {
     );
 }
 
+/// TEST-0189 — verifies SPEC-001 §4.3 HB7 (CR-099): el heartbeat es estado
+/// POR SOCKET. La conexión nueva de `pair_resume` arranca su propio contador
+/// de pings en 0, su propio watchdog HB4 y no hereda el último pong del
+/// socket anterior; un `t` que el socket viejo nunca vio se descarta.
+#[test]
+fn new_control_socket_restarts_ping_counter_and_liveness() {
+    fn control_pair() -> (TcpListener, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_millis(2_000)))
+            .unwrap();
+        (listener, client)
+    }
+
+    // Conexión 1 (socket viejo): emisor y watchdog propios, como en main.rs.
+    let (listener_a, client_a) = control_pair();
+    let (server_a, _) = listener_a.accept().unwrap();
+    let running_a = Arc::new(AtomicBool::new(true));
+    let (pinger_a, pings_a) = heartbeat::spawn_ping_sender(
+        true,
+        server_a.try_clone().ok(),
+        Arc::new(std::sync::Mutex::new(())),
+        Arc::clone(&running_a),
+        Duration::from_millis(25),
+    );
+    let mut heartbeat_a = heartbeat::SessionHeartbeat::with_deadline(500, pings_a);
+    let mut reader_a = BufReader::new(client_a.try_clone().unwrap());
+    let mut line_a = String::new();
+    reader_a.read_line(&mut line_a).unwrap();
+    let HandshakeMsg::Ping { t: t_a } = message::decode(line_a.trim_end()).unwrap() else {
+        panic!("HB1: esperaba un ping en la conexión 1, obtuve {line_a}");
+    };
+    assert_eq!(t_a, 0, "HB1: el primer ping de la conexión arranca en t=0");
+    assert!(heartbeat_a.on_pong(t_a), "HB3: el eco t=0 es válido");
+
+    // Corte del socket viejo: el emisor se detiene con la misma bandera que
+    // apaga la sesión y el lector viejo ya no existe.
+    running_a.store(false, Ordering::Release);
+    pinger_a.unwrap().join().unwrap();
+
+    // Conexión 2 (socket nuevo, el de `pair_resume`): estado desde cero.
+    let (listener_b, client_b) = control_pair();
+    let (server_b, _) = listener_b.accept().unwrap();
+    let running_b = Arc::new(AtomicBool::new(true));
+    let (pinger_b, pings_b) = heartbeat::spawn_ping_sender(
+        true,
+        server_b.try_clone().ok(),
+        Arc::new(std::sync::Mutex::new(())),
+        Arc::clone(&running_b),
+        Duration::from_millis(25),
+    );
+    let mut heartbeat_b = heartbeat::SessionHeartbeat::with_deadline(500, pings_b.clone());
+    let mut reader_b = BufReader::new(client_b.try_clone().unwrap());
+    let mut line_b = String::new();
+    reader_b.read_line(&mut line_b).unwrap();
+    let HandshakeMsg::Ping { t: t_b } = message::decode(line_b.trim_end()).unwrap() else {
+        panic!("HB1: esperaba un ping en la conexión 2, obtuve {line_b}");
+    };
+    assert_eq!(t_b, 0, "HB7: el contador se reinicia en el socket nuevo");
+    assert!(
+        heartbeat_b.on_pong(t_b),
+        "HB7: el primer pong del socket nuevo se acepta (estado no heredado)"
+    );
+    assert!(
+        !heartbeat_b.on_pong(t_b + 5),
+        "HB3/HB7: un `t` que el socket nuevo aún no emitió no se acepta"
+    );
+    assert!(
+        pings_b.load() >= 1,
+        "HB7: el contador del socket nuevo cuenta sus propios pings"
+    );
+
+    running_b.store(false, Ordering::Release);
+    pinger_b.unwrap().join().unwrap();
+}
+
 // Nota de proceso: el emisor HB1 usa el lock de línea de la sesión (ENG P10):
 // un ping nunca intercala una línea NDJSON grande de video/audio.
