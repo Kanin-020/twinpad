@@ -89,14 +89,20 @@ internal class GamepadBtSwitcher(
         return manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, MAX_BATTERY_PERCENT)
     }
 
-    /** CR-059: el permiso llegó en caliente; reinicia el armado si la LAN
-     * sigue caída (el diálogo lo lanza la Activity al observar la demanda). */
+    /** CR-059: el permiso llegó en caliente; rearma el canal si no está armado.
+     * CR-122: la Activity pide BLUETOOTH_CONNECT al abrir y el resultado llega
+     * concedido aunque ya lo estuviera: recrear el canal HID en cada arranque
+     * cerraba el enlace recién abierto y dejaba el registro anterior ocupado
+     * (reintentos de 5-20 s), así que el canal existente sólo se reintenta. */
     fun onPermissionGranted() {
-        Log.i(TAG, "bt-hid: permiso concedido; rearmando el canal BT")
-        val context = appContext ?: return
-        btHid?.stop()
-        btHid = null
-        startChannel(context)
+        val hid = btHid
+        val context = appContext
+        if (hid == null) {
+            if (context != null) startChannel(context)
+            return
+        }
+        Log.i(TAG, "bt-hid: permiso concedido; se reintenta el canal existente")
+        hid.retryNow()
     }
 
     /** Libera el perfil si quedó armado (solo al destruir el ViewModel). */
