@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0217 |
+| TEST | TEST-0218 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -184,6 +184,7 @@
 | REQ-003 | SPEC-011 | `-` | TEST-0209 | Passed (JVM, 2026-11-25) | SPEC-011: mapeo predeterminado (equivalencias de SPEC-004 §8.1), captura de eje por valor absoluto y sentido, reemplazo de la entrada de una canónica sin dejar de admitir duplicados entre canónicas, cruceta compuesta con teclas/ejes y clave de modelo con `vendorId`/`productId`/`name` (CR-116). Test JVM `GamepadMappingTest` |
 | REQ-003 | SPEC-004 | `-` | TEST-0215 | Passed (JVM, 2026-11-26) | CR-122: el canal BT HID intenta primero el host que conectó la última vez y conserva el orden de emparejados cuando no hay host recordado o ya no está emparejado. Test JVM `HidHostOrderTest` |
 | REQ-003 | SPEC-011 | `-` | TEST-0217 | Passed (JVM, 2026-11-26) | CR-123/CR-124: una fila de botón acepta la combinación pulsada a la vez (p. ej. `LB`+`RB`), se guarda como `c:102+103` en el perfil y solo activa la entrada canónica cuando todas sus teclas están pulsadas; la captura acumula hasta soltar todas (una tecla suelta sigue siendo un botón) y caduca a los 10 s sin entrada. Tests JVM `GamepadCombinationTest` |
+| REQ-003 | SPEC-004 | `-` | TEST-0218 | Passed (JVM, 2026-11-26) | CR-125: la ventana de la ronda de conexión HID vence a los 10 s, se consume una sola vez para no duplicar el reintento, una ronda resuelta (conectada, caída o canal detenido) no vence y una ronda nueva reinicia la cuenta. Test JVM `HidConnectWatchdogTest` |
 | REQ-003 | SPEC-004 | `-` | TEST-0216 | Passed (JVM, 2026-11-26) | CR-122: al buscar host del canal BT HID se omiten los emparejados `AUDIO_VIDEO` (radio de coche, auriculares) —no aceptan HID y gastan un page timeout por ronda— y se aceptan las clases con interfaz de periférico o sin clase declarada. Test JVM `HidHostOrderTest` (`isLikelyHost`) |
 | REQ-004 | SPEC-002, SPEC-003 | DES-002 | TEST-0214 | Passed (JVM, 2026-11-26) | CR-121: la notificación del servicio de sesión (señal visible en segundo plano) dice «Transmitiendo la Segunda pantalla al teléfono» con frames en V1/V2 y «Segunda pantalla y controles conectados al PC» sin frames, por el canal de sesión. Permiso `POST_NOTIFICATIONS` pedido al entrar en sesión (Android 13+). Test Robolectric `SessionNotificationTest` |
 | REQ-003 | SPEC-004, SPEC-011 | DES-002 | TEST-0213 | Passed (JVM, 2026-11-26) | CR-120: el botón Home físico es el Guide/PS del mando — `KEYCODE_BUTTON_MODE` (110) activa `extra_1` y ya no el bit de L3, L3/R3 usan `BUTTON_THUMBL`/`BUTTON_THUMBR` (106/107) y la fila «Home» del mapeador viene asignada en el mapeo predeterminado. Test JVM `HomeButtonMappingTest` |
@@ -347,6 +348,7 @@
 | CR-121 | SPEC-002 §11 R23: notificación del servicio de sesión visible en segundo plano, permiso `POST_NOTIFICATIONS` pedido al entrar en sesión y texto que distingue transmisión (V1/V2) de sesión conectada | 2026-11-26 | Approved por la petición del owner; SPEC-002 1.14.0, código y TEST-0214 aplicados |
 | CR-123 | SPEC-011 §3/§4/§6/§7/§9: una fila de botón acepta una combinación de teclas, capturada al soltarlas todas y activa solo con todas pulsadas (`c:102+103`) | 2026-11-26 | Approved por la petición del owner; SPEC-011 0.2.5, código y TEST-0217 aplicados |
 | CR-124 | SPEC-011 §6 M3/§7.4/§9 AC-9/§10: la captura caduca a los 10 s sin entrada y el mapeador muestra los segundos restantes | 2026-11-26 | Approved por la petición del owner; SPEC-011 0.2.6 y TEST-0217 aplicados |
+| CR-125 | SPEC-004 §8.3: watchdog de la ronda de conexión BT HID — 10 s sin `CONNECTED` aborta los enlaces pendientes y reintenta con el backoff de 1,5 s a 8 s | 2026-11-26 | Approved por la petición del owner; SPEC-004 1.18.0, código y TEST-0218 aplicados |
 | CR-120 | SPEC-004 §4/§8.3, SPEC-011 §4: Home físico = Guide/PS (`KEYCODE_BUTTON_MODE`), Home asignado por defecto y un solo transporte de `input_report` por reporte (BT si está operativo, si no LAN); la conexión BT HID prueba todos los emparejados clásicos por ronda | 2026-11-26 | Approved por el reporte del owner; código aplicado (TEST-0213 JVM); banco físico pendiente (Home en Steam, latencia de detección y doble input en Cemu) |
 | — | Informe 2026-10-19: separate view DRC path review and 60 fps performance evidence/recommendations (`docs/engineering/2026-10-19-cemu-twinpad-60fps.md`); implementación Base64URL preasignado para reducir coste del IPC sin cambiar el wire | 2026-10-19 | Analysis/optimization; Cemu debug build/relink passed, TEST-065 runtime assertions and device E2E pending |
 

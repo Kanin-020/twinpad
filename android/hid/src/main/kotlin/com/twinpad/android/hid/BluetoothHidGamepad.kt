@@ -9,7 +9,9 @@ import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -70,6 +72,13 @@ class BluetoothHidGamepad(context: Context) {
     private var registerRetryJob: ScheduledFuture<*>? = null
     private var connectAttempts = 0
     private var connectRetryJob: ScheduledFuture<*>? = null
+
+    /** CR-125: vigila que una ronda de conexión HID no quede colgada sin callback. */
+    private val connectWatchdog = HidConnectWatchdog()
+    private var connectWatchdogJob: ScheduledFuture<*>? = null
+
+    /** Equipos con un enlace HID pendiente (connect aceptado o STATE_CONNECTING) para abortarlos al vencer. */
+    private val connectingDevices = ConcurrentHashMap.newKeySet<BluetoothDevice>()
 
     /** Estado observable del canal. */
     fun currentChannel(): Channel = channel
@@ -156,6 +165,8 @@ class BluetoothHidGamepad(context: Context) {
     fun stop() {
         cancelRegisterRetry()
         cancelConnectRetry()
+        resolveConnectWatchdog()
+        connectingDevices.clear()
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
         val profile = hidProfile
         if (profile != null) {
@@ -230,6 +241,8 @@ class BluetoothHidGamepad(context: Context) {
                 val wasConnected = channel == Channel.CONNECTED
                 hidProfile = null
                 host = null
+                resolveConnectWatchdog()
+                connectingDevices.clear()
                 channel = Channel.IDLE
                 if (wasConnected) {
                     listenerRef.get()?.onChannelLost()
@@ -247,6 +260,8 @@ class BluetoothHidGamepad(context: Context) {
                     Log.i(TAG, "bt-hid: registro HID no activo en el SO; reintentando")
                     // El registro se perdió: sin volver a IDLE el reintento no actúa.
                     cancelConnectRetry()
+                    resolveConnectWatchdog()
+                    connectingDevices.clear()
                     host = null
                     channel = Channel.IDLE
                     scheduleRegisterRetry()
@@ -281,17 +296,32 @@ class BluetoothHidGamepad(context: Context) {
                         channel = Channel.CONNECTED
                         connectAttempts = 0
                         cancelConnectRetry()
+                        resolveConnectWatchdog()
+                        connectingDevices.clear()
                         // CR-122: recordar el host que funcionó para la próxima.
                         device?.address?.let { prefs().edit().putString(KEY_LAST_HOST, it).apply() }
                         Log.i(TAG, "bt-hid: canal BT listo (host emparejado conectado)")
                         listenerRef.get()?.onChannelReady()
                     }
 
-                    BluetoothProfile.STATE_CONNECTING,
-                    BluetoothProfile.STATE_DISCONNECTING,
-                    -> Log.i(TAG, "bt-hid: estado de enlace HID con el host: $state")
+                    BluetoothProfile.STATE_CONNECTING -> {
+                        // CR-125: el host también puede iniciar el enlace; si no
+                        // había ronda en curso, la ventana se arma aquí.
+                        if (channel != Channel.CONNECTED) {
+                            device?.let { connectingDevices.add(it) }
+                            if (connectWatchdogJob == null) armConnectWatchdog()
+                        }
+                        Log.i(TAG, "bt-hid: estado de enlace HID con el host: $state")
+                    }
+
+                    BluetoothProfile.STATE_DISCONNECTING ->
+                        Log.i(TAG, "bt-hid: estado de enlace HID con el host: $state")
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
+                        device?.let { connectingDevices.remove(it) }
+                        // CR-125: sin enlaces pendientes la ventana ya no aplica;
+                        // el reintento de la ronda lo decide el estado del canal.
+                        if (connectingDevices.isEmpty()) resolveConnectWatchdog()
                         if (channel == Channel.CONNECTED) {
                             host = null
                             channel = Channel.REGISTERED
@@ -421,16 +451,24 @@ class BluetoothHidGamepad(context: Context) {
         Log.i(TAG, "bt-hid: conectando HID a ${candidates.joinToString { it.name ?: it.address }}")
         var requested = false
         for (device in candidates) {
-            try {
-                requested = profile.connect(device) || requested
-            } catch (e: SecurityException) {
-                Log.i(TAG, "bt-hid: conexión sin permiso: ${e.message}")
-                return
+            val accepted =
+                try {
+                    profile.connect(device)
+                } catch (e: SecurityException) {
+                    Log.i(TAG, "bt-hid: conexión sin permiso: ${e.message}")
+                    return
+                }
+            if (accepted) {
+                requested = true
+                // CR-125: se recuerda el intento aunque no llegue CONNECTING.
+                connectingDevices.add(device)
             }
         }
         // CR-122: si el SO no aceptó ningún intento no habrá callbacks de
         // estado; sin esto la ronda quedaba muerta hasta reiniciar la app.
-        if (!requested) scheduleConnectRetry()
+        // CR-125: `connect()` puede devolver true sin ningún callback, así que
+        // la ronda aceptada también arma el watchdog de conexión.
+        if (requested) armConnectWatchdog() else scheduleConnectRetry()
     }
 
     /** Reintenta la conexión al host con tope de 20 s, indefinido: el
@@ -462,6 +500,54 @@ class BluetoothHidGamepad(context: Context) {
     private fun cancelConnectRetry() {
         connectRetryJob?.cancel(false)
         connectRetryJob = null
+    }
+
+    /**
+     * CR-125: arma (o reinicia) la ventana de 10 s de la ronda de conexión.
+     * Una conexión aceptada por el SO no garantiza callbacks: si el page o el
+     * L2CAP quedan colgados, sin este vencimiento no se reintentaba nunca.
+     */
+    private fun armConnectWatchdog() {
+        connectWatchdogJob?.cancel(false)
+        connectWatchdog.arm(SystemClock.elapsedRealtime())
+        connectWatchdogJob =
+            registerRetryExecutor.schedule(
+                {
+                    connectWatchdogJob = null
+                    onConnectTimeout()
+                },
+                HidConnectWatchdog.TIMEOUT_MS,
+                TimeUnit.MILLISECONDS,
+            )
+    }
+
+    private fun resolveConnectWatchdog() {
+        connectWatchdogJob?.cancel(false)
+        connectWatchdogJob = null
+        connectWatchdog.resolve()
+    }
+
+    /**
+     * CR-125: la ronda no llegó a CONNECTED en [HidConnectWatchdog.TIMEOUT_MS].
+     * Se abortan los enlaces pendientes y se reprograma la conexión con el
+     * mismo backoff de 1,5 s a 8 s; el canal queda en REGISTERED.
+     */
+    private fun onConnectTimeout() {
+        if (!connectWatchdog.expireIfDue(SystemClock.elapsedRealtime())) return
+        if (channel == Channel.CONNECTED) return
+        val seconds = HidConnectWatchdog.TIMEOUT_MS / MS_PER_SECOND
+        Log.i(TAG, "bt-hid: enlace HID colgado $seconds s; se aborta la conexión y se reintenta")
+        val profile = hidProfile
+        val pending = connectingDevices.toList()
+        connectingDevices.clear()
+        for (device in pending) {
+            try {
+                profile?.disconnect(device)
+            } catch (e: SecurityException) {
+                Log.i(TAG, "bt-hid: sin permiso para abortar el enlace HID")
+            }
+        }
+        if (profile != null && channel == Channel.REGISTERED) scheduleConnectRetry()
     }
 
     /** Clase mayor Bluetooth del equipo (MISC si el SO no la informa). */

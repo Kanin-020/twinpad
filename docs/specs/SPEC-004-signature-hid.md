@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.17.0 |
+| Version | 1.18.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215, TEST-0218 |
 | Last updated | 2026-11-26 |
 
 ## 1. Purpose
@@ -124,6 +124,13 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
   1,5 s a 8 s sin reprogramar el reintento ya pendiente. El nombre del adaptador
   pasa a «Twinpad» solo si es distinto, para no reiniciar el anuncio Bluetooth
   en cada arranque.
+- **Watchdog de conexión (CR-125):** cada ronda de conexión HID —también la que
+  inicia el host— arma una ventana de 10 s. Si vence sin llegar a `CONNECTED`,
+  la app aborta los enlaces pendientes con `disconnect()` y reprograma la ronda
+  con el backoff de 1,5 s a 8 s, porque `connect()` puede devolver `true` sin
+  ningún callback de estado y el canal quedaría sin reintentar hasta reiniciar
+  la app. Al conectar, al caer el enlace o al detenerse el canal la ventana se
+  cierra y no vence.
 - **Flow:** cada reporte sale por **una sola** ruta (CR-120). Con el canal BT HID
   operativo, el reporte se envía por BT y la sesión LAN no recibe `input_report`;
   si el canal BT no está operativo y la sesión está Linked, el reporte completo
@@ -280,3 +287,4 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.16.0 | 2026-11-26 | Buffy (agente) (CR-122) | §8.3: arranque del canal BT HID al abrir y descubrimiento del host — reintento del registro cuando el SO lo rechaza sin callback, último host primero y reintento de enlace sin reprogramarse en cada caída; TEST-0215 |
 | 1.17.0 | 2026-11-26 | Buffy (agente) (CR-122) | §8.3: rearme idempotente del canal (no se recrea al concederse el permiso), liberación del registro huérfano de la propia app y omisión de emparejados `AUDIO_VIDEO`; banco físico: app abierta → gamepad en el SO del PC en 0,96 s |
 | 1.15.0 | 2026-11-26 | Owner + Buffy (agente) (CR-120) | §4/§8.3: una sola ruta por reporte (BT si está operativo; si no, LAN) para que el juego no vea dos mandos; mientras hay BT, touch e inercia no llegan al Plugin |
+| 1.18.0 | 2026-11-26 | Owner + Buffy (agente) (CR-125) | §8.3: watchdog de la ronda de conexión HID — 10 s sin `CONNECTED` aborta los enlaces pendientes y reintenta con el backoff existente; TEST-0218 |
