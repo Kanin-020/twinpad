@@ -15,6 +15,10 @@ android {
 
     defaultConfig {
         applicationId = "com.twinpad.android.app"
+        // Versión visible de la app: la muestra el sistema (Ajustes › Apps).
+        // versionCode sigue major*10000 + minor*100 + patch.
+        versionCode = 1000
+        versionName = "0.10.0"
         minSdk = 31
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
