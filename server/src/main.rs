@@ -872,6 +872,28 @@ fn main() {
                                         });
                                         continue;
                                     }
+                                    // CR-126: lectura Amiibo del NFC del teléfono hacia Cemu.
+                                    // El teléfono solo la envía con «cemu» seleccionado; el
+                                    // Servidor vuelve a exigir esa selección y descarta la
+                                    // lectura sin el Plugin Cemu vivo.
+                                    if trimmed.starts_with("{\"type\":\"amiibo_tag\"") {
+                                        let cemu_selected = selected_game
+                                            .lock()
+                                            .ok()
+                                            .and_then(|selected| selected.clone())
+                                            .as_deref()
+                                            == Some("cemu");
+                                        // Diagnóstico CR-126: deja huella de si la lectura
+                                        // llegó y si encontró al Cemu seleccionado vivo.
+                                        relay_to_cemu(trimmed, "amiibo_tag", |wire| {
+                                            let delivered =
+                                                games_ref.send_cemu_amiibo_tag(wire, cemu_selected);
+                                            println!(
+                                                "amiibo_tag recibido; Cemu seleccionado={cemu_selected}, reenviado={delivered}"
+                                            );
+                                        });
+                                        continue;
+                                    }
                                     if let Ok(twinpad_core::game::GameMsg::GameSelect { game_id }) =
                                         twinpad_core::game::GameMsg::decode(trimmed)
                                     {

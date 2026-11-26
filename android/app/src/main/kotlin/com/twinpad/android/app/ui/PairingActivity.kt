@@ -899,6 +899,7 @@ class PairingActivity : AppCompatActivity() {
 
     /** Efectos de cámara (DES-002 §4): permiso y Start/Stop. */
     private fun observeCameraEffects() {
+        AmiiboNfcController.attach(this, viewModel)
         lifecycleScope.launch {
             viewModel.cameraEffects.collect { effect ->
                 when (effect) {

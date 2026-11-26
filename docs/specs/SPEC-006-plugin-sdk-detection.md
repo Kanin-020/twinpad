@@ -3,13 +3,13 @@
 |---|---|
 | ID | SPEC-006 |
 | Title | Detección de juego con SDK Twinpad (REQ-006) |
-| Version | 1.29.0 |
+| Version | 1.30.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
-| Implements | REQ-006 (AC-1..AC-6) |
+| Implements | REQ-006 (AC-1..AC-7) |
 | Realized by | DES-004 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-015/CR-016/CR-017/CR-119, Draft; adaptador Cemu) |
-| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079, TEST-092, TEST-093, TEST-094, TEST-095, TEST-096, TEST-097, TEST-098, TEST-099, TEST-0100, TEST-0101, TEST-0102, TEST-0103, TEST-0104, TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
-| Last updated | 2026-11-25 |
+| Verified by | TEST-021, TEST-044, TEST-046, TEST-047, TEST-048, TEST-049, TEST-050, TEST-051, TEST-052, TEST-053, TEST-054, TEST-055, TEST-062, TEST-064, TEST-079, TEST-092, TEST-093, TEST-094, TEST-095, TEST-096, TEST-097, TEST-098, TEST-099, TEST-0100, TEST-0101, TEST-0102, TEST-0103, TEST-0104, TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110, TEST-0220, TEST-0221, TEST-0222, TEST-0223 |
+| Last updated | 2026-11-26 |
 
 ## 1. Purpose
 
@@ -47,6 +47,7 @@ Para terceros, el SDK Twinpad es la vía principal del giroscopio: el snapshot `
 | `mic_request` | mensaje Cemu→Servidor→Android de sesión (CR-035) | `type:"mic_request"`, `on:boolean` exactamente | en cada transición MICOpen/MICClose del juego sobre el HLE `mic` del DRC0 (a demanda/vigente al anunciar o re-seleccionar); no persistido; encola con coalescing en el Servidor (idem `camera_request`) y el teléfono solo captura — y pide permiso `RECORD_AUDIO` — con juego «cemu» seleccionado Y demanda vigente |
 | `keyboard_request` | mensaje Cemu→Servidor→Android de sesión (CR-044) | `type:"keyboard_request"`, `on:boolean`; con `on` true además `text` (texto vigente del form en base64url UTF-8, vacío permitido pero no ausente) y `max_length` (1–4096); con `on` false exactamente sin `text` ni `max_length` | al aparecer el teclado HLE (`SwkbdAppearInputForm`/`SwkbdAppearKeyboard`), en cada cambio del texto del form y al desaparecer (`SwkbdDisappearInputForm`/`SwkbdDisappearKeyboard`; vigente al anunciar o re-seleccionar); no persistido; encola FIFO con drop-old 8 en el Servidor (idem `camera_request`) y re-encola el último estado a la sesión Android vigente/reconectada; Android solo muestra el IME con juego «cemu» seleccionado Y demanda vigente |
 | `keyboard_input` | mensaje Android→Servidor→Cemu de sesión (CR-044) | `type:"keyboard_input"`, `action` en `update`/`confirm`/`cancel`, `text` base64url UTF-8 del texto COMPLETO del form (≤ 2048 bytes; vacío permitido con `update` para borrar todo el texto; `confirm`/`cancel` exactamente vacíos) | por cada edición del campo del IME Android (`update`), al aceptar con el botón del teclado (acción Done) o «Aceptar» (`confirm`) y al descartar con «Cancelar» (`cancel`); no persistido; solo llega al Plugin Cemu vivo seleccionado y Cemu lo aplica al formString del HLE `swkbd` (changeString visible para el juego); `confirm` cierra el form aceptando (decide OK) y `cancel` lo cierra SIN decidir — retrocede sin validar el texto (CR-044) |
+| `amiibo_tag` | mensaje Android→Servidor→Cemu de sesión (CR-126) | `type:"amiibo_tag"`, `present:boolean` exactamente; con `present:true`, `uid` (14 hex minúscula = UID NTAG215 de 7 bytes) y `data` base64url de EXACTAMENTE 540 bytes (volcado completo de páginas 0–134); con `present:false`, exactamente sin `uid` ni `data` | al completar la lectura NFC de un Amiibo (una por presentación; lectura de solo lectura, nunca escritura del tag físico) y al retirarlo; solo con Twinpad visible, sesión vinculada y juego «cemu» seleccionado; no persistido ni reintentado; el Servidor lo reenvía solo al Plugin Cemu vivo y seleccionado; Cemu monta un tag virtual con copia por UID en `<userData>/twinpad/amiibo/<uid>.bin` (creada con los primeros 532 bytes del volcado si no existe; si existe, se conserva el progreso virtual) y la desmonta con `present:false` o al desconectar, conservando la copia |
 | Input Plugin→SDK | mensaje NDJSON por IPC primary | `InputMsg::InputReport` de SPEC-004 §4 | cuando existe snapshot retenido para el Plugin seleccionado |
 | `host_metrics` | mensaje Servidor→Android de sesión | `type:"host_metrics"`, `cpu_percent:u8` en [0, 100], `gpu_percent:u8` opcional en [0, 100], `ram_used_mb:uint32` con 0 ≤ used ≤ total, `ram_total_mb:uint32` ≥ 1, `game_fps:f32` opcional ≥ 0, `cpu_temp_c:u8` opcional (°C del hwmon, CR-085), `gpu_temp_c:u8` opcional (°C del hwmon, CR-085), `vram_used_mb:uint32` y `vram_total_mb:uint32` opcionales y solo como par con 0 ≤ usado ≤ total ≥ 1 (CR-086) | por muestra del Servidor a 2 s durante la sesión (reemplaza la muestra previa; NO persistido). CPU/RAM de `/proc` del host; `gpu_percent` solo si el driver lo expone por sysfs (ausente = «sin dato»); `game_fps` = tasa de publicación (Δgfn/Δs) del Plugin vivo seleccionado, omitido sin juego/frames frescos; CR-085: `cpu_temp_c` del chip de CPU del hwmon (k10temp/zenpower/coretemp, máx de `temp*_input`), `gpu_temp_c` del chip de GPU (amdgpu ou nvidia/nouveau); ausente = «sin dato» (solo hwmon expuesto; card «—», nunca inventos); CR-086: `vram_used_mb`/`vram_total_mb` son el par DRM `mem_info_vram_used`/`mem_info_vram_total` de la tarjeta de video en MiB — presentes solo juntos y coherentes, omitidos ambos si el host no expone el par; no existe `fan_percent`; los gauges de la ventana de espera Android muestran «—» sin dato (CR-076) |
 
@@ -116,6 +117,9 @@ El menú Twinpad de Cemu solo ofrece Configuraciones y Cemu se conecta automáti
 | Fuente callback sin datos durante el jitter buffer | se mantiene el último estado de audio; al finalizar se envía `game_audio_stop` | sin error final |
 | El juego crashea | deja de estar disponible; la sesión (pairing) no se rompe; los streams envían `*_stop` | sin error al usuario |
 | La integración host no inicia/reutiliza el servidor o no obtiene el QR vigente | el host informa el fallo y no inicia Pairing | error observable local del host |
+| `amiibo_tag` inválido (campos extra, `uid` no hex de 14, `data` de tamaño distinto de 540, `present:false` con `uid`/`data`) | el Servidor descarta la línea sin cortar la sesión; Cemu no monta ni desmonta nada | sin error de sesión (log del Servidor) |
+| Lectura NFC fallida o Amiibo ilegible | el teléfono no envía `amiibo_tag`; el tag anterior, si estaba montado, sigue vigente hasta su retiro | sin error al usuario |
+| `amiibo_tag present:true` sin `nn::nfp` inicializado en Cemu | Cemu ignora la lectura; el juego sigue esperando tag | sin error de sesión |
 
 ## 10. Edge cases
 
@@ -151,6 +155,7 @@ El menú Twinpad de Cemu solo ofrece Configuraciones y Cemu se conecta automáti
 | Consulta de QR de integraciones host ↔ Servidor | Servidor PC / Decky (CR-007/CR-009/CR-119) | TCP 127.0.0.1:8423; petición `GET_QR\n`, respuesta NDJSON `{uri, modules, cemu_live}`; Cemu no la consume |
 | Streams que el juego alimenta | SPEC-003 (video), SPEC-005 (audio) | referenciados |
 | Diagnóstico de orientación Cemu (CR-016/CR-017) | SPEC-004 §4 | La ventana externa se alimenta del snapshot de `input_report`; no crea un mensaje nuevo ni se transmite fuera del PC. |
+| Lectura Amiibo por NFC del teléfono (CR-126) | este documento §4; DES-004 §5/§6 | `amiibo_tag` por la sesión autenticada; volcado NTAG215 de 540 B; Cemu consume los primeros 532 B (`AmiiboRawNFCData`) y persiste la copia virtual por UID; el tag físico nunca se escribe. |
 
 ## 13. Examples (Given / When / Then)
 
@@ -236,6 +241,7 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | Demanda de cámara gobernar el envío: `camera_request` Cemu→Android con transiciones del uso HLE y gating combinado (juego «cemu» && demanda vigente) antes de encender la cámara frontal (CR-038) | TEST-097 (core), TEST-098 (servidor), TEST-099 (Android), TEST-0100 (Cemu) |
 | Micrófono del teléfono bajo demanda: `mic_request` Cemu→Android con transiciones MICOpen/MICClose de HLE `mic`, captura con gating combinado (juego «cemu» && demanda vigente) y `mic_chunk` validado hacia la cola drop-old de Cemu (CR-035) | TEST-0101 (core), TEST-0102 (servidor), TEST-0103 (Cemu), TEST-0104 (Android) |
 | Teclado del juego bajo demanda: con Twinpad conectado el overlay ImGui de `swkbd` NO se dibuja y `keyboard_request` (texto vigente + techo) va a Android con transiciones del HLE; el IME del teléfono responde `keyboard_input` (update completo del form / confirm que acepta / cancel que cierra sin decidir) que Cemu aplica al formString (CR-044) | TEST-0106 (core), TEST-0107/0108 (servidor), TEST-0109 (Android), TEST-0110 (Cemu) |
+| Amiibo por NFC del teléfono: `amiibo_tag` (volcado NTAG215 de 540 B, `present`/`uid`/`data`) validado y releado solo a Cemu, montado como tag virtual con copia por UID y desmontado al retirar el tag sin perder los cambios (CR-126) | TEST-0220 (core), TEST-0221 (servidor), TEST-0222 (Android), TEST-0223 (Cemu) |
 
 ## 17. Open questions
 
@@ -279,3 +285,4 @@ Cumple este SPEC quien honre §3, produzca §5, reproduzca §9 con sus triggers,
 | 1.27.0 | 2026-11-06 | Owner (CR-091) | Segundo host experimental Dusklight: inicio manual con reintento, Twinpad como dispositivo seleccionable/auto-seleccionado por puerto y Segunda pantalla H.264 conforme a SPEC-003 §4 (sin JPEG); sin cambio de wire |
 | 1.28.0 | 2026-11-06 | Owner (CR-092) | R14: la auto-selección del puerto 1 exige que esté libre; el host consume el táctil del `input_report` sobre su capa táctil local y aplica `video_config` (resolución escalada y bitrate) con IDR al reconfigurar; sin cambio de wire |
 | 1.29.0 | 2026-11-25 | Owner (CR-119) | Cemu: conexión automática fija, menú Twinpad de solo Configuraciones, sin QR ni inicio manual; el canal QR loopback queda para la web local y Decky; sin cambio de wire |
+| 1.30.0 | 2026-11-26 | Owner + Buffy (agente) (CR-126) | Añade `amiibo_tag` (Android→Cemu): lectura NFC de solo lectura del teléfono (volcado NTAG215 de 540 B), relay solo al Plugin Cemu seleccionado y tag virtual con copia persistente por UID en userData de Cemu; TEST-0220..0223 |

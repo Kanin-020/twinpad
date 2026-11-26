@@ -525,6 +525,12 @@ impl GameRegistry {
         self.send_cemu_camera_frame(line)
     }
 
+    /// Reenvía a Cemu la lectura NFC de un Amiibo del teléfono (CR-126).
+    /// Solo con Cemu vivo Y seleccionado; no se persiste en el Servidor.
+    pub fn send_cemu_amiibo_tag(&self, line: &str, cemu_selected: bool) -> bool {
+        cemu_selected && Self::write_line_to(self.game_writer(Some("cemu")), line)
+    }
+
     /// Solicita a Cemu una IDR inmediata (CR-051, SPEC-003 §8.2). Se dispara
     /// cuando un cliente media se (re)autentica: el teléfono recupera la
     /// imagen en el siguiente frame sin esperar la cadencia periódica de
@@ -998,6 +1004,41 @@ mod tests {
         assert_eq!(received, format!("{line}\n"));
         assert!(registry.unregister("cemu"));
         assert!(!registry.send_cemu_camera_frame(line));
+    }
+
+    // TEST-0221 — verifies SPEC-006 (CR-126): `amiibo_tag` reaches only the live,
+    // selected Cemu Plugin, as a single exact line, and is discarded otherwise.
+    #[test]
+    fn amiibo_tag_routes_only_to_selected_cemu() {
+        use std::io::{BufRead, BufReader};
+
+        let registry = GameRegistry::new();
+        let line = r#"{"type":"amiibo_tag","present":false}"#;
+        // Sin Cemu vivo no hay destino aunque esté seleccionado.
+        assert!(!registry.send_cemu_amiibo_tag(line, true));
+
+        let (server_side, client) = loopback_pair();
+        registry
+            .register(
+                GameInfo {
+                    game_id: "cemu".into(),
+                    game_name: "Cemu".into(),
+                    capabilities: vec!["second_screen".into()],
+                },
+                server_side,
+            )
+            .unwrap();
+        // Cemu vivo pero no seleccionado: se descarta.
+        assert!(!registry.send_cemu_amiibo_tag(line, false));
+        // Cemu vivo y seleccionado: llega exactamente una línea.
+        assert!(registry.send_cemu_amiibo_tag(line, true));
+        let mut received = String::new();
+        BufReader::new(client.try_clone().unwrap())
+            .read_line(&mut received)
+            .unwrap();
+        assert_eq!(received, format!("{line}\n"));
+        assert!(registry.unregister("cemu"));
+        assert!(!registry.send_cemu_amiibo_tag(line, true));
     }
 
     // TEST-0202 — verifies CR-106: the input reset reaches only the live Cemu Plugin,

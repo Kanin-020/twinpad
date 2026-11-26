@@ -4,12 +4,12 @@
 |---|---|
 | ID | DES-004 |
 | Title | Realización del adaptador experimental Cemu bidireccional |
-| Version | 1.19.0 |
+| Version | 1.20.0 |
 | Status | `Draft` |
 | Owner | Eng |
-| Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-119) |
+| Realizes | SPEC-003 §4–§16; SPEC-004 §4/§7/§12; SPEC-005 §8.4; SPEC-006 §3/§4/§7/§9/§12/§16 (CR-005/CR-006/CR-007/CR-008/CR-009/CR-010/CR-012/CR-013/CR-014/CR-015/CR-016/CR-017/CR-018/CR-019/CR-020/CR-021/CR-119/CR-126) |
 | Depends on | DES-003, ADR-007, ADR-008 |
-| Last updated | 2026-11-25 |
+| Last updated | 2026-11-26 |
 
 ## 1. Overview
 
@@ -31,6 +31,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 - `VPADStatus_t`: recibe el estado Twinpad más reciente mientras el Plugin Cemu es el destino seleccionado; controles locales no se combinan.
 - `Temporary Player 1 VPAD`: InputManager crea un VPAD en memoria al conectarse Twinpad solo si no hay uno para Jugador 1; el objeto es propiedad temporal del adaptador, no se persiste y se retira al desconectar. Un VPAD existente nunca se reemplaza.
 - `DRC source`: textura GamePad publicada por el adaptador a la tasa configurada del stream, máximo 60 fps; Separate GamePad View permanece independiente.
+- `Amiibo virtual`: tag NTAG215 leído por NFC del teléfono y montado en el HLE `nn::nfp` como tag virtual (CR-126). Se identifica por el UID de 7 bytes y su copia cifrada vive en `<userData>/twinpad/amiibo/<uid>.bin` (532 B); los cambios que el juego escribe van a esa copia, nunca al tag físico.
 - `Twinpad gyro monitor`: preferencia local host opt-in (default false); conserva las muestras inerciales recibidas y el estado fusionado de VPAD, y los visualiza en una ventana wxWidgets externa y redimensionable (640×480 inicial, mínimo 480×360). Muestra aceleración Android en m/s², velocidad angular Android en rad/s y orientación fusionada VPAD en vueltas; el diagrama usa yaw verde, pitch rojo y roll azul. Sin muestras válidas indica espera; si la fusión no tiene salida indica espera VPAD. No envía mensajes ni toca los datos de juego.
 
 ## 4. Interfaces
@@ -47,6 +48,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 | Cemu audio DRC → Servidor PC | SPEC-005 / SPEC-006 `game_audio_*` | PCM estéreo GamePad/DRC por canal IPC de audio existente; única fuente de Cemu que se retransmite a Android |
 | Cemu salida GamePad DRC → dispositivo PC | callback DRC de Cemu y `g_padAudio` | Conserva salida local y control de volumen DRC; además del PCM IPC, no combinado con TV (CR-012) |
 | Servidor PC → Android | SPEC-003 / SPEC-005 | únicamente si el Plugin Cemu está confirmado para la sesión |
+| Android session → Servidor → Cemu | SPEC-006 `amiibo_tag` (CR-126) | lectura NFC de solo lectura: `present`, `uid` (14 hex) y volcado NTAG215 de 540 B en base64url; Cemu consume 532 B |
 
 ## 5. Data model and persistence
 
@@ -55,6 +57,7 @@ Con sesión activa, Android selecciona el Plugin por `game_id`. Para Cemu, el re
 | Estado del adaptador | `TwinpadInputState` + último `seq` en memoria | Ninguna | Reiniciado al conectar/desconectar o salir del título; incluye muestra `motion` y timestamp del último evento de sensor |
 | Propiedad de input server | `Option<SessionId>` en memoria | Ninguna | Hasta desconexión de la sesión |
 | Preferencia gyro del host | `twinpad_show_gyro_monitor: bool` en config local Cemu; default false | Config XML existente | Hasta que el usuario la cambie |
+| Copia virtual de Amiibo (CR-126) | `<userData>/twinpad/amiibo/<uid>.bin`, 532 B (`AmiiboRawNFCData`, cifrado como un dump Amiibo) | Ninguna: si el archivo no existe se crea con los primeros 532 B del volcado físico; si existe no se reimporta | Indefinida; se conserva al retirar el tag, al desconectar y al cerrar Cemu |
 
 ## 6. Internal flows
 
@@ -92,6 +95,13 @@ sequenceDiagram
   A->>S: keyboard_input (update del texto completo por edición; confirm = OK/Done; cancel = «Cancelar»)
   S->>C: keyboard_input → hilo de render aplica update al formString; confirm queda decidido; cancel cierra sin decidir
   C->>C: el texto va al buffer del juego; la pantalla del teclado Cemu permanece apagada
+  A->>A: lector NFC solo con Twinpad visible, sesión vinculada y «cemu» seleccionado; lee el tag (solo lectura)
+  A->>S: amiibo_tag(present=true, uid, data=540 B NTAG215) al completar la lectura (CR-126)
+  S->>C: amiibo_tag validado → solo al Cemu vivo seleccionado; sin destino se descarta
+  C->>C: crea <userData>/twinpad/amiibo/<uid>.bin con los primeros 532 B si falta; si existe, conserva el progreso virtual
+  C->>C: nnNfp_touchNfcTagFromFile + refresco de presencia cada ~250 ms (nnNfp_update desmonta a los 1500 ms)
+  A->>S: amiibo_tag(present=false) al retirar el tag, salir, pausar o cambiar de juego
+  S->>C: amiibo_tag(present=false) → nnNfp_unloadAmiibo; la copia y sus cambios se conservan
   S->>V: aplica snapshot al VPAD emulado
   V->>V: mapea motion AndroidDSU→DSU y alimenta WiiUMotionHandler/Mahony
   V-->>H: MotionSample fusionado actualiza VPADStatus
@@ -239,6 +249,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | Encoder DRC | Hilo del adaptador procesa readback; preferencia hardware opt-in con fallback OpenH264 CPU, reinicializado si cambia la preferencia/configuración; sin B-frames y respetando dimensiones/FPS configurados |
 | Audio local Cemu vs stream Android (CR-012) | El callback TV alimenta solo `g_tvAudio`; el callback DRC alimenta `g_padAudio` y, en paralelo, el IPC PCM estéreo. No hay dependencia del socket de audio para alimentar el callback TV ni conversión de la salida TV a la fuente Android |
 | Cambio de fuente | el estado de selección por sesión controla video/audio y el Plugin destino de input |
+| Amiibo virtual (CR-126) | La lectura y la copia se aplican en el hilo del input loop del adaptador; `nnNfp_touchNfcTagFromFile`/`nnNfp_unloadAmiibo` toman el lock de `nn::nfp`, y el refresco de presencia lo toma `nnNfp_update` en el hilo del juego. El adaptador mantiene un único tag “presente” y no toca el archivo mientras `present` siga true. La copia se escribe solo desde `nnNfp_writeCurrentAmiibo` (hilo del juego, bajo el lock de nfp) |
 
 ## 8. Error handling
 
@@ -250,6 +261,9 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | Muestra de sensor ausente o inactiva por más de 200 ms | no integrar datos incompletos/obsoletos; conservar la ruta local de movimiento y mostrar espera en monitor |
 | Al salir del título | cerrar sockets y no reintentar hasta cargar otro título |
 | Servidor no disponible | reintentar la conexión cada 2 s mientras el título permanezca activo; no iniciar el servidor ni mostrar QR |
+| `amiibo_tag` inválido (campos extra, UID no hex de 14, volcado ≠ 540 B, `present:false` con datos) | el adaptador descarta la línea y no monta/desmonta nada; el estado vigente no cambia |
+| Lectura NFC sin `nn::nfp` inicializado | el adaptador ignora el tag; el juego debe pedirlo de nuevo y el usuario vuelve a presentarlo |
+| Copia virtual ilegible o corrupta al montar | `nnNfp_touchNfcTagFromFile` falla; el adaptador registra el error y no monta el tag (el archivo no se sobrescribe con el volcado físico si ya existía) |
 
 ## 9. Caching
 
@@ -295,6 +309,7 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | Teclado del juego como Android IME (CR-044, §7.3): transiciones del HLE `swkbd` → `keyboard_request` (texto+techo, `on=false` al cerrar suprimen el teclado emulado), overlay Twinpad con demanda vigente y `keyboard_input` (update/confirm/cancel) aplicado al formString en el hilo de render | `swkbd.cpp` (`swkbd_publishKeyboardRequest`, `swkbd_applyTwinpadKeyboardInput`, `swkbd_cancelInput`), `TwinpadClient::PublishKeyboardRequest/FeedKeyboardInput/ConsumeKeyboardInput`, `KeyboardCodec`, `KeyboardOverlayController` | TEST-0106, TEST-0107, TEST-0108, TEST-0109, TEST-0110 |
 | IDR inmediata al (re)conectar el canal media (CR-051, §7.4): `video_force_idr` server→Cemu marca la IDR del siguiente frame publicado | `TwinpadClient::RequestKeyframe` + bucle de lectura, `GameRegistry::send_cemu_video_force_idr` y hook del listener media (Servidor) | TEST-0113 |
 | HUD por etapas del pipeline de video (CR-053, §7.5): flush de 5 s → `video_stage_stats` juego→server→app, drenaje de última línea vigente y línea HUD «rótulo avg (max)» | `TwinpadClient::FlushVideoMetricsIfDue` (línea por el canal primario), `GameRegistry::push/pop_video_stage_stats`, drain de sesión (Servidor), `VideoStageStatsCodec`, `PairingViewModel/_videoStageStats`, `hud_stage` (PairingActivity) | TEST-0115, TEST-0116, TEST-0117 |
+| Amiibo por NFC del teléfono (CR-126, §5/§6): `amiibo_tag` validado, copia virtual por UID, montaje/refresco/desmontaje en el HLE `nn::nfp` y lectura NFC de solo lectura en Android | `TwinpadAmiiboChannel`, `nn_nfp.cpp` (`nnNfp_touchNfcTagFromFile`/`nnNfp_unloadAmiibo`/`nnNfp_refreshAmiiboTouch`), relay del Servidor, `AmiiboTagCodec` y `AmiiboNfcController` | TEST-0220, TEST-0221, TEST-0222, TEST-0223 |
 | Canal media binario Plugin→Servidor (CR-054, §7.6): `game_media_start` + AU H.264 como [header 32 B LE][anexo] en 127.0.0.1:8426, ingest = `store_access_unit`+`MediaHub::publish`, sin liveness propio; fallback NDJSON en el hilo de envío | `core::game_media` (framing), `server::game_media` (listener), `TwinpadClient::ConnectMedia/CloseMedia/SendMediaFrame/SendBytes`, `VideoSendLoop` binario con fallback | TEST-0118, TEST-0119 |
 
 ## 13. Related decisions
@@ -371,3 +386,4 @@ mensajes del IPC primario junto a `video_config`/`camera_frame`.
 | 1.2.0 | 2026-10-23 | Product owner (CR-020) | Encoder hardware opt-in, fallback OpenH264 CPU y contrato AVC constante |
 | 1.3.0 | 2026-10-24 | Product owner + Twinpad team (CR-021) | Mapea muestras inerciales AndroidDSU a la fusión Cemu VPAD y actualiza monitor/test traceability |
 | 1.19.0 | 2026-11-25 | Owner (CR-119) | Cemu: auto-conexión fija al cargar el título, menú Twinpad de solo Configuraciones, sin QR ni inicio manual; H.264 activo por defecto |
+| 1.20.0 | 2026-11-26 | Buffy (agente) (CR-126) | Amiibo por NFC: `amiibo_tag` Android→Cemu, copia virtual por UID en `<userData>/twinpad/amiibo/<uid>.bin` (532 B, sin reimportar si existe), montaje con `nnNfp_touchNfcTagFromFile`, refresco de presencia cada ~250 ms y desmontaje al retirar el tag; TEST-0220..0223 |

@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- CR-035: micrófono solo bajo demanda (mic_request desde el juego). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- CR-126: lector Amiibo de solo lectura (nunca escribe el tag físico). -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
 
     <application

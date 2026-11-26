@@ -215,6 +215,20 @@ pub enum GameMsg {
         /// con `update` para dejar el form sin texto).
         text: String,
     },
+    /// Android → server → Cemu (CR-126): lectura NFC de un Amiibo desde el
+    /// teléfono. `present:true` monta el tag virtual; `present:false` lo
+    /// retira. El teléfono solo lee: nunca escribe el tag físico.
+    #[serde(rename = "amiibo_tag")]
+    AmiiboTag {
+        /// true: tag leído y presente; false: tag retirado.
+        present: bool,
+        /// UID NTAG215 de 7 bytes en 14 hex minúscula (solo con `present:true`).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        uid: Option<String>,
+        /// Volcado NTAG215 completo (540 B) en base64url (solo con `present:true`).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        data: Option<String>,
+    },
     /// juego → server (canal media binario, CR-054): handshake que precede
     /// a todos los frames binarios de una conexión media del Plugin.
     /// Reemplaza en ese canal al primer `game_frame` NDJSON de ADR-008,
@@ -350,6 +364,15 @@ pub const MIC_MAX_SAMPLES: u16 = 32000;
 
 /// Muestras s16 mínimo por chunk de micrófono: 1 ms a 32 kHz (CR-035).
 pub const MIC_MIN_SAMPLES: u16 = 32;
+
+/// Bytes del volcado NFC completo de un NTAG215 (135 páginas × 4 B, CR-126).
+pub const AMIIBO_DUMP_BYTES: usize = 540;
+
+/// Bytes de la memoria NTAG215 que consume Cemu (`AmiiboRawNFCData`, CR-126).
+pub const AMIIBO_NFC_DATA_BYTES: usize = 532;
+
+/// Longitud en hex del UID NTAG215 de 7 bytes (CR-126).
+pub const AMIIBO_UID_HEX_CHARS: usize = 14;
 
 impl GameMsg {
     /// Serializa a su línea NDJSON canónica (sin `\n` final).
@@ -530,6 +553,36 @@ impl GameMsg {
                             return Err(PairError::MalformedMessage);
                         }
                     }
+                }
+                Ok(())
+            }
+            // CR-126: lectura NFC del teléfono; `present:true` lleva UID y
+            // volcado completo, `present:false` no lleva ninguno de los dos.
+            GameMsg::AmiiboTag { present, uid, data } => {
+                if !*present {
+                    if uid.is_some() || data.is_some() {
+                        return Err(PairError::MalformedMessage);
+                    }
+                    return Ok(());
+                }
+                let Some(uid) = uid else {
+                    return Err(PairError::MalformedMessage);
+                };
+                if uid.len() != AMIIBO_UID_HEX_CHARS
+                    || !uid
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'))
+                {
+                    return Err(PairError::MalformedMessage);
+                }
+                let Some(data) = data else {
+                    return Err(PairError::MalformedMessage);
+                };
+                let dump = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(data)
+                    .map_err(|_| PairError::MalformedMessage)?;
+                if dump.len() != AMIIBO_DUMP_BYTES {
+                    return Err(PairError::MalformedMessage);
                 }
                 Ok(())
             }
@@ -855,6 +908,89 @@ mod tests {
         // Campo desconocido.
         assert_eq!(
             GameMsg::decode(r#"{"type":"mic_request","on":true,"x":1}"#),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-0220 — verifies SPEC-006 (CR-126): `amiibo_tag` round-trip and strict
+    // NTAG215 dump/UID validation.
+    #[test]
+    fn amiibo_tag_round_trips_and_rejects_bad_shapes() {
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let dump = vec![0x5Au8; AMIIBO_DUMP_BYTES];
+        let present = GameMsg::AmiiboTag {
+            present: true,
+            uid: Some("0415aabbccddee".into()),
+            data: Some(engine.encode(&dump)),
+        };
+        let line = present.encode().unwrap();
+        assert!(line.starts_with("{\"type\":\"amiibo_tag\""));
+        assert_eq!(GameMsg::decode(&line).unwrap(), present);
+
+        // Retirada: exactamente sin `uid` ni `data`.
+        let removed = GameMsg::AmiiboTag {
+            present: false,
+            uid: None,
+            data: None,
+        };
+        assert_eq!(
+            GameMsg::decode(&removed.encode().unwrap()).unwrap(),
+            removed
+        );
+
+        // present:false con datos es E4.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"amiibo_tag","present":false,"uid":"0415aabbccddee","data":"{}"}}"#,
+                engine.encode(&dump)
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // Volcado de tamaño distinto de 540 B.
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"amiibo_tag","present":true,"uid":"0415aabbccddee","data":"{}"}}"#,
+                engine.encode(&dump[..AMIIBO_DUMP_BYTES - 1])
+            )),
+            Err(PairError::MalformedMessage)
+        );
+        // UID no hex, mayúsculas o longitud distinta de 14.
+        for bad_uid in [
+            "0415AABBCCDDEE",
+            "0415aabbccdde",
+            "0415aabbccddeeff",
+            "no-hex-uid!!!!",
+        ] {
+            assert_eq!(
+                GameMsg::decode(&format!(
+                    r#"{{"type":"amiibo_tag","present":true,"uid":"{bad_uid}","data":"{}"}}"#,
+                    engine.encode(&dump)
+                )),
+                Err(PairError::MalformedMessage),
+                "uid {bad_uid:?} debió rechazarse"
+            );
+        }
+        // Base64 inválido, campos ausentes y campo desconocido.
+        assert_eq!(
+            GameMsg::decode(
+                r#"{"type":"amiibo_tag","present":true,"uid":"0415aabbccddee","data":"!!"}"#
+            ),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"amiibo_tag","present":true,"uid":"0415aabbccddee"}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"amiibo_tag","present":true,"data":""}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(&format!(
+                r#"{{"type":"amiibo_tag","present":true,"uid":"0415aabbccddee","data":"{}","x":1}}"#,
+                engine.encode(&dump)
+            )),
             Err(PairError::MalformedMessage)
         );
     }

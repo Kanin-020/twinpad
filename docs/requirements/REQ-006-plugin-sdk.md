@@ -4,13 +4,13 @@
 |---|---|
 | ID | REQ-006 |
 | Title | Integración vía SDK Twinpad (modelo B) |
-| Version | 0.3.0 |
+| Version | 0.4.0 |
 | Status | `Implemented` |
 | Priority | `Must` |
 | Owner | Eng lead |
 | Refines | CTX scope item "Integración por plugin (SDK Twinpad)" y CTX-C7 |
 | Implemented by | `-` |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-11-26 |
 
 ## 1. Objective
 
@@ -50,6 +50,7 @@ Twinpad provee un SDK headless que un Juego / Aplicación huesped integra para a
 - [ ] AC-4: Dado un Plugin vivo con capacidad `audio`, cuando publica PCM `s16le`, entonces el Android de la sesión que lo seleccionó reproduce ese audio; ante congestión se descartan chunks PCM antiguos sin bloquear la publicación de frames, y sin fuente PCM permanece en silencio.
 - [ ] AC-5: Dado un Plugin seleccionado que deja de estar vivo, cuando el Servidor publica la lista vigente, entonces Android deja de presentar medios de esa fuente y actualiza la selección según SPEC-002/SPEC-006.
 - [ ] AC-6: Dado un host que inicia el Servidor PC para su Plugin, cuando el proceso no existe, entonces se inicia; si ya está activo, se reutiliza y el host presenta el QR vigente sin duplicar procesos.
+- [ ] AC-7 (CR-126): Dado un dispositivo Android con NFC y el Plugin Cemu seleccionado, cuando el usuario acerca un Amiibo, entonces el teléfono envía la lectura al Servidor y Cemu la monta como tag virtual; el Amiibo físico nunca se escribe y los cambios del juego se guardan en una copia virtual por UID que se conserva al retirar el tag.
 
 ## 7. Non-functional concerns
 
@@ -94,3 +95,4 @@ Twinpad provee un SDK headless que un Juego / Aplicación huesped integra para a
 | 0.1.0 | 2026-10-07 | Twinpad team | Initial draft |
 | 0.2.0 | 2026-10-17 | Owner + Twinpad team (CR-003) | Añade AC-4 para publicación de PCM desde SDK y silencio si no existe fuente |
 | 0.3.0 | 2026-10-18 | Product owner + Twinpad team (CR-010) | Plugin origina A/V; el host inicia/reutiliza Server y presenta QR; Android elige destino y SDK consulta por polling input; Servidor solo retransmite/adapta |
+| 0.4.0 | 2026-11-26 | Owner + Buffy (agente) (CR-126) | Añade AC-7: Amiibo leído por NFC del teléfono y emulado por Cemu con copia virtual por UID, sin escribir el tag físico |
