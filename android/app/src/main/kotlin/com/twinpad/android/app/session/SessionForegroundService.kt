@@ -55,10 +55,18 @@ class SessionForegroundService : Service() {
         // CR-121: la Activity re-arranca el servicio solo con el modo vigente.
         streaming = intent?.getBooleanExtra(EXTRA_STREAMING, streaming) ?: streaming
         goForeground()
+        // El stop puede llegar antes que este callback (p. ej. Desconectar
+        // en el mismo tick del pair_ack): ya se cumplió startForeground y
+        // ahora sí es seguro parar sin que Android mate el proceso.
+        if (stopWhenForeground) {
+            stopWhenForeground = false
+            stopSelf()
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        foreground = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -79,6 +87,7 @@ class SessionForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        foreground = true
     }
 
     companion object {
@@ -93,6 +102,8 @@ class SessionForegroundService : Service() {
             context: Context,
             streaming: Boolean = streamingNow,
         ) {
+            // Un arranque nuevo invalida cualquier stop pendiente.
+            stopWhenForeground = false
             ensureChannel(context)
             // CR-121: la Activity es quien puede pedir el permiso; desde otro
             // Context se confía en el permiso ya concedido.
@@ -146,13 +157,33 @@ class SessionForegroundService : Service() {
         /** Último modo conocido: `start` lo conserva si la Activity no lo pasa. */
         private var streamingNow = false
 
+        /** `startForeground()` ya se ejecutó para la instancia viva. */
+        @Volatile
+        private var foreground = false
+
+        /** Llegó un stop antes de `startForeground()`; se aplica al arrancar. */
+        @Volatile
+        private var stopWhenForeground = false
+
         /** CR-121: extra con el modo de transmisión vigente. */
         private const val EXTRA_STREAMING = "streaming"
 
-        /** Detiene el servicio (fin de sesión o failure). */
+        /**
+         * Detiene el servicio (fin de sesión o failure).
+         *
+         * No se puede llamar `stopService` mientras el `startForegroundService`
+         * recién pedido aún no ejecutó `startForeground`: Android lanza
+         * `ForegroundServiceDidNotStartInTime` y mata el proceso. En ese caso
+         * se marca el stop y el servicio lo consume en `onStartCommand`.
+         */
         fun stop(context: Context) {
             streamingNow = false
-            context.stopService(Intent(context, SessionForegroundService::class.java))
+            if (foreground) {
+                foreground = false
+                context.stopService(Intent(context, SessionForegroundService::class.java))
+            } else {
+                stopWhenForeground = true
+            }
         }
 
         /** CR-121: notificación de la sesión; el texto depende de si el

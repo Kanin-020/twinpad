@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0218 |
+| TEST | TEST-0220 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -185,6 +185,7 @@
 | REQ-003 | SPEC-004 | `-` | TEST-0215 | Passed (JVM, 2026-11-26) | CR-122: el canal BT HID intenta primero el host que conectó la última vez y conserva el orden de emparejados cuando no hay host recordado o ya no está emparejado. Test JVM `HidHostOrderTest` |
 | REQ-003 | SPEC-011 | `-` | TEST-0217 | Passed (JVM, 2026-11-26) | CR-123/CR-124: una fila de botón acepta la combinación pulsada a la vez (p. ej. `LB`+`RB`), se guarda como `c:102+103` en el perfil y solo activa la entrada canónica cuando todas sus teclas están pulsadas; la captura acumula hasta soltar todas (una tecla suelta sigue siendo un botón) y caduca a los 10 s sin entrada. Tests JVM `GamepadCombinationTest` |
 | REQ-003 | SPEC-004 | `-` | TEST-0218 | Passed (JVM, 2026-11-26) | CR-125: la ventana de la ronda de conexión HID vence a los 10 s, se consume una sola vez para no duplicar el reintento, una ronda resuelta (conectada, caída o canal detenido) no vence y una ronda nueva reinicia la cuenta. Test JVM `HidConnectWatchdogTest` |
+| REQ-002 | SPEC-002 | DES-002 | TEST-0219 | Passed (2026-11-26, dispositivo físico 2511FPC34G + servidor release) | CR-102/SPEC-002 R24: en el teléfono real, «Desconectar» en el mismo tick del `pair_ack` deja la app en Idle, borra la vinculación local y el servidor responde el `pair_resume` posterior con la misma `session_id`/`session_key` con E3. Cubre además que el stop de `SessionForegroundService` se difiere hasta `startForeground` y el proceso no muere con `ForegroundServiceDidNotStartInTime`. Test instrumental `PairingRevokeDeviceE2eTest` (`androidTest`, servidor real 192.168.100.140:8420) |
 | REQ-003 | SPEC-004 | `-` | TEST-0216 | Passed (JVM, 2026-11-26) | CR-122: al buscar host del canal BT HID se omiten los emparejados `AUDIO_VIDEO` (radio de coche, auriculares) —no aceptan HID y gastan un page timeout por ronda— y se aceptan las clases con interfaz de periférico o sin clase declarada. Test JVM `HidHostOrderTest` (`isLikelyHost`) |
 | REQ-004 | SPEC-002, SPEC-003 | DES-002 | TEST-0214 | Passed (JVM, 2026-11-26) | CR-121: la notificación del servicio de sesión (señal visible en segundo plano) dice «Transmitiendo la Segunda pantalla al teléfono» con frames en V1/V2 y «Segunda pantalla y controles conectados al PC» sin frames, por el canal de sesión. Permiso `POST_NOTIFICATIONS` pedido al entrar en sesión (Android 13+). Test Robolectric `SessionNotificationTest` |
 | REQ-003 | SPEC-004, SPEC-011 | DES-002 | TEST-0213 | Passed (JVM, 2026-11-26) | CR-120: el botón Home físico es el Guide/PS del mando — `KEYCODE_BUTTON_MODE` (110) activa `extra_1` y ya no el bit de L3, L3/R3 usan `BUTTON_THUMBL`/`BUTTON_THUMBR` (106/107) y la fila «Home» del mapeador viene asignada en el mapeo predeterminado. Test JVM `HomeButtonMappingTest` |
