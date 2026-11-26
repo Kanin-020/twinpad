@@ -30,6 +30,9 @@ object GamepadProfileCodec {
     private const val MIN_LINES = 3
     private const val KEY_PARTS = 2
     private const val AXIS_PARTS = 3
+    private const val COMBO_KEY_PREFIX = "c"
+    private const val COMBO_SEPARATOR = '+'
+    private const val COMBO_MIN_KEYS = 2
 
     fun encode(set: GamepadProfileSet): String =
         buildString {
@@ -153,6 +156,7 @@ object GamepadProfileCodec {
     private fun encodeInput(input: PhysicalInput): String =
         when (input) {
             is PhysicalInput.Key -> "k:${input.keyCode}"
+            is PhysicalInput.Combo -> "$COMBO_KEY_PREFIX:${input.keyCodes.joinToString(COMBO_SEPARATOR.toString())}"
             is PhysicalInput.Axis -> "a:${input.axis}:${input.sign}"
         }
 
@@ -168,9 +172,16 @@ object GamepadProfileCodec {
         return when {
             parts.size == KEY_PARTS && parts[0] == "k" ->
                 parts[1].toIntOrNull()?.let(PhysicalInput::Key)
+            parts.size == KEY_PARTS && parts[0] == COMBO_KEY_PREFIX -> decodeCombo(parts[1])
             parts.size == AXIS_PARTS && parts[0] == "a" -> decodeAxis(parts)
             else -> null
         }
+    }
+
+    private fun decodeCombo(raw: String): PhysicalInput.Combo? {
+        val keyCodes = raw.split(COMBO_SEPARATOR).map { it.toIntOrNull() ?: return null }.distinct()
+        if (keyCodes.size < COMBO_MIN_KEYS) return null
+        return PhysicalInput.Combo(keyCodes.sorted())
     }
 
     private fun decodeAxis(parts: List<String>): PhysicalInput.Axis? {

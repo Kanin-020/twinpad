@@ -2,9 +2,13 @@ package com.twinpad.android.app.hid
 
 import kotlin.math.abs
 
-/** Entrada física de un mando: una tecla o un eje con su sentido. */
+/** Entrada física de un mando: una tecla, una combinación de teclas o un eje
+ * con su sentido. */
 sealed interface PhysicalInput {
     data class Key(val keyCode: Int) : PhysicalInput
+
+    /** Varias teclas pulsadas a la vez (SPEC-011 §7 paso 4, CR-123). */
+    data class Combo(val keyCodes: List<Int>) : PhysicalInput
 
     /** Eje de `MotionEvent`; [sign] normaliza el sentido observado al capturar. */
     data class Axis(val axis: Int, val sign: Int = 1) : PhysicalInput
@@ -83,7 +87,15 @@ data class GamepadMapping(
 
     /** `true` si la tecla pertenece al mapeo vigente (se consume en sesión). */
     fun handlesKey(keyCode: Int): Boolean {
-        return inputs.values.any { list -> list.any { it is PhysicalInput.Key && it.keyCode == keyCode } }
+        return inputs.values.any { list ->
+            list.any { input ->
+                when (input) {
+                    is PhysicalInput.Key -> input.keyCode == keyCode
+                    is PhysicalInput.Combo -> keyCode in input.keyCodes
+                    is PhysicalInput.Axis -> false
+                }
+            }
+        }
     }
 
     companion object {
@@ -232,6 +244,17 @@ const val CAPTURE_AXIS_THRESHOLD = 0.5f
 
 /** Captura de un botón: la siguiente tecla es la entrada. */
 fun captureKey(keyCode: Int): PhysicalInput = PhysicalInput.Key(keyCode)
+
+/** Captura de botones: una tecla sola o la combinación pulsada a la vez
+ * (SPEC-011 §7 paso 4, CR-123). */
+fun captureKeys(keyCodes: List<Int>): PhysicalInput? {
+    val distinct = keyCodes.distinct()
+    return when {
+        distinct.isEmpty() -> null
+        distinct.size == 1 -> PhysicalInput.Key(distinct.first())
+        else -> PhysicalInput.Combo(distinct.sorted())
+    }
+}
 
 /** Captura de un eje: el eje movido con mayor valor absoluto sobre el umbral,
  * con el sentido observado (SPEC-011 §7 paso 4). */

@@ -180,16 +180,25 @@ class PhysicalGamepadAlgo {
     private fun mappedButtons(): Int {
         var mask = 0
         for (button in Button.entries) {
-            if (mapping.inputsOf(button.control).any { it is PhysicalInput.Key && it.keyCode in pressedKeys }) {
+            if (mapping.inputsOf(button.control).any(::activeButton)) {
                 mask = mask or (1 shl button.effectiveBit(nintendoFaceDistribution))
             }
         }
         return mask
     }
 
+    /** Botón físico activo: una tecla o una combinación con todas pulsadas
+     * (SPEC-011 §7 paso 4, CR-123). */
+    private fun activeButton(input: PhysicalInput): Boolean =
+        when (input) {
+            is PhysicalInput.Key -> input.keyCode in pressedKeys
+            is PhysicalInput.Combo -> input.keyCodes.all { it in pressedKeys }
+            is PhysicalInput.Axis -> false
+        }
+
     private fun mappedTrigger(control: MappedControl): Int {
         val inputs = mapping.inputsOf(control)
-        if (inputs.any { it is PhysicalInput.Key && it.keyCode in pressedKeys }) {
+        if (inputs.any(::activeButton)) {
             return ProtocolConstants.TRIGGER_MAX
         }
         val best =
@@ -238,9 +247,10 @@ class PhysicalGamepadAlgo {
 
     private fun dpadActive(control: MappedControl): Boolean =
         mapping.inputsOf(control).any { input ->
-            when (input) {
-                is PhysicalInput.Key -> input.keyCode in pressedKeys
-                is PhysicalInput.Axis -> (axes[input.axis] ?: 0f) * input.sign >= DPAD_AXIS_THRESHOLD
+            if (input is PhysicalInput.Axis) {
+                (axes[input.axis] ?: 0f) * input.sign >= DPAD_AXIS_THRESHOLD
+            } else {
+                activeButton(input)
             }
         }
 

@@ -2,6 +2,7 @@ package com.twinpad.android.app.ui
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -18,6 +19,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.twinpad.android.app.R
+import com.twinpad.android.app.hid.ChordCapture
 import com.twinpad.android.app.hid.GamepadMapping
 import com.twinpad.android.app.hid.GamepadProfile
 import com.twinpad.android.app.hid.GamepadProfileCodec
@@ -25,9 +27,9 @@ import com.twinpad.android.app.hid.GamepadProfileSet
 import com.twinpad.android.app.hid.MappedControl
 import com.twinpad.android.app.hid.PhysicalAxes
 import com.twinpad.android.app.hid.PhysicalInput
-import com.twinpad.android.app.hid.PhysicalKeys
 import com.twinpad.android.app.hid.captureAxis
 import com.twinpad.android.app.hid.captureKey
+import com.twinpad.android.app.hid.captureKeys
 
 /**
  * SPEC-011: pantalla de reconocimiento y ajuste del mando físico. Lista las
@@ -55,6 +57,19 @@ internal class GamepadMapperDialog(
     private var profiles: GamepadProfileSet? = null
     private var mapping: GamepadMapping = GamepadMapping.DEFAULT
     private var capturing: MappedControl? = null
+
+    /** SPEC-011 §7 paso 4 (CR-123): combina las teclas pulsadas a la vez. */
+    private val chord = ChordCapture()
+
+    /** CR-124: la captura caduca si no llega ninguna entrada. */
+    private val timer =
+        CaptureCountdownTicker(
+            onSecond = { renderStatus() },
+            onExpired = {
+                stopCapture()
+                render()
+            },
+        )
     private lateinit var rows: LinearLayout
     private lateinit var status: TextView
     private lateinit var profileButton: MaterialButton
@@ -83,32 +98,90 @@ internal class GamepadMapperDialog(
     }
 
     fun dismiss() {
-        capturing = null
+        stopCapture()
         isShowing = false
         dialog?.dismiss()
     }
 
     fun onDeviceRemoved(removedId: Int) {
         if (device?.id == removedId && isShowing) {
-            capturing = null
             dismiss()
         }
     }
 
-    /** Captura de un botón (SPEC-011 §7 paso 4). */
+    /** Sale de la captura sin cambiar el mapeo (cancelar, caducidad o cierre). */
+    private fun stopCapture() {
+        capturing = null
+        chord.reset()
+        timer.stop()
+    }
+
+    /** Entra en captura (o sale con `null`) con su cuenta atrás (CR-124). */
+    private fun setCapture(control: MappedControl?) {
+        if (control == null) {
+            stopCapture()
+        } else {
+            capturing = control
+            chord.reset()
+            timer.restart()
+        }
+        render()
+    }
+
+    /** Captura de botones (SPEC-011 §7 paso 4, CR-123): acumula las teclas
+     * pulsadas a la vez y asigna al soltarlas todas; una pulsación suelta
+     * sigue dando un botón y dos simultáneas dan una combinación. */
     fun onKey(event: KeyEvent): Boolean {
         if (!consumesEvents()) return false
-        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
-        assign(captureKey(event.keyCode))
+        val control = capturing ?: return true
+        timer.restart()
+        val combination =
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) chord.press(event.keyCode)
+                    null
+                }
+                KeyEvent.ACTION_UP -> chord.release(event.keyCode)
+                else -> null
+            }
+        if (combination != null) {
+            val input =
+                if (control.button) {
+                    captureKeys(combination)
+                } else {
+                    // Gatillos y cruceta siguen con un único botón (o un eje).
+                    combination.singleOrNull()?.let(::captureKey)
+                }
+            input?.let(::assign)
+        }
         return true
     }
 
     /** Captura de un eje: el que más se movió sobre el umbral. */
     fun onMotion(event: MotionEvent): Boolean {
         if (!consumesEvents()) return false
+        timer.restart()
         val input = captureAxis(motionAxes(event))
         if (input != null) assign(input)
         return true
+    }
+
+    /** El mapeador vive en su propia ventana: los `KeyEvent`/`MotionEvent`
+     * del mando llegan a esta ventana y no a `Activity.dispatchKeyEvent`
+     * (la Activity conserva el foco del resto de la pantalla), así que aquí
+     * se leen antes del despacho normal (SPEC-011 §7). */
+    private inner class MapperDialog(
+        context: Context,
+    ) : Dialog(context) {
+        override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+            if (onKey(event)) return true
+            return super.dispatchKeyEvent(event)
+        }
+
+        override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+            if (onMotion(event)) return true
+            return super.dispatchGenericMotionEvent(event)
+        }
     }
 
     private fun buildDialog(): Dialog {
@@ -120,16 +193,16 @@ internal class GamepadMapperDialog(
         rows = view.findViewById(R.id.mapper_rows)
         profileButton.setOnClickListener { chooseProfile() }
         cancelCapture.setOnClickListener {
-            capturing = null
+            stopCapture()
             render()
         }
         view.findViewById<MaterialButton>(R.id.mapper_new_profile).setOnClickListener { createProfile() }
         view.findViewById<MaterialButton>(R.id.mapper_close).setOnClickListener { dismiss() }
-        return Dialog(activity).apply {
+        return MapperDialog(activity).apply {
             setContentView(view)
             setOnDismissListener {
                 this@GamepadMapperDialog.isShowing = false
-                this@GamepadMapperDialog.capturing = null
+                this@GamepadMapperDialog.stopCapture()
             }
         }
     }
@@ -143,17 +216,7 @@ internal class GamepadMapperDialog(
                 profiles?.active ?: activity.getString(R.string.gamepad_mapper_default),
             )
         profileButton.isEnabled = !(profiles?.profiles.isNullOrEmpty())
-        val active = capturing
-        status.text =
-            active?.let { activity.getString(R.string.gamepad_mapper_capturing, it.label) }
-                ?: activity.getString(R.string.gamepad_mapper_hint)
-        val statusColor =
-            if (active == null) R.color.design_misted_slate else R.color.design_signal_violet
-        status.setTextColor(activity.designColor(statusColor))
-        status.setBackgroundResource(
-            if (active == null) R.drawable.bg_gamepad_status_idle else R.drawable.bg_gamepad_status_active,
-        )
-        cancelCapture.visibility = if (active == null) View.GONE else View.VISIBLE
+        renderStatus()
         rows.removeAllViews()
         if (dialogWidth() >= dp(TWO_COLUMN_MIN_WIDTH)) {
             // En horizontal las 19 equivalencias caben en dos columnas y el
@@ -180,6 +243,22 @@ internal class GamepadMapperDialog(
         }
     }
 
+    /** Texto del estado con la cuenta atrás de la captura (CR-124). */
+    private fun renderStatus() {
+        val active = capturing
+        status.text =
+            active?.let {
+                activity.getString(R.string.gamepad_mapper_capturing_seconds, it.label, timer.remaining)
+            } ?: activity.getString(R.string.gamepad_mapper_hint)
+        val statusColor =
+            if (active == null) R.color.design_misted_slate else R.color.design_signal_violet
+        status.setTextColor(activity.designColor(statusColor))
+        status.setBackgroundResource(
+            if (active == null) R.drawable.bg_gamepad_status_idle else R.drawable.bg_gamepad_status_active,
+        )
+        cancelCapture.visibility = if (active == null) View.GONE else View.VISIBLE
+    }
+
     private fun controlRow(
         control: MappedControl,
         parent: LinearLayout,
@@ -193,7 +272,7 @@ internal class GamepadMapperDialog(
             if (inputs.isEmpty()) {
                 activity.getString(R.string.gamepad_mapper_unassigned)
             } else {
-                inputs.joinToString(" · ", transform = ::describe)
+                inputs.joinToString(" · ") { GamepadMapperLabels.describe(activity, it) }
             }
         value.setTextColor(
             activity.designColor(
@@ -211,8 +290,7 @@ internal class GamepadMapperDialog(
         row.setBackgroundResource(if (selected) R.drawable.bg_gamepad_row_active else R.drawable.bg_gamepad_row)
         row.isSelected = selected
         row.setOnClickListener {
-            capturing = if (capturing == control) null else control
-            render()
+            setCapture(if (capturing == control) null else control)
         }
         return row
     }
@@ -223,6 +301,7 @@ internal class GamepadMapperDialog(
         val accepted =
             when (input) {
                 is PhysicalInput.Key -> !control.stickAxis
+                is PhysicalInput.Combo -> control.button
                 is PhysicalInput.Axis -> !control.button
             }
         if (!accepted) return // E1: la fila sigue en captura
@@ -248,7 +327,7 @@ internal class GamepadMapperDialog(
         profiles?.let { store.save(it) }
         mapping = updated
         onMappingChanged(updated)
-        capturing = null
+        stopCapture()
         render()
     }
 
@@ -284,7 +363,7 @@ internal class GamepadMapperDialog(
         profiles?.let { store.save(it) }
         mapping = profile?.mapping ?: GamepadMapping.DEFAULT
         onMappingChanged(mapping)
-        capturing = null
+        stopCapture()
     }
 
     private fun createProfile() {
@@ -315,7 +394,7 @@ internal class GamepadMapperDialog(
                     )
                 store.save(set)
                 profiles = set
-                capturing = null
+                stopCapture()
                 dialog.dismiss()
                 render()
             }
@@ -330,25 +409,6 @@ internal class GamepadMapperDialog(
         dialog.show()
         styleWindow(dialog, dialogWidth(), WindowManager.LayoutParams.WRAP_CONTENT)
         input.requestFocus()
-    }
-
-    private fun describe(input: PhysicalInput): String =
-        when (input) {
-            is PhysicalInput.Key -> keyName(input.keyCode)
-            is PhysicalInput.Axis ->
-                activity.getString(
-                    R.string.gamepad_mapper_axis,
-                    axisName(input.axis),
-                    if (input.sign > 0) POSITIVE_SIGN else NEGATIVE_SIGN,
-                )
-        }
-
-    private fun keyName(keyCode: Int): String {
-        return KEY_NAMES[keyCode] ?: activity.getString(R.string.gamepad_mapper_key, keyCode)
-    }
-
-    private fun axisName(axis: Int): String {
-        return AXIS_NAMES[axis] ?: activity.getString(R.string.gamepad_mapper_axis_name, axis)
     }
 
     private fun motionAxes(event: MotionEvent): Map<Int, Float> =
@@ -394,45 +454,6 @@ internal class GamepadMapperDialog(
         const val MAIN_MAX_HEIGHT = 760
         const val PROFILE_HEIGHT_FRACTION = 0.68f
         const val PROFILE_MAX_HEIGHT = 560
-        const val POSITIVE_SIGN = "+"
-        const val NEGATIVE_SIGN = "−"
-
-        val KEY_NAMES =
-            mapOf(
-                PhysicalKeys.BUTTON_A to "A",
-                PhysicalKeys.BUTTON_B to "B",
-                PhysicalKeys.BUTTON_X to "X",
-                PhysicalKeys.BUTTON_Y to "Y",
-                PhysicalKeys.BUTTON_L1 to "LB",
-                PhysicalKeys.BUTTON_R1 to "RB",
-                PhysicalKeys.BUTTON_L2 to "LT",
-                PhysicalKeys.BUTTON_R2 to "RT",
-                PhysicalKeys.BUTTON_L3 to "L3",
-                PhysicalKeys.BUTTON_R3 to "R3",
-                PhysicalKeys.BUTTON_START to "Start",
-                PhysicalKeys.BUTTON_SELECT to "Select",
-                PhysicalKeys.BUTTON_MODE to "Home",
-                PhysicalKeys.DPAD_UP to "D-pad ↑",
-                PhysicalKeys.DPAD_DOWN to "D-pad ↓",
-                PhysicalKeys.DPAD_LEFT to "D-pad ←",
-                PhysicalKeys.DPAD_RIGHT to "D-pad →",
-            )
-        val AXIS_NAMES =
-            mapOf(
-                PhysicalAxes.AXIS_X to "X",
-                PhysicalAxes.AXIS_Y to "Y",
-                PhysicalAxes.AXIS_Z to "Z",
-                PhysicalAxes.AXIS_RX to "RX",
-                PhysicalAxes.AXIS_RY to "RY",
-                PhysicalAxes.AXIS_RZ to "RZ",
-                PhysicalAxes.AXIS_HAT_X to "HAT X",
-                PhysicalAxes.AXIS_HAT_Y to "HAT Y",
-                PhysicalAxes.AXIS_LTRIGGER to "LT",
-                PhysicalAxes.AXIS_RTRIGGER to "RT",
-                PhysicalAxes.AXIS_THROTTLE to "THROTTLE",
-                PhysicalAxes.AXIS_GAS to "GAS",
-                PhysicalAxes.AXIS_BRAKE to "BRAKE",
-            )
     }
 }
 

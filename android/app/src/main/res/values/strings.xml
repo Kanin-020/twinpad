@@ -72,7 +72,7 @@
     <string name="gamepad_mapper_profile_name">Nombre del perfil</string>
     <string name="gamepad_mapper_name_in_use">Ese nombre ya existe</string>
     <string name="gamepad_mapper_hint">Toca una entrada y luego pulsa un botón o mueve un eje.</string>
-    <string name="gamepad_mapper_capturing">Pulsa un botón o mueve un eje para «%1$s»…</string>
+    <string name="gamepad_mapper_capturing_seconds">Pulsa un botón o mueve un eje para «%1$s» · %2$d s</string>
     <string name="gamepad_mapper_cancel_capture">Cancelar captura</string>
     <string name="gamepad_mapper_unassigned">Sin asignar</string>
     <string name="gamepad_mapper_corrupt">El perfil guardado no se pudo leer; se usa el predeterminado.</string>
