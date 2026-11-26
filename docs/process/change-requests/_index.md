@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-128 |
+| CR | CR-129 |
 
 ## Open / In review
 
@@ -61,6 +61,7 @@
 | CR-121 | Notificación de la sesión visible en segundo plano: permiso `POST_NOTIFICATIONS` al entrar en sesión y texto que distingue transmisión (V1/V2) de sesión conectada | SPEC-002 1.14.0 (§11 R23), código `session/SessionForegroundService`, `session/SessionNotificationSync`, `ui/PairingActivity`, `res/values/strings.xml`, traceability (TEST-0214) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-121-session-notification-background-transmission.md](CR-121-session-notification-background-transmission.md) |
 | CR-120 | Home físico = Guide/PS del mando (`KEYCODE_BUTTON_MODE`, no L3), Home asignable por defecto, un solo transporte de `input_report` por reporte (fin del doble input BT+LAN) y conexión BT HID a todos los emparejados en cada ronda | SPEC-004 1.15.0 (§4, §8.3), SPEC-011 0.2.4 (§4), código `hid/GamepadMapping`, `hid/PhysicalGamepadAlgo`, `ui/GamepadMapperDialog`, `pairing/PairingViewModel`, `hid/BluetoothHidGamepad`, traceability (TEST-0213) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-120-home-guide-single-input-transport-bt-discovery.md](CR-120-home-guide-single-input-transport-bt-discovery.md) |
 | CR-127 | Recuperación del canal media no vitalicia: reintento espaciado cada 10 s mientras el `stream_start` siga vigente; V2 conserva el último frame y la Surface (antes se borraban dimensiones y el video no volvía) | SPEC-003 1.18.0 (§6, §8.2, §9), código `stream/MediaReconnectSchedule`, `pairing/PairingMediaSession`, `ui/PairingActivity`, traceability (TEST-0224) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-127-media-recovery-not-time-boxed.md](CR-127-media-recovery-not-time-boxed.md) |
+| CR-128 | El gamepad usa la ruta LAN cuando el receptor es Cemu (el Plugin no consume el HID del sistema), con BT como respaldo sin sesión; una sola ruta por reporte | SPEC-004 1.19.0 (§8.3, §8.4), código `hid/HandoverPolicy`, `pairing/GamepadBtSwitcher`, `pairing/PairingViewModel`, traceability (TEST-0225) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-128-lan-input-route-for-cemu.md](CR-128-lan-input-route-for-cemu.md) |
 
 ## Applied
 

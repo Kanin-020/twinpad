@@ -20,6 +20,8 @@ import com.twinpad.android.hid.SignatureHidCodec
 internal class GamepadBtSwitcher(
     private val isLinked: () -> Boolean,
     private val onBtStateChanged: () -> Unit = {},
+    /** CR-128: receptor que sólo lee el `input_report` de LAN (Plugin Cemu). */
+    private val preferLan: () -> Boolean = { false },
 ) {
     private var btHid: BluetoothHidGamepad? = null
     private var appContext: Context? = null
@@ -63,8 +65,14 @@ internal class GamepadBtSwitcher(
 
     fun isBtReady(): Boolean = btReady
 
-    /** Ruta de transporte del gamepad: LAN si está Linked; si no, BT si está listo. */
-    fun route(): InputTransport = HandoverPolicy.route(lanLinked = isLinked(), btReady = btReady)
+    /** Ruta de transporte del gamepad: BT si está listo; LAN si no, o siempre
+     * que el receptor exija LAN (CR-128) y la sesión esté Linked. */
+    fun route(): InputTransport =
+        HandoverPolicy.route(
+            lanLinked = isLinked(),
+            btReady = btReady,
+            preferLan = preferLan(),
+        )
 
     /** Envía el reporte por la ruta BT, si el canal está vivo. */
     fun sendOverBt(report: InputReport) {

@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.18.0 |
+| Version | 1.19.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215, TEST-0218 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215, TEST-0218, TEST-0225 |
 | Last updated | 2026-11-26 |
 
 ## 1. Purpose
@@ -131,17 +131,22 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
   ningún callback de estado y el canal quedaría sin reintentar hasta reiniciar
   la app. Al conectar, al caer el enlace o al detenerse el canal la ventana se
   cierra y no vence.
-- **Flow:** cada reporte sale por **una sola** ruta (CR-120). Con el canal BT HID
-  operativo, el reporte se envía por BT y la sesión LAN no recibe `input_report`;
-  si el canal BT no está operativo y la sesión está Linked, el reporte completo
-  (botones, sticks, gatillos, D-pad, touch e inercia) sale por LAN. Nunca se envían
-  las dos rutas para el mismo reporte: el juego vería dos mandos. La vibración va
-  por BT. Sin ninguna ruta operativa, el gamepad está en H0 y no envía.
-- **Result:** los inputs salen por Bluetooth HID y, si no está operativo, por LAN;
-  mientras el canal BT está operativo, touch DRC e inercia no llegan al Plugin
-  (no viajan por BT; extender el descriptor exige otro CR). La Segunda pantalla,
-  el audio y el micrófono siguen por la LAN cuando hay sesión, y quedan
-  indisponibles sin ella (ADR-002), no como error.
+- **Flow:** cada reporte sale por **una sola** ruta (CR-120). Con un receptor que
+  **no consume el HID del sistema** —el Plugin Cemu (`game_id` `cemu`) lee los
+  inputs por LAN— y la sesión Linked, la ruta es **LAN** aunque el canal BT esté
+  operativo (CR-128); sin sesión, el BT sigue siendo la ruta. Para el resto de
+  receptores, con el canal BT HID operativo el reporte se envía por BT y la sesión
+  LAN no recibe `input_report`; si el canal BT no está operativo y la sesión está
+  Linked, el reporte completo (botones, sticks, gatillos, D-pad, touch e inercia)
+  sale por LAN. Nunca se envían las dos rutas para el mismo reporte: el juego vería
+  dos mandos. La vibración va por BT. Sin ninguna ruta operativa, el gamepad está
+  en H0 y no envía.
+- **Result:** con Cemu los inputs llegan por LAN (el Plugin los consume) y el BT
+  queda como respaldo sin sesión; para el resto, los inputs salen por Bluetooth
+  HID y, si no está operativo, por LAN; mientras el canal BT está operativo, touch
+  DRC e inercia no llegan al Plugin (no viajan por BT; extender el descriptor exige
+  otro CR). La Segunda pantalla, el audio y el micrófono siguen por la LAN cuando
+  hay sesión, y quedan indisponibles sin ella (ADR-002), no como error.
 
 ### 8.4 Mando virtual del Servidor (opcional, solo Linux; CR-113, CR-114)
 
@@ -161,10 +166,11 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
   como DualSense. Sin la variable, sin `/dev/uhid` o sin permiso sobre él, el
   Servidor opera igual y no hay mando virtual: su ausencia no es un error de
   sesión ni cambia el resto del contrato.
-- **Nota:** solo consume los `input_report` de la sesión LAN. Mientras el
-  transporte de §8.3 (BT HID) esté operativo, esos reportes no llegan al
-  Servidor y el mando virtual queda en reposo; forzar la ruta LAN exigiría un
-  cambio en la app, fuera del alcance de CR-113.
+- **Nota:** consume los `input_report` de la sesión LAN. Con Cemu seleccionado la
+  ruta de §8.3 ya es LAN (CR-128) y el mando virtual refleja los inputs; con otros
+  juegos, mientras el transporte BT HID esté operativo, esos reportes no llegan al
+  Servidor y el mando virtual queda en reposo (forzarlo exigiría otro cambio de la
+  app, fuera del alcance de CR-113).
 
 ## 9. Errors
 
@@ -288,3 +294,4 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.17.0 | 2026-11-26 | Buffy (agente) (CR-122) | §8.3: rearme idempotente del canal (no se recrea al concederse el permiso), liberación del registro huérfano de la propia app y omisión de emparejados `AUDIO_VIDEO`; banco físico: app abierta → gamepad en el SO del PC en 0,96 s |
 | 1.15.0 | 2026-11-26 | Owner + Buffy (agente) (CR-120) | §4/§8.3: una sola ruta por reporte (BT si está operativo; si no, LAN) para que el juego no vea dos mandos; mientras hay BT, touch e inercia no llegan al Plugin |
 | 1.18.0 | 2026-11-26 | Owner + Buffy (agente) (CR-125) | §8.3: watchdog de la ronda de conexión HID — 10 s sin `CONNECTED` aborta los enlaces pendientes y reintenta con el backoff existente; TEST-0218 |
+| 1.19.0 | 2026-11-26 | Owner + Buffy (agente) (CR-128) | §8.3/§8.4: con el Plugin Cemu (`game_id` `cemu`) y sesión Linked la ruta del gamepad es LAN (el Plugin no consume el HID del sistema); BT como respaldo sin sesión; TEST-0225 |

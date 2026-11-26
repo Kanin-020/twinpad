@@ -139,6 +139,9 @@ internal class PairingViewModel(
         GamepadBtSwitcher(
             { _uiState.value is PairingUiState.Linked },
             { armGamepadChannel() },
+            // CR-128: Cemu consume el `input_report` de LAN (plugin Twinpad),
+            // no el HID del sistema; con él la ruta LAN manda sobre el BT.
+            { games.selectedGameId.value == CEMU_GAME_ID },
         )
 
     /** Efectos que la Activity ejecuta (permiso, apertura/cierre de cámara). */
@@ -629,6 +632,9 @@ internal class PairingViewModel(
          * 60 000 ms (SPEC-001 §8.2) — el pacing es de la VM, el límite lo
          * impone [PairingEvent.ResumeTick]. */
         const val RESUME_RETRY_MS: Long = 2_000L
+
+        /** CR-128: `game_id` del Plugin Cemu, que sólo lee inputs por LAN. */
+        private const val CEMU_GAME_ID = "cemu"
 
         /** Factory de producción: colaboradores con descubrimiento real. */
         fun factory(application: Application): ViewModelProvider.Factory =

@@ -22,12 +22,17 @@ enum class InputTransport {
  */
 object HandoverPolicy {
     /** Ruta del transporte del gamepad (CR-111): canal BT HID si está operativo
-     * (por defecto); si no, LAN si la sesión está Linked; sin ninguna, H0. */
+     * (por defecto); si no, LAN si la sesión está Linked; sin ninguna, H0.
+     * CR-128: con un receptor que no consume el HID del sistema —el Plugin
+     * Cemu lee los inputs por LAN— la ruta LAN manda mientras haya sesión y
+     * el BT queda como respaldo sin LAN. */
     fun route(
         lanLinked: Boolean,
         btReady: Boolean,
+        preferLan: Boolean = false,
     ): InputTransport =
         when {
+            preferLan && lanLinked -> InputTransport.LAN
             btReady -> InputTransport.BT
             lanLinked -> InputTransport.LAN
             else -> InputTransport.NONE
