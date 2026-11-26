@@ -15,6 +15,7 @@ import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
+import com.twinpad.android.app.hid.InputTransport
 import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
 import com.twinpad.android.app.ui.applyPhoneAudioRoute
@@ -418,17 +419,13 @@ internal class PairingViewModel(
                         "accel=${motion.accel.joinToString(",")} gyro=${motion.gyro.joinToString(",")}",
                 )
             }
-            // CR-111: controles por BT HID si está listo (por defecto); si no, LAN.
-            // Gyro y touch viajan siempre por LAN.
-            val linked = _uiState.value is PairingUiState.Linked
-            val hasMotionOrTouch = updated.motion != null || updated.touchPressed
-            if (gamepadSwitcher.isBtReady()) {
-                gamepadSwitcher.sendOverBt(updated)
-                if (linked && hasMotionOrTouch) {
-                    network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
-                }
-            } else if (linked) {
-                network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
+            // CR-120: una sola ruta por reporte. Además de BT, enviar el mismo
+            // reporte por LAN duplicaba el mando: Steam/SO aplicaba el HID
+            // Bluetooth y Cemu el snapshot del plugin (dos gamepads a la vez).
+            when (gamepadSwitcher.route()) {
+                InputTransport.BT -> gamepadSwitcher.sendOverBt(updated)
+                InputTransport.LAN -> network.send(com.twinpad.android.app.wire.InputCodec.encode(updated))
+                InputTransport.NONE -> Unit
             }
         }
     }
@@ -544,10 +541,11 @@ internal class PairingViewModel(
         if (gamepad.state == com.twinpad.android.app.hid.GamepadState.OFFLINE) {
             if (ready) {
                 gamepad.onChannelReady()?.let {
-                    if (linked) {
-                        network.send(com.twinpad.android.app.wire.InputCodec.encode(it))
-                    } else {
-                        gamepadSwitcher.sendOverBt(it)
+                    // CR-120: el reporte inicial sale por la misma ruta única.
+                    when (gamepadSwitcher.route()) {
+                        InputTransport.BT -> gamepadSwitcher.sendOverBt(it)
+                        InputTransport.LAN -> network.send(com.twinpad.android.app.wire.InputCodec.encode(it))
+                        InputTransport.NONE -> Unit
                     }
                 }
             }

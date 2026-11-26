@@ -25,7 +25,7 @@ enum class MappedControl(
     R3("Stick derecho"),
     START("Start"),
     SELECT("Select"),
-    EXTRA_1("Botón extra 1"),
+    EXTRA_1("Home"),
     EXTRA_2("Botón extra 2"),
     STICK_LX("Stick izquierdo ← →"),
     STICK_LY("Stick izquierdo ↑ ↓"),
@@ -101,6 +101,7 @@ data class GamepadMapping(
                     put(MappedControl.R3, listOf(PhysicalInput.Key(PhysicalKeys.BUTTON_R3)))
                     put(MappedControl.START, listOf(PhysicalInput.Key(PhysicalKeys.BUTTON_START)))
                     put(MappedControl.SELECT, listOf(PhysicalInput.Key(PhysicalKeys.BUTTON_SELECT)))
+                    put(MappedControl.EXTRA_1, listOf(PhysicalInput.Key(PhysicalKeys.BUTTON_MODE)))
                     put(
                         MappedControl.STICK_LX,
                         listOf(PhysicalInput.Axis(PhysicalAxes.AXIS_X)),
@@ -183,8 +184,11 @@ object PhysicalKeys {
     const val BUTTON_R2 = 105
     const val BUTTON_START = 108
     const val BUTTON_SELECT = 109
-    const val BUTTON_L3 = 110
-    const val BUTTON_R3 = 111
+
+    /** Home/Guide/PS de un mando físico (Guide de Xbox, PS del DualShock). */
+    const val BUTTON_MODE = 110
+    const val BUTTON_L3 = 106
+    const val BUTTON_R3 = 107
 }
 
 /** Ejes de `MotionEvent` (constantes de la plataforma AOSP). */

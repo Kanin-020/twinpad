@@ -411,6 +411,7 @@ internal class GamepadMapperDialog(
                 PhysicalKeys.BUTTON_R3 to "R3",
                 PhysicalKeys.BUTTON_START to "Start",
                 PhysicalKeys.BUTTON_SELECT to "Select",
+                PhysicalKeys.BUTTON_MODE to "Home",
                 PhysicalKeys.DPAD_UP to "D-pad ↑",
                 PhysicalKeys.DPAD_DOWN to "D-pad ↓",
                 PhysicalKeys.DPAD_LEFT to "D-pad ←",

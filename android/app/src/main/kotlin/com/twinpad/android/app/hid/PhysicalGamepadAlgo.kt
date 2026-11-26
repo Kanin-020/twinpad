@@ -276,7 +276,7 @@ class PhysicalGamepadAlgo {
         R3(7, KeyCodes.BUTTON_R3, MappedControl.R3),
         START(8, KeyCodes.BUTTON_START, MappedControl.START),
         SELECT(9, KeyCodes.BUTTON_SELECT, MappedControl.SELECT),
-        EXTRA_1(10, -1, MappedControl.EXTRA_1),
+        EXTRA_1(10, KeyCodes.BUTTON_MODE, MappedControl.EXTRA_1),
         EXTRA_2(11, -1, MappedControl.EXTRA_2),
         ;
 
@@ -312,6 +312,9 @@ class PhysicalGamepadAlgo {
         const val BUTTON_R2 = PhysicalKeys.BUTTON_R2
         const val BUTTON_START = PhysicalKeys.BUTTON_START
         const val BUTTON_SELECT = PhysicalKeys.BUTTON_SELECT
+
+        /** Home/Guide/PS del mando físico (SPEC-011: fila `extra_1`). */
+        const val BUTTON_MODE = PhysicalKeys.BUTTON_MODE
         const val BUTTON_L3 = PhysicalKeys.BUTTON_L3
         const val BUTTON_R3 = PhysicalKeys.BUTTON_R3
     }
