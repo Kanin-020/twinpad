@@ -107,4 +107,6 @@
     <string name="session_notification_channel">Sesión Twinpad</string>
     <string name="session_notification_title">Twinpad activo</string>
     <string name="session_notification_text">Segunda pantalla y controles conectados al PC</string>
+    <!-- CR-121: la notificación indica que hay transmisión en curso. -->
+    <string name="session_notification_text_streaming">Transmitiendo la Segunda pantalla al teléfono</string>
 </resources>

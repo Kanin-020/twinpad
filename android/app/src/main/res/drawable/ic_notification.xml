@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono pequeño de la notificación de sesión: los dos trapecios del logo
+     (mismo trazado que ic_launcher_foreground) en blanco, como exige el
+     icono monocromo de las notificaciones Android. El grupo recorta el
+     lienzo del vector (1254) al dibujo (x 271-983, y 328-870) y lo centra
+     en un viewport cuadrado para que no se deforme al escalar. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="712"
+    android:viewportHeight="712">
+    <group
+        android:translateX="-271"
+        android:translateY="-243">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M530,340
+                C565,328 601,352 601,392
+                L601,815
+                C601,850 575,870 540,864
+                L312,778
+                C285,768 271,745 271,720
+                L271,478
+                C271,450 288,428 312,420
+                Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M724,340
+                C689,328 653,352 653,392
+                L653,815
+                C653,850 679,870 714,864
+                L942,778
+                C969,768 983,745 983,720
+                L983,478
+                C983,450 966,428 942,420
+                Z" />
+    </group>
+</vector>

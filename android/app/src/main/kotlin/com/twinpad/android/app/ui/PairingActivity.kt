@@ -42,6 +42,7 @@ import com.twinpad.android.app.core.PairingUiState
 import com.twinpad.android.app.hid.PhysicalAxes
 import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
+import com.twinpad.android.app.session.SessionNotificationSync
 import com.twinpad.android.app.stream.StreamState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -390,9 +391,9 @@ class PairingActivity : AppCompatActivity() {
         attachProfileSurface()
         // Se suscribe aquí: StateFlow emite el valor actual, y la vista ya existe.
         lifecycleScope.launch {
-            viewModel.streamState.collectLatest { state ->
-                applyStreamState(state)
-            }
+            viewModel.streamState.collectLatest { state -> applyStreamState(state) }
+            // CR-121: el texto de la notificación sigue al stream.
+            SessionNotificationSync.bind(this@PairingActivity, viewModel.uiState, viewModel.streamState)
         }
     }
 
