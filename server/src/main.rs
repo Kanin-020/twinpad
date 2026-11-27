@@ -156,8 +156,7 @@ fn main() {
             let Some(session_id) = owner.lock().ok().and_then(|guard| *guard) else {
                 return;
             };
-            if let Ok(line) =
-                (twinpad_core::game::GameMsg::RumbleMotors { strong, weak }).encode()
+            if let Ok(line) = (twinpad_core::game::GameMsg::RumbleMotors { strong, weak }).encode()
             {
                 sessions.send_line(&session_id, &line);
             }
