@@ -28,10 +28,12 @@ import com.twinpad.android.app.wire.KeyboardRequestMessage
 import com.twinpad.android.app.wire.MicRequestCodec
 import com.twinpad.android.app.wire.RumbleCodec
 import com.twinpad.android.app.wire.RumbleMessage
+import com.twinpad.android.app.wire.RumbleMotorsCodec
 import com.twinpad.android.app.wire.StreamCodec
 import com.twinpad.android.app.wire.StreamMessage
 import com.twinpad.android.app.wire.VideoStageStatsCodec
 import com.twinpad.android.app.wire.VideoStageStatsMessage
+import com.twinpad.android.app.wire.VirtualPadStateCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -257,6 +259,9 @@ internal class PairingViewModel(
                         Log.i("PairingVM", "ping recibido: se responderá con pong")
                         feed(PairingEvent.WireMessage(line))
                     }
+                    // CR-130: el estado inicial puede llegar junto al
+                    // `pair_ack`; se aplica aunque la UI aún no esté Linked.
+                    line != null && lineType(line) == "virtual_pad_state" -> handleVirtualPadState(line)
                     _uiState.value is PairingUiState.Linked -> onStreamLine(line) // SPEC-003: tráfico de sesión
                     else -> {
                         feed(PairingEvent.WireMessage(line))
@@ -297,6 +302,11 @@ internal class PairingViewModel(
             "stream_start", "stream_stop" -> handleStreamControlLine(line)
             "video_frame", "video_patch" -> streamStats.onFrameRejected()
             "rumble" -> RumbleCodec.decode(line)?.let(rumblePlayer::play)
+            // CR-131: rumble que Steam/SO escriben al DualSense virtual.
+            "rumble_motors" ->
+                RumbleMotorsCodec.decode(line)?.let { rumblePlayer.playStrength(it.strong, it.weak) }
+            // CR-130: el Servidor activó/apagó su mando virtual.
+            "virtual_pad_state" -> handleVirtualPadState(line)
             "camera_request", "mic_request", "keyboard_request", "video_stage_stats", "host_metrics" ->
                 handleRequestLine(line)
             else -> Unit
@@ -324,6 +334,17 @@ internal class PairingViewModel(
         KeyboardRequestCodec.decode(line)?.let { _keyboardRequested.value = it }
     }
 
+    /** CR-130: el mando virtual del Servidor suspende/rearma el HID local.
+     * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
+    private val handleVirtualPadState: (String) -> Unit = { line ->
+        VirtualPadStateCodec.decode(line)?.let {
+            gamepadSwitcher.setVirtualPadActive(it.on)
+            // CR-131: al apagar el mando virtual se corta la vibración que
+            // pudiera venir del DualSense virtual.
+            if (!it.on) rumblePlayer.play(RumbleMessage(ByteArray(0)))
+        }
+    }
+
     private fun onSessionDisconnected() {
         clearStreamSession()
         games.clear()
@@ -346,6 +367,9 @@ internal class PairingViewModel(
         // sesión que acaba de terminar (el server deja de emitir al cortar).
         _hostMetrics.value = null
         _mediaTransport.value = null
+        // CR-130: al terminar la sesión se restaura la política normal y el
+        // perfil BT HID; el próximo `virtual_pad_state` lo suspenderá de nuevo.
+        gamepadSwitcher.setVirtualPadActive(false)
     }
 
     private fun handleStreamControlLine(line: String) {

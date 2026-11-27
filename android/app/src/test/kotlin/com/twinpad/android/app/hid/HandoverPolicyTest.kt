@@ -8,6 +8,8 @@ import org.junit.Test
  * HID cuando está operativo (por defecto); la LAN es respaldo (SPEC-004 §8.3).
  * TEST-0225 — CR-128: con receptor Cemu (sólo lee `input_report` de LAN) la
  * ruta LAN manda mientras la sesión esté Linked.
+ * TEST-0227 — CR-130: con el mando virtual del Servidor activo la única ruta
+ * es LAN con sesión; el HID local suspendido no se usa como respaldo.
  */
 class HandoverPolicyTest {
     @Test
@@ -35,6 +37,26 @@ class HandoverPolicyTest {
         assertEquals(
             InputTransport.LAN,
             HandoverPolicy.route(lanLinked = true, btReady = false, preferLan = true),
+        )
+    }
+
+    @Test
+    fun virtualPadRoutesOnlyToLanWhileLinked() {
+        assertEquals(
+            InputTransport.LAN,
+            HandoverPolicy.route(
+                lanLinked = true,
+                btReady = true,
+                virtualPadActive = true,
+            ),
+        )
+        assertEquals(
+            InputTransport.NONE,
+            HandoverPolicy.route(
+                lanLinked = false,
+                btReady = true,
+                virtualPadActive = true,
+            ),
         )
     }
 

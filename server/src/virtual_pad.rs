@@ -31,10 +31,23 @@ const UHID_PATH: &str = "/dev/uhid";
 /// alinea a 4 tras `uhid_create2_req`).
 const UHID_EVENT_SIZE: usize = 4380;
 const UHID_DESTROY: u32 = 1;
+const UHID_OUTPUT: u32 = 6;
 const UHID_GET_REPORT: u32 = 9;
 const UHID_GET_REPORT_REPLY: u32 = 10;
 const UHID_CREATE2: u32 = 11;
 const UHID_INPUT2: u32 = 12;
+const UHID_DATA_MAX: usize = 4096;
+const UHID_OUTPUT_REPORT: u8 = 1;
+/// `struct uhid_output_req`: tamaño en el byte 4100 y tipo de reporte en el 4102.
+const UHID_OUTPUT_SIZE_OFFSET: usize = 4 + UHID_DATA_MAX;
+const UHID_OUTPUT_RTYPE_OFFSET: usize = UHID_OUTPUT_SIZE_OFFSET + 2;
+const DS_OUTPUT_REPORT_USB: u8 = 0x02;
+const DS_OUTPUT_REPORT_USB_SIZE: usize = 48;
+const DS_OUTPUT_FLAG0_RUMBLE: u8 = 0x01;
+const DS_OUTPUT_FLAG2_COMPATIBLE_RUMBLE: u8 = 0x04;
+const DS_OUTPUT_FLAG2_OFFSET: usize = 39;
+/// `strong` = motor izquierdo (`motor_left`), `weak` = derecho (`motor_right`).
+pub type RumbleListener = Arc<dyn Fn(u8, u8) + Send + Sync>;
 const BUS_USB: u16 = 0x03;
 const SONY_VENDOR: u32 = 0x054c;
 const DUALSENSE_PRODUCT: u32 = 0x0ce6;
@@ -273,6 +286,7 @@ struct Shared {
     writer: Mutex<File>,
     stop: AtomicBool,
     mac: [u8; 6],
+    rumble_listener: Mutex<Option<RumbleListener>>,
 }
 
 /// Mando virtual en ejecución; `update` pinta el estado de la Signature.
@@ -300,6 +314,7 @@ impl VirtualPad {
             writer: Mutex::new(writer),
             stop: AtomicBool::new(false),
             mac,
+            rumble_listener: Mutex::new(None),
         });
         spawn_reader(reader, Arc::clone(&shared));
         spawn_reporter(Arc::clone(&shared));
@@ -327,6 +342,14 @@ impl VirtualPad {
             *state = PadState::default();
         }
     }
+
+    /// CR-131: registra el destinatario del rumble que el host escribe al
+    /// DualSense virtual. Sin listener, los output reports se descartan.
+    pub fn set_rumble_listener(&self, listener: RumbleListener) {
+        if let Ok(mut slot) = self.shared.rumble_listener.lock() {
+            *slot = Some(listener);
+        }
+    }
 }
 
 impl Drop for VirtualPad {
@@ -352,6 +375,7 @@ const PREFERENCE_FILE: &str = "virtual-pad";
 pub struct VirtualPadManager {
     preference: Option<std::path::PathBuf>,
     pad: Mutex<Option<Arc<VirtualPad>>>,
+    rumble_listener: Mutex<Option<RumbleListener>>,
 }
 
 impl VirtualPadManager {
@@ -365,6 +389,7 @@ impl VirtualPadManager {
         let manager = Self {
             preference,
             pad: Mutex::new(None),
+            rumble_listener: Mutex::new(None),
         };
         if wanted {
             match VirtualPad::start() {
@@ -401,6 +426,14 @@ impl VirtualPadManager {
             if enabled {
                 if slot.is_none() {
                     let pad = VirtualPad::start().map_err(|error| error.to_string())?;
+                    let listener = self
+                        .rumble_listener
+                        .lock()
+                        .ok()
+                        .and_then(|listener| listener.clone());
+                    if let Some(listener) = listener {
+                        pad.set_rumble_listener(listener);
+                    }
                     *slot = Some(Arc::new(pad));
                 }
             } else {
@@ -419,6 +452,19 @@ impl VirtualPadManager {
         if let Ok(slot) = self.pad.lock() {
             if let Some(pad) = slot.as_ref() {
                 pad.update(msg);
+            }
+        }
+    }
+
+    /// CR-131: el listener recibe el rumble del DualSense virtual; se aplica
+    /// también al HID que se encienda más adelante desde la página o el tray.
+    pub fn set_rumble_listener(&self, listener: RumbleListener) {
+        if let Ok(mut slot) = self.rumble_listener.lock() {
+            *slot = Some(Arc::clone(&listener));
+        }
+        if let Ok(slot) = self.pad.lock() {
+            if let Some(pad) = slot.as_ref() {
+                pad.set_rumble_listener(listener);
             }
         }
     }
@@ -557,6 +603,19 @@ fn spawn_reader(mut reader: File, shared: Arc<Shared>) {
 
 fn handle_event(event: &[u8; UHID_EVENT_SIZE], shared: &Shared) {
     let kind = u32::from_le_bytes([event[0], event[1], event[2], event[3]]);
+    if kind == UHID_OUTPUT {
+        if let Some((strong, weak)) = decode_uhid_output(event) {
+            let listener = shared
+                .rumble_listener
+                .lock()
+                .ok()
+                .and_then(|listener| listener.clone());
+            if let Some(listener) = listener {
+                listener(strong, weak);
+            }
+        }
+        return;
+    }
     if kind != UHID_GET_REPORT {
         return;
     }
@@ -576,6 +635,46 @@ fn handle_event(event: &[u8; UHID_EVENT_SIZE], shared: &Shared) {
     if let Ok(mut writer) = shared.writer.lock() {
         let _ = writer.write_all(&reply);
     }
+}
+
+/// Extrae el reporte de un `UHID_OUTPUT` y traduce su bloque de rumble
+/// (CR-131). El kernel entrega el evento completo de `sizeof(uhid_event)` y el
+/// reporte USB incluye el report id como primer byte.
+fn decode_uhid_output(event: &[u8]) -> Option<(u8, u8)> {
+    if event.len() < UHID_OUTPUT_RTYPE_OFFSET + 1 {
+        return None;
+    }
+    let kind = u32::from_le_bytes([event[0], event[1], event[2], event[3]]);
+    if kind != UHID_OUTPUT || event[UHID_OUTPUT_RTYPE_OFFSET] != UHID_OUTPUT_REPORT {
+        return None;
+    }
+    let size = usize::from(u16::from_le_bytes([
+        event[UHID_OUTPUT_SIZE_OFFSET],
+        event[UHID_OUTPUT_SIZE_OFFSET + 1],
+    ]));
+    if size == 0 || size > UHID_DATA_MAX || event.len() < 4 + size {
+        return None;
+    }
+    decode_output_rumble(&event[4..4 + size])
+}
+
+/// Bloque de rumble del output report USB del DualSense (CR-131):
+/// `valid_flag0` bit 0 o `valid_flag2` bit 2 habilitan los motores; un reporte
+/// con los tres flags a cero es la parada explícita que envía inputtino.
+fn decode_output_rumble(report: &[u8]) -> Option<(u8, u8)> {
+    if report.len() < DS_OUTPUT_REPORT_USB_SIZE || report[0] != DS_OUTPUT_REPORT_USB {
+        return None;
+    }
+    let valid0 = report[1];
+    let valid1 = report[2];
+    let valid2 = report[DS_OUTPUT_FLAG2_OFFSET];
+    if valid0 & DS_OUTPUT_FLAG0_RUMBLE != 0 || valid2 & DS_OUTPUT_FLAG2_COMPATIBLE_RUMBLE != 0 {
+        return Some((report[4], report[3]));
+    }
+    if valid0 == 0 && valid1 == 0 && valid2 == 0 {
+        return Some((0, 0));
+    }
+    None
 }
 
 /// Descriptor HID USB del DualSense (input 0x01, feature 0x05/0x09/0x20).
@@ -725,6 +824,49 @@ mod tests {
         assert_eq!(0x20, firmware[0]);
         assert_eq!(64, firmware.len());
         assert!(feature_report(0x99, &mac).is_none());
+    }
+
+    // TEST-0230 — verifies SPEC-004 §8.4/SPEC-006 §4 (CR-131): the UHID output
+    // report of the virtual DualSense is decoded into left/right motor strengths.
+    #[test]
+    fn uhid_output_report_decodes_dualsense_rumble_and_stop() {
+        fn event(report: &[u8], rtype: u8) -> [u8; UHID_EVENT_SIZE] {
+            let mut event = [0u8; UHID_EVENT_SIZE];
+            event[0..4].copy_from_slice(&UHID_OUTPUT.to_le_bytes());
+            event[4..4 + report.len()].copy_from_slice(report);
+            event[UHID_OUTPUT_SIZE_OFFSET..UHID_OUTPUT_SIZE_OFFSET + 2]
+                .copy_from_slice(&(report.len() as u16).to_le_bytes());
+            event[UHID_OUTPUT_RTYPE_OFFSET] = rtype;
+            event
+        }
+
+        let mut report = [0u8; DS_OUTPUT_REPORT_USB_SIZE];
+        report[0] = DS_OUTPUT_REPORT_USB;
+        report[1] = DS_OUTPUT_FLAG0_RUMBLE;
+        report[3] = 0x20; // motor_right -> weak
+        report[4] = 0x80; // motor_left -> strong
+        assert_eq!(Some((0x80, 0x20)), decode_uhid_output(&event(&report, 1)));
+
+        // `valid_flag2` (offset 39) también habilita el rumble compatible.
+        report[1] = 0;
+        report[DS_OUTPUT_FLAG2_OFFSET] = DS_OUTPUT_FLAG2_COMPATIBLE_RUMBLE;
+        assert_eq!(Some((0x80, 0x20)), decode_uhid_output(&event(&report, 1)));
+
+        // Los tres flags a cero son la parada que envía inputtino.
+        report[DS_OUTPUT_FLAG2_OFFSET] = 0;
+        assert_eq!(Some((0, 0)), decode_uhid_output(&event(&report, 1)));
+
+        // Un flag ajeno (LED) sin rumble no se interpreta como parada.
+        report[1] = 0x02;
+        assert_eq!(None, decode_uhid_output(&event(&report, 1)));
+
+        // Report id, tipo de reporte o tamaño inválidos se descartan.
+        report[1] = DS_OUTPUT_FLAG0_RUMBLE;
+        report[0] = 0x31;
+        assert_eq!(None, decode_uhid_output(&event(&report, 1)));
+        report[0] = DS_OUTPUT_REPORT_USB;
+        assert_eq!(None, decode_uhid_output(&event(&report, 0)));
+        assert_eq!(None, decode_uhid_output(&event(&report[..4], 1)));
     }
 
     /// TEST-0205 (W10, CR-114): la preferencia `on`/`off` se guarda y se

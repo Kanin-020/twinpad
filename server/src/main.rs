@@ -52,6 +52,14 @@ fn os_entropy_unavailable(e: &getrandom::Error) -> ! {
     std::process::exit(1);
 }
 
+/// CR-130: difunde el estado del mando virtual a las sesiones ya vinculadas;
+/// una sesión nueva lo recibe al registrarse (SPEC-001 §7, SPEC-004 §8.4).
+fn notify_virtual_pad_state(sessions: &twinpad_server::registry::SessionRegistry, on: bool) {
+    if let Ok(line) = (twinpad_core::game::GameMsg::VirtualPadState { on }).encode() {
+        sessions.broadcast_line(&line);
+    }
+}
+
 fn main() {
     let port: u16 = std::env::args()
         .nth(1)
@@ -138,6 +146,23 @@ fn main() {
     // CR-113/CR-114 (SPEC-004 §8.4, SPEC-010 W10): mando virtual DualSense
     // opcional por /dev/uhid, gobernable desde la página local.
     let virtual_pad = twinpad_server::virtual_pad::VirtualPadManager::from_environment();
+    // CR-131: el rumble que el host escribe al DualSense virtual viaja por la
+    // sesión autenticada al teléfono que posee los inputs. No se difunde a
+    // otras sesiones ni se mezcla con el `rumble` de Cemu (SPEC-006 §4).
+    {
+        let sessions = Arc::clone(&registry);
+        let owner = Arc::clone(&input_owner);
+        virtual_pad.set_rumble_listener(Arc::new(move |strong, weak| {
+            let Some(session_id) = owner.lock().ok().and_then(|guard| *guard) else {
+                return;
+            };
+            if let Ok(line) =
+                (twinpad_core::game::GameMsg::RumbleMotors { strong, weak }).encode()
+            {
+                sessions.send_line(&session_id, &line);
+            }
+        }));
+    }
 
     // SPEC-006/ADR-008: listener IPC para juegos con SDK. Si el puerto está
     // en uso, el server sigue (pairing/video/inputs) pero sin detección.
@@ -355,6 +380,7 @@ fn main() {
         let ui_store = Arc::clone(&store);
         let ui_rotate_store = Arc::clone(&store);
         let ui_registry = Arc::clone(&registry);
+        let ui_broadcast_registry = Arc::clone(&registry);
         let ui_games = Arc::clone(&game_registry);
         let ui_plugin_cfg = Arc::clone(&plugin_video_config);
         let webui_deps = twinpad_server::webui::UiDeps {
@@ -392,9 +418,19 @@ fn main() {
                 let pad = Arc::clone(&virtual_pad);
                 Box::new(move || pad.enabled())
             },
+            // CR-130: tras una transición efectiva, Android debe enterarse
+            // para suspender/rearmar su HID Bluetooth y elegir la ruta LAN.
             set_virtual_pad: {
                 let pad = Arc::clone(&virtual_pad);
-                Box::new(move |enabled| pad.set_enabled(enabled))
+                let sessions = Arc::clone(&ui_broadcast_registry);
+                Box::new(move |enabled| {
+                    let was_enabled = pad.enabled();
+                    pad.set_enabled(enabled)?;
+                    if was_enabled != pad.enabled() {
+                        notify_virtual_pad_state(&sessions, pad.enabled());
+                    }
+                    Ok(())
+                })
             },
             // W5 también en la página: mismo desktop entry que el tray y el QAM.
             autostart_on: Box::new(twinpad_server::autostart::is_installed),
@@ -439,6 +475,11 @@ fn main() {
             webui_port,
             shutdown: Arc::clone(&shutdown),
             virtual_pad: Arc::clone(&virtual_pad),
+            // CR-130: el mismo aviso que la página local llega a la app.
+            on_virtual_pad_changed: {
+                let sessions = Arc::clone(&registry);
+                Arc::new(move |enabled| notify_virtual_pad_state(&sessions, enabled))
+            },
         };
         std::thread::spawn(move || {
             if let Err(error) = twinpad_server::tray::spawn_tray(tray_actions) {
@@ -576,6 +617,16 @@ fn main() {
                         .encode()
                         .ok();
                         if let Some(line) = games_line {
+                            registry_ref.send_line(&session_id, &line);
+                        }
+                        // CR-130: la sesión nueva o reanudada conoce el
+                        // estado vigente del mando virtual antes de enviar
+                        // su primer `input_report`.
+                        if let Ok(line) = (twinpad_core::game::GameMsg::VirtualPadState {
+                            on: virtual_pad_ref.enabled(),
+                        })
+                        .encode()
+                        {
                             registry_ref.send_line(&session_id, &line);
                         }
                     }

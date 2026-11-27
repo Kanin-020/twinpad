@@ -25,13 +25,18 @@ object HandoverPolicy {
      * (por defecto); si no, LAN si la sesión está Linked; sin ninguna, H0.
      * CR-128: con un receptor que no consume el HID del sistema —el Plugin
      * Cemu lee los inputs por LAN— la ruta LAN manda mientras haya sesión y
-     * el BT queda como respaldo sin LAN. */
+     * el BT queda como respaldo sin LAN.
+     * CR-130: con el mando virtual del Servidor activo el perfil HID local
+     * está suspendido: la única ruta es LAN con sesión; sin sesión, H0. */
     fun route(
         lanLinked: Boolean,
         btReady: Boolean,
         preferLan: Boolean = false,
+        virtualPadActive: Boolean = false,
     ): InputTransport =
         when {
+            virtualPadActive && lanLinked -> InputTransport.LAN
+            virtualPadActive -> InputTransport.NONE
             preferLan && lanLinked -> InputTransport.LAN
             btReady -> InputTransport.BT
             lanLinked -> InputTransport.LAN

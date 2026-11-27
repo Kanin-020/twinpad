@@ -7,6 +7,8 @@
 //!   Segunda pantalla (REQ-006 AC-2) que alimenta el Stream de SPEC-003.
 //! - `games_available`: server → app por la sesión de SPEC-001 (§5), cada
 //!   vez que la lista de juegos vivos cambia.
+//! - `virtual_pad_state`: server → app (CR-130), estado del DualSense
+//!   virtual para que Android elija la ruta LAN y suspenda su HID local.
 //!
 //! Los parámetros del Framebuffer (`w`/`h`/`fmt`, 16–3840×16–2160, rgb8/gray8)
 //! y su validación son los de SPEC-003 §4 (`core::stream`), sin duplicación:
@@ -305,6 +307,17 @@ pub enum GameMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vram_total_mb: Option<u32>,
     },
+    /// Server → Android (CR-130): estado vigente del DualSense virtual del Servidor.
+    #[serde(rename = "virtual_pad_state")]
+    VirtualPadState {
+        /// true cuando el dispositivo HID virtual está creado y activo.
+        on: bool,
+    },
+    /// Server → Android (CR-131): intensidades del rumble del DualSense
+    /// virtual, leídas del output report USB del host. `strong` es el motor
+    /// izquierdo y `weak` el derecho; `0/0` detiene la vibración.
+    #[serde(rename = "rumble_motors")]
+    RumbleMotors { strong: u8, weak: u8 },
 }
 
 /// CR-053: métrica agregada de una etapa del pipeline de video del Plugin.
@@ -424,8 +437,11 @@ impl GameMsg {
                 }
                 Ok(())
             }
-            // CR-038: el flag es un booleano wire estricto; nada más que validar.
-            GameMsg::CameraRequest { .. } | GameMsg::MicRequest { .. } => Ok(()),
+            // CR-038/CR-130: flags wire booleanos estrictos.
+            GameMsg::CameraRequest { .. }
+            | GameMsg::MicRequest { .. }
+            | GameMsg::VirtualPadState { .. }
+            | GameMsg::RumbleMotors { .. } => Ok(()),
             // CR-053: HUD de etapas del pipeline de video del Plugin.
             GameMsg::VideoStageStats {
                 window_ms,
@@ -666,6 +682,46 @@ mod tests {
                 capabilities: vec!["second_screen".into(), "audio".into()],
             },
         }
+    }
+
+    // TEST-0226 — verifies SPEC-006/CR-130: virtual_pad_state is strict and round-trips.
+    #[test]
+    fn virtual_pad_state_roundtrips_and_rejects_extra_fields() {
+        for on in [false, true] {
+            let message = GameMsg::VirtualPadState { on };
+            let encoded = message.encode().unwrap();
+            assert_eq!(GameMsg::decode(&encoded).unwrap(), message);
+        }
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"virtual_pad_state","on":true,"extra":1}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"virtual_pad_state","on":"true"}"#),
+            Err(PairError::MalformedMessage)
+        );
+    }
+
+    // TEST-0228 — verifies SPEC-006/CR-131: rumble_motors is strict and round-trips.
+    #[test]
+    fn rumble_motors_roundtrips_and_rejects_extra_or_out_of_range() {
+        for (strong, weak) in [(0u8, 0u8), (255, 255), (128, 32)] {
+            let message = GameMsg::RumbleMotors { strong, weak };
+            let encoded = message.encode().unwrap();
+            assert_eq!(GameMsg::decode(&encoded).unwrap(), message);
+        }
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"rumble_motors","strong":1,"weak":2,"extra":0}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"rumble_motors","strong":256,"weak":0}"#),
+            Err(PairError::MalformedMessage)
+        );
+        assert_eq!(
+            GameMsg::decode(r#"{"type":"rumble_motors","strong":1}"#),
+            Err(PairError::MalformedMessage)
+        );
     }
 
     #[test]

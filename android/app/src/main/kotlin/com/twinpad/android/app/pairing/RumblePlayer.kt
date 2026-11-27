@@ -29,8 +29,8 @@ class RumblePlayer(context: Context) {
         device.vibrate(VibrationEffect.createWaveform(waveform.timings, waveform.amplitudes, -1))
     }
 
-    /** Vibración continua por BT (CR-109): la intensidad máxima de strong/weak
-     * (0…255) manda; 0 detiene el motor. */
+    /** Vibración del host por BT (CR-109) o del DualSense virtual (CR-131):
+     * la intensidad máxima de strong/weak (0…255) manda; 0 detiene el motor. */
     fun playStrength(
         strong: Int,
         weak: Int,

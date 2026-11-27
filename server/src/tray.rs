@@ -22,6 +22,8 @@ pub struct TrayActions {
     /// Mando virtual del servidor (W10, CR-114): el menú lo enciende y apaga
     /// igual que la página local.
     pub virtual_pad: Arc<crate::virtual_pad::VirtualPadManager>,
+    /// CR-130: avisa a las sesiones Android tras una transición efectiva.
+    pub on_virtual_pad_changed: Arc<dyn Fn(bool) + Send + Sync>,
 }
 
 struct TwinpadTray {
@@ -92,10 +94,13 @@ impl ksni::Tray for TwinpadTray {
                 activate: Box::new(|tray: &mut Self| {
                     let enabled = !tray.actions.virtual_pad.enabled();
                     match tray.actions.virtual_pad.set_enabled(enabled) {
-                        Ok(()) => println!(
-                            "Twinpad: mando virtual {} (CR-114, SPEC-010 W10).",
-                            if enabled { "activado" } else { "desactivado" }
-                        ),
+                        Ok(()) => {
+                            (tray.actions.on_virtual_pad_changed)(enabled);
+                            println!(
+                                "Twinpad: mando virtual {} (CR-114, SPEC-010 W10).",
+                                if enabled { "activado" } else { "desactivado" }
+                            )
+                        }
                         Err(error) => {
                             eprintln!("Twinpad: no se pudo activar el mando virtual: {error} (E9).")
                         }

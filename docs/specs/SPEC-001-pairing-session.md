@@ -7,7 +7,7 @@
 |---|---|
 | ID | SPEC-001 |
 | Title | Pairing por QR y Handshake de sesión autenticada |
-| Version | 1.5.1 |
+| Version | 1.5.2 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-002 |
@@ -233,6 +233,7 @@ El heartbeat (§4.3 HB4–HB6) no genera códigos E: su expiración equivale a u
 | Mensaje de revocación (`pair_revoke`, CR-102) | este SPEC §4.2/§8.3 | app → servidor; primera línea de un socket nuevo; exige CR |
 | Primitivas criptográficas | este SPEC §7 pasos 8–9 y R4 | el DES precisa la revisión criptográfica del Eng lead |
 | Mensajes de heartbeat (`ping`/`pong`) | este SPEC §4.3 | añadir/quitar tipos exige CR |
+| `virtual_pad_state` | SPEC-006 §4 (CR-130) | Estado del mando virtual Server→Android por la sesión autenticada; se emite al vincular/reanudar y al cambiar efectivamente el toggle; exige CR para cambiarlo |
 
 ## 13. Examples (Given / When / Then)
 
@@ -320,6 +321,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | §8.3 revocación | TEST-008 |
 | R7 regeneración automática del QR al expirar | TEST-009 |
 | HB1–HB3 (emisión, eco de `t` y validación del rango) | TEST-0120, TEST-0122 |
+| Estado `virtual_pad_state` al vincular/reanudar y en cada transición (CR-130) | TEST-0226, TEST-0227 |
 | HB4 expiración server-side (sesión zombi sin EOF) | TEST-0120, TEST-0121 |
 | HB5 silencio del Servidor percibido por la app | TEST-0122 |
 | CR-056: retención y destrucción de la ligadura a los 60 000 ms | TEST-0128, TEST-0129 |
@@ -356,6 +358,7 @@ An implementation complies with this SPEC if and only if: all preconditions are 
 | 1.1.0 | 2026-11-01 | Buffy (agente) | CR-055: heartbeat `ping`/`pong` en S3 (§4.3, HB1–HB6) con expiración de sesión zombi; TEST-0120/0121/0122 |
 | 1.2.0 | 2026-11-01 | Buffy (agente) | CR-056: reanudación del canal de control — estado S4, mensaje `pair_resume` (§4.2) con proof sobre "twinpad.v1 resume", retención 60 000 ms y `session_id` preservado; TEST-0128/0129/0130 |
 | 1.5.1 | 2026-11-26 | Buffy (agente) | CR-102: `pair_revoke` (app → servidor, primera línea de socket nuevo) con proof "twinpad.v1 revoke"; §8.3 borra registro/retención y responde `pair_ack`, E3 sin efectos si es inválido; TEST-0195 |
+| 1.5.2 | 2026-11-26 | Owner + Buffy (agente) (CR-130) | §12: contrato de estado `virtual_pad_state` del mando virtual por sesión, detallado en SPEC-006; TEST-0226/0227 |
 | 1.5.0 | 2026-11-12 | Buffy (agente) | CR-100: §8.2 reinstala la credencial media en un resume si falta tras vencer la retención |
 | 1.4.0 | 2026-11-12 | Buffy (agente) | CR-099: HB7 (heartbeat por socket, reinicio tras `pair_resume`); §8.2 primera línea de socket nueva limitada y estado tras reanudar; TEST-0189/0190 |
 | 1.3.0 | 2026-11-01 | Buffy (agente) | CR-057: §4.1 nota de resolución mDNS de `twinpad.local.` (SPEC-009) |

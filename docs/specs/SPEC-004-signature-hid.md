@@ -4,12 +4,12 @@
 |---|---|
 | ID | SPEC-004 |
 | Title | Signature HID y flujo de inputs del Gamepad (REQ-003) |
-| Version | 1.19.0 |
+| Version | 1.21.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-003 (AC-1, AC-2); base para AC-3 (rumble) |
 | Realized by | DES-002, DES-004 (CR-005/CR-016/CR-017/CR-018/CR-019/CR-021, Draft) |
-| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215, TEST-0218, TEST-0225 |
+| Verified by | TEST-018, TEST-019, TEST-043, TEST-052, TEST-059, TEST-060, TEST-078, TEST-079, TEST-083, TEST-084, TEST-087, TEST-0126, TEST-0127, TEST-0203, TEST-0204, TEST-0205, TEST-0213, TEST-0215, TEST-0218, TEST-0225, TEST-0227, TEST-0228, TEST-0229, TEST-0230 |
 | Last updated | 2026-11-26 |
 
 ## 1. Purpose
@@ -102,6 +102,8 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
 
 ### 8.3 Canal Bluetooth HID como único transporte del gamepad (CR-096; CR-059, ADR-009)
 
+- **Modo mando virtual del Servidor (CR-130):** cuando el Server envía `virtual_pad_state` con `on=true` (SPEC-006 §4), Android detiene el perfil Bluetooth HID local y elige LAN como ruta única mientras la sesión esté Linked. Con `on=false` o al finalizar la sesión, rearma el perfil BT según el ciclo existente; la sesión vuelve a la política normal de esta sección.
+
 - **Trigger:** la app arranca el canal BT HID al abrir si el canal no está
   operativo (CR-122; también rearma al entrar en sesión LAN `Linked`, ante un
   handshake fallido sin Wi-Fi (`Failure`) o al concederse `BLUETOOTH_CONNECT`).
@@ -131,7 +133,7 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
   ningún callback de estado y el canal quedaría sin reintentar hasta reiniciar
   la app. Al conectar, al caer el enlace o al detenerse el canal la ventana se
   cierra y no vence.
-- **Flow:** cada reporte sale por **una sola** ruta (CR-120). Con un receptor que
+- **Flow:** cada reporte sale por **una sola** ruta (CR-120). El modo mando virtual de CR-130 tiene prioridad: si está activo y la sesión está Linked, el reporte va por LAN aunque BT hubiera estado listo. Fuera de ese modo, con un receptor que
   **no consume el HID del sistema** —el Plugin Cemu (`game_id` `cemu`) lee los
   inputs por LAN— y la sesión Linked, la ruta es **LAN** aunque el canal BT esté
   operativo (CR-128); sin sesión, el BT sigue siendo la ruta. Para el resto de
@@ -166,11 +168,17 @@ Invariant: dentro de `H1`, dos cambios del mismo elemento siempre producen repor
   como DualSense. Sin la variable, sin `/dev/uhid` o sin permiso sobre él, el
   Servidor opera igual y no hay mando virtual: su ausencia no es un error de
   sesión ni cambia el resto del contrato.
-- **Nota:** consume los `input_report` de la sesión LAN. Con Cemu seleccionado la
-  ruta de §8.3 ya es LAN (CR-128) y el mando virtual refleja los inputs; con otros
-  juegos, mientras el transporte BT HID esté operativo, esos reportes no llegan al
-  Servidor y el mando virtual queda en reposo (forzarlo exigiría otro cambio de la
-  app, fuera del alcance de CR-113).
+- **Nota (CR-130):** consume los `input_report` de la sesión LAN. Al activarse,
+  el Servidor anuncia `virtual_pad_state.on=true`; Android libera su HID Bluetooth
+  y enruta los inputs por LAN. Así el SO lista el DualSense virtual del Servidor,
+  no el gamepad Bluetooth del teléfono. Al desactivarse o finalizar la sesión,
+  Android rearma su HID y aplica la política normal de §8.3.
+- **Vibración (CR-131):** el Servidor atiende los output reports USB (report id
+  `0x02`, 48 bytes) que el host envía al DualSense virtual. Con
+  `valid_flag0 & 0x01` o `valid_flag2 & 0x04` activos reenvía `motor_left` como
+  `strong` y `motor_right` como `weak` al dueño de inputs mediante
+  `rumble_motors` (SPEC-006 §4); con los tres flags a cero envía `0/0` para
+  parar. La vibración no altera los inputs, el reporte de 100 Hz ni la ruta LAN.
 
 ## 9. Errors
 
@@ -257,6 +265,8 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | Latencia NFR-002 (p95 ≤ 15 ms) | pruebas de performance en banco físico con inyección HID sintética |
 | Codec Report Map → bytes HID y clamps de la Signature (CR-059, ADR-009) | TEST-0126 |
 | Handover failover/alternativa completa: conmutación de ruta e histórisis de 5 s (CR-059) | TEST-0127 |
+| Ruta LAN exclusiva y suspensión/restauración del HID local con el mando virtual del Servidor activo (CR-130) | TEST-0227 |
+| Vibración del DualSense virtual: output report `0x02` del host reenviado como `rumble_motors` (CR-131) | TEST-0228, TEST-0229, TEST-0230 |
 | Home físico = Guide/PS (`BUTTON_MODE`), L3/R3 con sus keycodes y ruta única por reporte (CR-120) | TEST-0213 |
 | Orden de hosts del canal BT HID: el último host conectado se intenta primero (CR-122) | TEST-0215 |
 | Snapshot input conservado y sondeable por Plugin | TEST-052 |
@@ -295,3 +305,5 @@ Una implementación cumple este SPEC si y solo si: respeta la Signature de §2, 
 | 1.15.0 | 2026-11-26 | Owner + Buffy (agente) (CR-120) | §4/§8.3: una sola ruta por reporte (BT si está operativo; si no, LAN) para que el juego no vea dos mandos; mientras hay BT, touch e inercia no llegan al Plugin |
 | 1.18.0 | 2026-11-26 | Owner + Buffy (agente) (CR-125) | §8.3: watchdog de la ronda de conexión HID — 10 s sin `CONNECTED` aborta los enlaces pendientes y reintenta con el backoff existente; TEST-0218 |
 | 1.19.0 | 2026-11-26 | Owner + Buffy (agente) (CR-128) | §8.3/§8.4: con el Plugin Cemu (`game_id` `cemu`) y sesión Linked la ruta del gamepad es LAN (el Plugin no consume el HID del sistema); BT como respaldo sin sesión; TEST-0225 |
+| 1.20.0 | 2026-11-26 | Owner + Buffy (agente) (CR-130) | §8.3/§8.4: el estado del mando virtual suspende el HID BT del teléfono, fuerza inputs por LAN al DualSense y restaura BT al apagarse o terminar la sesión; TEST-0227 |
+| 1.21.0 | 2026-11-26 | Owner + Buffy (agente) (CR-131) | §8.4/§16: el Servidor lee el output report `0x02` del DualSense virtual y reenvía `motor_left`/`motor_right` al dueño de inputs como `rumble_motors`; TEST-0228/0229/0230 |

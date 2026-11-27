@@ -10,9 +10,11 @@ import com.twinpad.android.hid.BluetoothHidGamepad
 import com.twinpad.android.hid.SignatureHidCodec
 
 /**
- * CR-096: canal Bluetooth HID nativo como único transporte del gamepad. El
- * canal se arranca con la sesión LAN Linked o ante un handshake fallido, y
- * el gamepad sólo sale por BT (SPEC-004 §8.3). La LAN no transporta el gamepad.
+ * CR-096: canal Bluetooth HID nativo del gamepad. El canal se arranca al
+ * abrir la app y la ruta se decide por [HandoverPolicy] (SPEC-004 §8.3): BT
+ * por defecto, LAN con un receptor que la prefiera (CR-128) o mientras el
+ * Servidor tenga activo su mando virtual (CR-130). En ese modo el perfil HID
+ * local se suspende para que el PC sólo enumere el DualSense del Servidor.
  *
  * Los reportes por BT no llevan touch ni inercia (ADR-009 §5: exclusivos
  * de la ruta LAN/SDK).
@@ -23,7 +25,10 @@ internal class GamepadBtSwitcher(
     /** CR-128: receptor que sólo lee el `input_report` de LAN (Plugin Cemu). */
     private val preferLan: () -> Boolean = { false },
 ) {
+    @Volatile
     private var btHid: BluetoothHidGamepad? = null
+
+    @Volatile
     private var appContext: Context? = null
     private var rumble: RumblePlayer? = null
 
@@ -31,11 +36,15 @@ internal class GamepadBtSwitcher(
     private var btReady = false
     private var wasLinked = false
 
+    /** CR-130: el Servidor tiene creado su HID DualSense virtual. */
+    @Volatile
+    private var virtualPadActive = false
+
     /** Arranca el canal BT HID al abrir la app (prueba de banco: el teléfono
      * se anuncia como gamepad Bluetooth con la app abierta, sin LAN). */
     fun startChannel(context: Context) {
-        if (btHid != null) return
         appContext = context.applicationContext
+        if (btHid != null || virtualPadActive) return
         rumble = RumblePlayer(context)
         val hid = BluetoothHidGamepad(context)
         btHid = hid
@@ -65,13 +74,36 @@ internal class GamepadBtSwitcher(
 
     fun isBtReady(): Boolean = btReady
 
-    /** Ruta de transporte del gamepad: BT si está listo; LAN si no, o siempre
-     * que el receptor exija LAN (CR-128) y la sesión esté Linked. */
+    /**
+     * CR-130: suspende el perfil HID local mientras el DualSense virtual del
+     * Servidor está activo y lo rearma al apagarse. Así Steam sólo enumera el
+     * mando del Servidor y todos los inputs viajan por la sesión LAN.
+     */
+    fun setVirtualPadActive(active: Boolean) {
+        if (virtualPadActive == active) return
+        virtualPadActive = active
+        val context = appContext
+        if (active) {
+            val hid = btHid
+            btHid = null
+            btReady = false
+            hid?.stop()
+            onBtStateChanged()
+        } else if (context != null) {
+            startChannel(context)
+            onBtStateChanged()
+        }
+    }
+
+    /** Ruta de transporte del gamepad: LAN mientras el mando virtual del
+     * Servidor esté activo; si no, BT si está listo, o LAN cuando el receptor
+     * la exija (CR-128) o el BT no esté operativo. */
     fun route(): InputTransport =
         HandoverPolicy.route(
             lanLinked = isLinked(),
             btReady = btReady,
             preferLan = preferLan(),
+            virtualPadActive = virtualPadActive,
         )
 
     /** Envía el reporte por la ruta BT, si el canal está vivo. */
@@ -103,6 +135,8 @@ internal class GamepadBtSwitcher(
      * cerraba el enlace recién abierto y dejaba el registro anterior ocupado
      * (reintentos de 5-20 s), así que el canal existente sólo se reintenta. */
     fun onPermissionGranted() {
+        // CR-130: el modo virtual mantiene el perfil HID local suspendido.
+        if (virtualPadActive) return
         val hid = btHid
         val context = appContext
         if (hid == null) {
@@ -115,6 +149,7 @@ internal class GamepadBtSwitcher(
 
     /** Libera el perfil si quedó armado (solo al destruir el ViewModel). */
     fun shutdown() {
+        virtualPadActive = false
         btHid?.stop()
         btHid = null
         btReady = false

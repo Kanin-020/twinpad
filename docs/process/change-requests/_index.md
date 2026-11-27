@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-130 |
+| CR | CR-132 |
 
 ## Open / In review
 
@@ -23,6 +23,8 @@
 | CR-046 | Cámara HLE: demanda en Init/Exit y handle 0-based | DES-004 | Open (2026-10-31) | Buffy (agente) | [CR-046-camera-hle-init-based-demand-and-zero-handle.md](CR-046-camera-hle-init-based-demand-and-zero-handle.md) |
 
 ## Approved / in execution
+| CR-130 | Coordinar el mando virtual del Servidor con la ruta LAN de Android: estado `virtual_pad_state`, suspensión/restauración BT HID y entrega de inputs al DualSense | SPEC-001, SPEC-004, SPEC-006, código Android/server, TEST-0226/0227 | Approved (2026-11-26); aplicado en código, banco físico pendiente | Buffy (agente) | [CR-130-virtual-pad-state-and-input-route.md](CR-130-virtual-pad-state-and-input-route.md) |
+| CR-131 | Vibración del DualSense virtual: leer el output report USB `0x02` del host y reenviar `motor_left`/`motor_right` al dueño de inputs como `rumble_motors` | SPEC-004 §8.4/§16, SPEC-006 §4/§12/§16, código core/server/Android, TEST-0228/0229/0230 | Approved (2026-11-26); aplicado en código, banco físico pendiente | Buffy (agente) | [CR-131-virtual-pad-host-rumble.md](CR-131-virtual-pad-host-rumble.md) |
 
 | ID | Title | Targets | Decided | File |
 | CR-099 | Reanudación de sesión (`pair_resume`) estable: heartbeat y relay UDP tras reconectar | SPEC-001 1.4.0 (§4.3 HB7, §8.2), SPEC-003 1.16.0 (§4.4, §8.5) | 2026-11-12 | [CR-099-session-resume-heartbeat-relay-recovery.md](CR-099-session-resume-heartbeat-relay-recovery.md) |
