@@ -74,23 +74,11 @@ impl ksni::Tray for TwinpadTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
         vec![
-            // W3 (CR-063): abrir la interfaz en ventana web del sistema.
+            // W3 (CR-063): abrir la interfaz en ventana web del sistema, sin icono.
             StandardItem {
                 label: "Abrir interfaz de gestión".into(),
-                icon_name: "web-browser".into(),
                 activate: Box::new(|tray: &mut Self| {
                     open_app_window(tray.actions.webui_port);
-                }),
-                ..Default::default()
-            }
-            .into(),
-            // Recordar dónde vive el URI por stdout (W7: útil sin GUI).
-            StandardItem {
-                label: "¿Dónde está el URI?".into(),
-                activate: Box::new(|_tray: &mut Self| {
-                    println!(
-                        "Twinpad: el URI vigente se imprimió en el arranque en este mismo terminal (el QR también se regenera cada 300 s; CR-061 W3)."
-                    );
                 }),
                 ..Default::default()
             }
@@ -108,9 +96,9 @@ impl ksni::Tray for TwinpadTray {
                             "Twinpad: mando virtual {} (CR-114, SPEC-010 W10).",
                             if enabled { "activado" } else { "desactivado" }
                         ),
-                        Err(error) => eprintln!(
-                            "Twinpad: no se pudo activar el mando virtual: {error} (E9)."
-                        ),
+                        Err(error) => {
+                            eprintln!("Twinpad: no se pudo activar el mando virtual: {error} (E9).")
+                        }
                     }
                 }),
                 ..Default::default()

@@ -9,13 +9,13 @@
 |---|---|
 | ID | SPEC-010 |
 | Title | Interfaz local de gestión del Servidor PC |
-| Version | 0.5.0 |
+| Version | 0.6.0 |
 | Status | `Approved` |
 | Owner | Eng lead |
 | Implements | REQ-001 (AC-1, AC-2) y operación/detención de CR-061 |
 | Realized by | DES-005 |
 | Verified by | TEST-0135, TEST-0136, TEST-0137, TEST-0146, TEST-0147, TEST-0148, TEST-0204, TEST-0205 |
-| Last updated | 2026-11-25 |
+| Last updated | 2026-11-26 |
 
 ## 1. Purpose
 
@@ -56,7 +56,7 @@ usuario y parada con gracia (CR-061).
 | `GET /stop` (botón) acción stop | HTTP request | desde 127.0.0.1 | activa la parada con gracia (§5 W6) |
 | `GET /qr` (contador/regeneración) | HTTP request | desde 127.0.0.1 | vencimiento JSON del QR vigente (§5 W9) |
 | `GET /qr/rotate` (botón «Regenerar QR») | HTTP request | desde 127.0.0.1 | rotación del QR vigente (§5 W9 manual, CR-073 0.2.0) |
-| Menú del tray | usuario local | {Abrir interfaz, ¿Dónde está el URI?, Iniciar al arrancar el equipo, Mando virtual (DualSense), Detener servidor} | §5 W1–W4, W10 |
+| Menú del tray | usuario local | {Abrir interfaz de gestión (sin icono), Iniciar al arrancar el equipo, Mando virtual (DualSense), Detener servidor} | §5 W1–W4, W10 |
 | Toggle de autoarranque | usuario local | off/on | instala/elimina entrada XDG autostart (§5 W5) |
 | Toggle del mando virtual | usuario local | off/on | crea/destruye el HID DualSense del servidor y persiste la elección (§5 W10) |
 
@@ -64,7 +64,7 @@ usuario y parada con gracia (CR-061).
 
 - **W1 — Tray persistente:** mientras el Servidor PC corre, existe un
   icono de bandeja. Su tooltip indica el estado «Twinpad — activo» y el
-  URI vigente queda accesible vía el menú (W3) y la página (W2). El icono
+  URI vigente queda accesible en la página (W2). El icono
   puede aparecer DESPUÉS que el proceso (el host de bandeja aún no existe) y
   debe reaparecer si el host se reinicia: el servicio de bandeja no se rinde
   ante un `StatusNotifierWatcher` ausente (CR-114; ver W7).
@@ -74,8 +74,9 @@ usuario y parada con gracia (CR-061).
   del servidor: «activo», número de sesiones activas y lista de juegos
   compatibles; (d) la resolución y el bitrate de video configurados
   actualmente para el encoder del Plugin.
-- **W3 — Abrir interfaz:** la acción de menú del tray abre la página de
-  gestión (solicitud HTTP GET al puerto local, desde el propio PC) en una
+- **W3 — Abrir interfaz:** la acción «Abrir interfaz de gestión» del menú
+  del tray, sin icono, abre la página de gestión (solicitud HTTP GET al
+  puerto local, desde el propio PC) en una
   ventana del sistema: por defecto el WEBVIEW DEL SISTEMA del escritorio
   del host (WebKitGTK vía `flatpak-spawn --host` + PyGObject en el host —
   CR-063 0.2.0; ventana propia sin barra de direcciones ni pestañas); el
@@ -217,3 +218,4 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 | 0.4.0 | 2026-11-04 | Buffy (agente) | W9: continuidad del QR sin recargar (contador + regeneración automática/manual, `GET /qr`, E7/AC-5; NFR-003 reescrito); CR-073; TEST-0146 |
 | 0.4.1 | 2026-11-04 | Buffy (agente) | W9 manual corregido por decisión del owner: «Regenerar QR» ROTA el token (`GET /qr/rotate`; §8.3 reutilizada; el vencimiento automático no rota); AC-6; CR-073 0.2.0; TEST-0147/0148 |
 | 0.5.0 | 2026-11-25 | Owner + Buffy (agente) (CR-114) | W10: mando virtual DualSense on/off desde la página y el menú del tray (`POST /virtual-pad`, preferencia persistida, E9/AC-7); W1/W7: la bandeja espera al host SNI y se re-registra si reaparece |
+| 0.6.0 | 2026-11-26 | Owner + Buffy (agente) (CR-129) | Menú del tray: «Abrir interfaz de gestión» sin icono y eliminación de «¿Dónde está el URI?»; la página local y el URI de arranque no cambian |

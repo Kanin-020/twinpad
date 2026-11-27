@@ -4,12 +4,12 @@
 |---|---|
 | ID | DES-005 |
 | Title | Interfaz local del Servidor PC: tray + página HTTP loopback |
-| Version | 0.4.1 |
-| Status | `Approved` (CR-061; CR-063 apertura en webview del sistema) |
+| Version | 0.5.0 |
+| Status | `Approved` (CR-061; CR-063 apertura en webview del sistema; CR-129 menú simplificado) |
 | Owner | Eng lead |
 | Realizes | SPEC-010 (full) |
 | Depends on | DES-001, ADR-010 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-26 |
 
 ## 1. Overview
 
@@ -17,10 +17,12 @@ Dos componentes nuevos en el adaptador ejecutable del Servidor PC
 (crate `twinpad-server`, sin tocar `twinpad-core`):
 
 - `server/src/tray.rs` — hilo de bandeja con `ksni` (StatusNotifierItem
-  puro-Rust sobre D-Bus/zbus). Menú: «Abrir interfaz», «Mostrar URI
-  (terminal)», «Iniciar al arrancar el equipo» (casilla), «Detener
-  servidor». Fail-soft: si el spawn falla, solo log y sin bandeja.
-  «Abrir interfaz» (CR-063 0.2.0) lanza la página en el WEBVIEW del
+  puro-Rust sobre D-Bus/zbus). Menú: «Abrir interfaz de gestión» (sin
+  icono), «Iniciar al arrancar el equipo» (casilla), «Mando virtual
+  (DualSense)» y «Detener servidor». Fail-soft: si el spawn falla, solo
+  log y sin bandeja; la página local y la salida de URI de arranque
+  siguen disponibles. «Abrir interfaz» (CR-063 0.2.0) lanza la página en
+  el WEBVIEW del
   sistema: `flatpak-spawn --host python3 -c <script> URL` crea una
   `Gtk.Window + WebKit2.WebView` (WebKitGTK 4.1) en el escritorio del
   HOST (el binario corre en sandbox Toolbx sin GTK/WebKit; el host
@@ -85,7 +87,7 @@ Sesión activa, Juego compatible). El estado compartido es el flag
 
 ```mermaid
 sequenceDiagram
-  Usuario->>Tray: «Abrir interfaz»
+  Usuario->>Tray: «Abrir interfaz de gestión»
   Tray->>WebUI: GET 127.0.0.1:8430/
   WebUI->>TokenStore: ensure_fresh_qr()
   WebUI-->>Usuario: HTML (QR SVG + URI + estado + configs)
@@ -178,3 +180,4 @@ No aplica (cada petición re-lee estado; W8 exige frescura por consulta).
 | 0.3.1 | 2026-11-02 | Buffy (agente) | UI como assets compilados: server/ui/index.html + styles.css inyectados con include_str! en webui (sin HTML/CSS inline en Rust); sin cambio de comportamiento (TEST-0135 intacto) |
 | 0.4.0 | 2026-11-04 | Buffy (agente) | Ruta GET /qr (JSON uri+ttl_ms+svg del mismo token, W8) + contador y regeneración sin recargar en la página (dashboard de 2 columnas); CR-073; TEST-0146 |
 | 0.4.1 | 2026-11-04 | Buffy (agente) | «Regenerar QR» con rotación real: GET /qr/rotate + tokens::rotate_qr (invalida el vigente y emite nuevo; vencimiento automático sin rotación); CR-073 0.2.0; TEST-0147/0148 |
+| 0.5.0 | 2026-11-26 | Owner + Buffy (agente) (CR-129) | «Abrir interfaz de gestión» sin icono y eliminación de «¿Dónde está el URI?» del menú del tray; la página de gestión y la salida URI al arrancar permanecen |

@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-129 |
+| CR | CR-130 |
 
 ## Open / In review
 
@@ -64,6 +64,10 @@
 | CR-128 | El gamepad usa la ruta LAN cuando el receptor es Cemu (el Plugin no consume el HID del sistema), con BT como respaldo sin sesión; una sola ruta por reporte | SPEC-004 1.19.0 (§8.3, §8.4), código `hid/HandoverPolicy`, `pairing/GamepadBtSwitcher`, `pairing/PairingViewModel`, traceability (TEST-0225) | Approved (2026-11-26); código y SPEC aplicados | Buffy (agente) | [CR-128-lan-input-route-for-cemu.md](CR-128-lan-input-route-for-cemu.md) |
 
 ## Applied
+
+| ID | Title | Targets | Status | Author | File |
+|---|---|---|---|---|---|
+| CR-129 | Simplificar las opciones del menú del tray: «Abrir interfaz de gestión» sin icono y quitar «¿Dónde está el URI?» | SPEC-010 0.6.0 (§4/§5 W1/W3), DES-005 0.5.0, `server/src/tray.rs` | Approved / applied (2026-11-26) | Buffy (agente) | [CR-129-tray-management-menu.md](CR-129-tray-management-menu.md) |
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|
