@@ -2,6 +2,31 @@
 
 Segunda pantalla y gamepad HID para PC, controlados desde un celular Android. Se vinculan escaneando un QR en la red local.
 
+## Funcionalidades que Twinpad emula
+
+Twinpad no hace mirroring del escritorio ni captura medios por su cuenta: el Plugin del juego publica lo que quiere mostrar y Twinpad lo adapta, lo transporta y lo presenta en el teléfono. Estas son las capacidades que el sistema emula o sustituye hoy:
+
+| Función | Qué aporta Twinpad | Transporte | Estado y límites |
+|---|---|---|---|
+| Segunda pantalla | Convierte el teléfono en la pantalla del juego con frames H.264 publicados por el Plugin (por ejemplo, el DRC de Cemu). No es mirroring del escritorio. | LAN | Implementado. Solo contenido publicado por el Plugin; sin Plugin no hay imagen. |
+| Toque en la Segunda pantalla | Convierte el toque sobre la imagen en `touch_x`/`touch_y` del GamePad. | LAN | Implementado. Se conserva la última coordenada al soltar. |
+| Controles táctiles | Superficie de la app con sticks, D-pad, botones y triggers que se comportan como un gamepad. | Bluetooth HID o LAN | Implementado. El editor de perfiles táctiles (REQ-008) sigue en Draft. |
+| Mando físico del teléfono | Un gamepad conectado por USB/Bluetooth al Android se fusiona con los controles táctiles y se envía al juego. | Bluetooth HID o LAN | Implementado (CR-028). Los botones fuera de la Signature se ignoran. |
+| Acelerómetro y giroscopio | Envía movimiento del teléfono como movimiento del GamePad Wii U de Cemu o del DualSense virtual; incluye monitores de orientación opcionales. | LAN / SDK | Implementado. No viaja por Bluetooth HID; para terceros, solo por el SDK Twinpad. |
+| Vibración / rumble | Hace vibrar el teléfono con la vibración que pide el juego: patrones de Cemu, output reports del gamepad BT o intensidades de los motores del DualSense virtual. | Bluetooth HID o LAN | Implementado. Si el dispositivo no tiene vibrador, el mensaje se ignora. |
+| Audio del juego | Reproduce en el teléfono el PCM que publica el Plugin (en Cemu, el audio GamePad/DRC). | LAN | Implementado. El audio de TV del juego sigue sonando en la PC; las rutas no se mezclan. |
+| Micrófono | Usa el micrófono del teléfono como micrófono del GamePad de Cemu, bajo demanda del juego. | LAN | Implementado para Cemu. Requiere permiso `RECORD_AUDIO`, demanda vigente y el interruptor del drawer. |
+| Cámara | Usa la cámara del teléfono como cámara del GamePad de Cemu, con lente frontal o trasera. | LAN | Implementado para Cemu. H.264 320×240 a 30 fps, solo bajo demanda del juego y opt-in del usuario. |
+| NFC / Amiibo | Lee un Amiibo con el NFC del teléfono y Cemu lo monta como tag virtual con una copia por UID. | LAN | Implementado para Cemu. Lectura de solo lectura: nunca escribe el tag físico. |
+| Teclado | Muestra el teclado del GamePad de Cemu en el IME del teléfono y devuelve el texto, la confirmación o la cancelación. | LAN | Implementado para Cemu. Solo aparece con demanda vigente del juego. |
+| Gamepad HID Bluetooth | El teléfono se presenta al PC como un gamepad HID estándar, sin drivers adicionales. | Bluetooth | Implementado. Lleva inputs y vibración; no lleva vídeo, audio, cámara, micrófono, NFC, touch ni giroscopio. |
+| Mando virtual DualSense | El servidor crea un DualSense virtual por `/dev/uhid`; el PC y Steam lo ven como un mando USB con touchpad, giroscopio, acelerómetro y botón PS. | LAN para inputs; USB para el sistema | Implementado solo en Linux con `/dev/uhid`. Al activarlo, el teléfono suspende su HID Bluetooth y los inputs van por LAN; la vibración vuelve al teléfono. |
+| Transporte LAN | Sesión autenticada por TCP y canal local del Plugin; transporta control, vídeo, audio, cámara, micrófono, NFC, touch, movimiento y rumble. | LAN | Implementado. Solo red local; no hay streaming por internet ni remote play. |
+| Transporte Bluetooth | Enlace HID clásico para usar el teléfono como gamepad incluso sin WiFi. | Bluetooth | Implementado. Es un modo alternativo de controles; la Segunda pantalla y el audio quedan fuera. |
+| Vinculación y descubrimiento | QR, código de vinculación manual cuando no hay cámara y descubrimiento mDNS del servidor. | LAN | Implementado. El QR caduca y se puede regenerar desde la página local o Decky. |
+
+El detalle normativo de cada fila está en [SPEC-004](docs/specs/SPEC-004-signature-hid.md), [SPEC-005](docs/specs/SPEC-005-audio-stream.md) y [SPEC-006](docs/specs/SPEC-006-plugin-sdk-detection.md).
+
 ## Para usuarios
 
 ### Qué necesitas
