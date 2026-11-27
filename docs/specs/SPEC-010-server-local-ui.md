@@ -58,7 +58,7 @@ usuario y parada con gracia (CR-061).
 | `GET /qr/rotate` (botón «Regenerar QR») | HTTP request | desde 127.0.0.1 | rotación del QR vigente (§5 W9 manual, CR-073 0.2.0) |
 | Menú del tray | usuario local | {Abrir interfaz de gestión (sin icono), Iniciar al arrancar el equipo, Mando virtual (DualSense), Detener servidor} | §5 W1–W4, W10 |
 | Toggle de autoarranque | usuario local | off/on | instala/elimina entrada XDG autostart (§5 W5) |
-| Toggle del mando virtual | usuario local | off/on | crea/destruye el HID DualSense del servidor y persiste la elección (§5 W10) |
+| Toggle del mando virtual (página, tray o panel Decky) | usuario local | off/on | crea/destruye el HID DualSense del servidor y persiste la elección (§5 W10; panel Decky CR-132) |
 
 ## 5. Behavior (rules)
 
@@ -123,7 +123,7 @@ usuario y parada con gracia (CR-061).
   válida (incluido 503 cuando el SVG no es renderizable), la página
   conserva el QR y el URI vigentes y reintenta con cadencia fija (15 s;
   el reintento SOLO consulta, no rota).
-- **W10 — Mando virtual on/off desde la página (CR-114):** la página muestra
+- **W10 — Mando virtual on/off desde la página (CR-114; panel Decky CR-132):** la página muestra
   «Mando virtual (DualSense): Activado|Desactivado» y un botón que conmuta el
   HID del servidor por `POST /virtual-pad` con cuerpo
   `enabled=1|0` y cabecera `X-Twinpad-Action` (misma regla S1 que W5).
@@ -137,7 +137,11 @@ usuario y parada con gracia (CR-061).
   estado no cambia y la nota del panel muestra el error (E9). El mismo
   interruptor, con su marca de verificación, está en el menú del tray
   («Mando virtual (DualSense)») y comparte estado y preferencia con la
-  página.
+  página. El panel de Decky (QAM) ofrece el mismo interruptor «Mando virtual
+  (DualSense)»: lee el estado de `GET /` (ancla `id="pad-state"`) y conmuta
+  con el mismo `POST /virtual-pad` y cabecera S1. Si no puede leer el estado,
+  el interruptor queda deshabilitado; si el servidor responde 500 (E9),
+  muestra el motivo y no cambia el estado local por su cuenta.
 
 ## 6. Outputs
 
@@ -190,7 +194,7 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 - AC-1: dado el server activo, `GET /` en el puerto local responde 200 con el URI vigente presente en la respuesta, y el mismo URI sirve al QR renderizado (W2, W8).
 - AC-2: dado el server activo, la página muestra el número de sesiones activas y los juegos compatibles (W2).
 - AC-3: dada la acción de parada (tray o botón), el proceso del server termina y no se aceptan nuevas sesiones (W4).
-- AC-7: dado el servidor activo con `/dev/uhid` disponible, el toggle del mando virtual responde 204 y el dispositivo HID existe o deja de existir según el estado; apagado y con el fichero de preferencia `off`, un arranque posterior no lo crea (W10).
+- AC-7: dado el servidor activo con `/dev/uhid` disponible, el toggle del mando virtual (página, tray o panel Decky) responde 204 y el dispositivo HID existe o deja de existir según el estado; apagado y con el fichero de preferencia `off`, un arranque posterior no lo crea (W10). TEST-0231 cubre el parseo de estado y la petición del panel Decky; la validación física del QAM queda en banco.
 - AC-4: dado el toggle de autoarranque activado, la entrada de autoarranque existe; desactivado, ausente; repetir no duplica (W5).
 - AC-5: dado el server activo, `GET /qr` desde loopback responde 200 con JSON que contiene el uri vigente, ttl_ms ∈ (0; 300 000] y el svg del MISMO token (W8); desincronizar QR y casilla es imposible por diseño (misma respuesta, única consulta). TEST-0146. La cadencia del contador y el swap visual sin recarga son verificación manual (owner).
 - AC-6: dado el server activo, `GET /qr/rotate` desde loopback invalida el token vigente no consumido, emite uno nuevo (distinto por llamada) y es idempotente en la condescendencia (sin vigente: emite); el URI anterior queda fuera (E2/E3 via `lookup`). TEST-0147/0148.
@@ -219,3 +223,4 @@ en el log del server (E1/W7) y no afecta al pairing.)*
 | 0.4.1 | 2026-11-04 | Buffy (agente) | W9 manual corregido por decisión del owner: «Regenerar QR» ROTA el token (`GET /qr/rotate`; §8.3 reutilizada; el vencimiento automático no rota); AC-6; CR-073 0.2.0; TEST-0147/0148 |
 | 0.5.0 | 2026-11-25 | Owner + Buffy (agente) (CR-114) | W10: mando virtual DualSense on/off desde la página y el menú del tray (`POST /virtual-pad`, preferencia persistida, E9/AC-7); W1/W7: la bandeja espera al host SNI y se re-registra si reaparece |
 | 0.6.0 | 2026-11-26 | Owner + Buffy (agente) (CR-129) | Menú del tray: «Abrir interfaz de gestión» sin icono y eliminación de «¿Dónde está el URI?»; la página local y el URI de arranque no cambian |
+| 0.7.0 | 2026-11-26 | Owner + Buffy (agente) (CR-132) | W10: el panel Decky añade el interruptor «Mando virtual (DualSense)» reutilizando `GET /` y `POST /virtual-pad`; TEST-0231 |

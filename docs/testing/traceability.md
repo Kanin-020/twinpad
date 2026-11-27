@@ -7,7 +7,7 @@
 
 | Type | Next |
 |---|---|
-| TEST | TEST-0231 |
+| TEST | TEST-0232 |
 
 > 💡 TEST IDs are reserved here and defined physically in the test code (see test-strategy.md §4).
 
@@ -244,6 +244,7 @@
 | REQ-003 | SPEC-004 | `-` | TEST-0228 | Passed (2026-11-26, host) | CR-131: Test core `rumble_motors_roundtrips_and_rejects_extra_or_out_of_range` — ida y vuelta con 0/0, 255/255 y 128/32, y rechazo estricto de campos extra, 256 o `weak` faltante (SPEC-006 §4) |
 | REQ-003 | SPEC-004 | DES-002 | TEST-0229 | Passed (2026-11-26, host) | CR-131: Test JVM `RumbleMotorsCodecTest` (3 tests: intensidades y parada, faltantes/no enteros/fuera de rango y campos extra/tipo inválido); el decoder estricto alimenta `RumblePlayer.playStrength` (SPEC-006 §4, SPEC-004 §8.4) |
 | REQ-003 | SPEC-004 | `-` | TEST-0230 | Passed (2026-11-26, host) | CR-131: Test de servidor `uhid_output_report_decodes_dualsense_rumble_and_stop` — `UHID_OUTPUT` con report id `0x02` y `valid_flag0 & 0x01` o `valid_flag2 & 0x04` produce `(motor_left, motor_right)`; los tres flags a cero producen `(0,0)`; un flag ajeno, report id/tipo/tamaño inválidos se descartan |
+| REQ-001 | SPEC-010 | DES-005 | TEST-0231 | Passed (2026-11-26, host) | CR-132: Tests Python `test_virtual_pad.py` (3 tests) — `_page_state` lee `id="pad-state"` de `GET /`; `set_virtual_pad` hace `POST /virtual-pad` con `enabled=1|0` y `X-Twinpad-Action`; el 500 de E9 devuelve el motivo sin cambiar el estado. La navegación/visual del QAM queda en banco |
 
 ## NFR verification
 
@@ -367,6 +368,7 @@
 | CR-129 | SPEC-010 §4/§5 W1/W3, DES-005 §1/§6: «Abrir interfaz de gestión» sin icono y opción «¿Dónde está el URI?» retirada del menú del tray; página local y salida de URI al arrancar sin cambios | 2026-11-26 | Approved por petición del owner; SPEC-010 0.6.0, DES-005 0.5.0 y `server/src/tray.rs` aplicados |
 | CR-130 | SPEC-001 §12, SPEC-004 §8.3/§8.4 y SPEC-006 §4/§12: `virtual_pad_state` server→Android con estado inicial al vincular/reanudar y cada transición efectiva del toggle; con `on=true` Android suspende el perfil HID local, envía los inputs sólo por LAN y restaura BT al apagarse o terminar la sesión | 2026-11-26 | Approved por el owner; SPEC-001 1.5.2, SPEC-004 1.20.0, SPEC-006 1.31.0, código y TEST-0226/0227 aplicados (Rust + JVM); banco físico (Steam con un solo DualSense y inputs) pendiente |
 | CR-131 | SPEC-004 §8.4/§16 y SPEC-006 §4/§12/§16: el Servidor lee el output report USB `0x02` del DualSense virtual y reenvía `motor_left`/`motor_right` al dueño de inputs como `rumble_motors` (0–255; `0/0` = parar) | 2026-11-26 | Approved por la petición del owner; SPEC-004 1.21.0, SPEC-006 1.32.0, código y TEST-0228/0229/0230 aplicados (Rust + JVM); banco físico pendiente (rumble de Steam/DualSense al teléfono) |
+| CR-132 | SPEC-010 §4/§5 W10/§9 AC-7: el panel Decky añade el interruptor «Mando virtual (DualSense)» y reutiliza `GET /` (`id="pad-state"`) y `POST /virtual-pad` con cabecera S1 | 2026-11-26 | Approved por la petición del owner; SPEC-010 0.7.0, backend/panel y TEST-0231 aplicados; validación física del QAM pendiente |
 | CR-120 | SPEC-004 §4/§8.3, SPEC-011 §4: Home físico = Guide/PS (`KEYCODE_BUTTON_MODE`), Home asignado por defecto y un solo transporte de `input_report` por reporte (BT si está operativo, si no LAN); la conexión BT HID prueba todos los emparejados clásicos por ronda | 2026-11-26 | Approved por el reporte del owner; código aplicado (TEST-0213 JVM); banco físico pendiente (Home en Steam, latencia de detección y doble input en Cemu) |
 | — | Informe 2026-10-19: separate view DRC path review and 60 fps performance evidence/recommendations (`docs/engineering/2026-10-19-cemu-twinpad-60fps.md`); implementación Base64URL preasignado para reducir coste del IPC sin cambiar el wire | 2026-10-19 | Analysis/optimization; Cemu debug build/relink passed, TEST-065 runtime assertions and device E2E pending |
 
