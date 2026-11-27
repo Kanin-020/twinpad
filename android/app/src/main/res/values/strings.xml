@@ -4,11 +4,11 @@
     <string name="app_name">Twinpad</string>
     <string name="pairing_scan_button">Escanear QR</string>
     <string name="pairing_cancel_button">Cancelar</string>
-    <string name="pairing_disconnect_button">Desconectar</string>
     <string name="pairing_saved_empty">Aún no hay dispositivos guardados.</string>
     <string name="pairing_saved_title">Conexiones guardadas</string>
     <string name="pairing_saved_hint">Toca una conexión para reconectarte o desconectarla. El punto verde marca la que está transmitiendo ahora.</string>
     <string name="pairing_saved_active">Transmitiendo</string>
+    <string name="pairing_saved_connect">Conectar</string>
     <string name="pairing_saved_forget">Olvidar</string>
     <string name="pairing_saved_disconnect">Desconectar</string>
     <string name="pairing_retry_button">Reintentar</string>
@@ -19,7 +19,6 @@
     <string name="pairing_scanning">Apunta la cámara al QR de la PC…</string>
     <string name="pairing_handshaking">Conectando con la PC…</string>
     <string name="pairing_reconnecting">Reconectando con la PC…</string>
-    <string name="pairing_linked">Vinculado</string>
     <string name="pairing_pending_link">Enlace guardado: se conectará cuando termine la sesión actual</string>
     <string name="pairing_error_server_unavailable">Servidor no disponible</string>
     <string name="pairing_error_qr_expired">QR expirado, generar uno nuevo</string>
@@ -28,6 +27,9 @@
     <string name="pairing_error_invalid_qr">QR no válido</string>
     <string name="pairing_error_camera_denied">Se necesita la cámara para escanear el QR</string>
     <string name="pairing_session_ended">Sesión terminada</string>
+    <!-- CR-133: vista «Sesión actual» sin sesión viva (independiente del panel). -->
+    <string name="session_empty_title">Sesión actual</string>
+    <string name="session_empty_hint">No hay ninguna sesión activa. Vincula tu PC desde «Nueva conexión».</string>
     <!-- CR-126: aviso en el teléfono de que la lectura NFC se detectó. -->
     <string name="amiibo_nfc_detected">NFC detectado: Amiibo %1$s</string>
     <string name="second_screen_active">Segunda pantalla</string>
@@ -87,13 +89,12 @@
     <string name="gamepad_mapper_key">Botón %1$d</string>
     <string name="gamepad_mapper_axis">Eje %1$s (%2$s)</string>
     <string name="gamepad_mapper_axis_name">%1$d</string>
-    <!-- CR-090: el título de cámara pierde la mención a la integración (el
-         dueño pidió no nombrarla en la app); el micrófono gana su propia
-         sección justo encima, con el mismo patrón de interruptor. -->
-    <string name="settings_microphone">Micrófono del teléfono</string>
+    <!-- CR-090 + CR-139: micrófono, cámara y NFC comparten un solo apartado
+         («Envío de datos del dispositivo»), sin nombrar la integración. -->
+    <string name="settings_device_send">Envío de datos del dispositivo</string>
     <string name="settings_microphone_stream">Enviar micrófono al GamePad</string>
-    <string name="settings_camera">Cámara del teléfono</string>
     <string name="settings_camera_stream">Enviar cámara al GamePad</string>
+    <string name="settings_nfc_send">Activar envío NFC</string>
     <string name="settings_camera_front">Frontal</string>
     <string name="settings_camera_back">Trasera</string>
     <string name="settings_audio">Volumen GamePad local</string>

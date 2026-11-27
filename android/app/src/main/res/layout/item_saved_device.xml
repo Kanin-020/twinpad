@@ -25,7 +25,7 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <!-- Punto verde: la conexión guardada está transmitiendo ahora. -->
+            <!-- CR-138: punto verde de la conexión guardada activa (U4/U6). -->
             <ImageView
                 android:id="@+id/saved_device_status"
                 android:layout_width="8dp"
@@ -52,6 +52,7 @@
             android:textColor="@color/design_misted_slate"
             android:textSize="13sp" />
 
+        <!-- Conexión activa: Desconectar. -->
         <Button
             android:id="@+id/saved_device_action"
             style="@style/Widget.Twinpad.Button.Filled"
@@ -59,5 +60,32 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:visibility="gone" />
+
+        <!-- CR-134: conexión inactiva: Conectar (reanudar sin QR) u Olvidar. -->
+        <LinearLayout
+            android:id="@+id/saved_device_actions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/saved_device_connect"
+                style="@style/Widget.Twinpad.Button.Filled"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/pairing_saved_connect" />
+
+            <Button
+                android:id="@+id/saved_device_forget"
+                style="@style/Widget.Twinpad.Button.Filled"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/pairing_saved_forget" />
+        </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

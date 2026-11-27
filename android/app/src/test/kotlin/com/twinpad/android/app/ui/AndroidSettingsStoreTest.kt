@@ -46,6 +46,10 @@ class AndroidSettingsStoreTest {
         val micMuted = settings.copy(microphoneStream = false)
         assertEquals(false, micMuted.microphoneStream)
         assertEquals(settings.videoConfigLine(), micMuted.videoConfigLine())
+        // CR-137: el envío NFC también es local y no altera `video_config`.
+        val nfcOff = settings.copy(nfcSend = false)
+        assertEquals(false, nfcOff.nfcSend)
+        assertEquals(settings.videoConfigLine(), nfcOff.videoConfigLine())
     }
 
     @Test
@@ -74,6 +78,9 @@ class AndroidSettingsStoreTest {
         assertEquals(true, defaults.microphoneStream)
         // CR-034: la cámara sigue siendo opt-in (apagada por defecto).
         assertEquals(false, defaults.cameraStream)
+        // CR-137: el envío NFC es opt-in (apagado por defecto, decisión del
+        // owner): hasta marcarlo no se activa el lector ni se manda `amiibo_tag`.
+        assertEquals(false, defaults.nfcSend)
     }
 
     @Test

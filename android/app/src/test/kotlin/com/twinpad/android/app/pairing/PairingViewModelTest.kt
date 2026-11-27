@@ -171,6 +171,39 @@ class PairingViewModelTest {
         }
     }
 
+    /** TEST-0235 — verifies CR-136: con la sesión retenida (U6) el QR pedido
+     * desde la vista de agregar no se pierde ni corta la reconexión: queda
+     * registrado como enlace pendiente y la máquina sigue en U6. */
+    @Test
+    fun qrScannedWhileReconnectingIsDeferred() {
+        val links =
+            mutableListOf(
+                com.twinpad.android.app.ui.SavedLink(
+                    sessionId = sessionId,
+                    sessionKey = ByteArray(32),
+                    // Sin IP: el resolver no abre TCP en el test.
+                    addr = "twinpad.local.",
+                    port = 8422,
+                ),
+            )
+        val store: (Application) -> com.twinpad.android.app.ui.PairingLinkStore = {
+            object : com.twinpad.android.app.ui.PairingLinkStore(it) {
+                override fun loadAll() = links.toList()
+            }
+        }
+        val viewModel =
+            PairingViewModel(
+                app,
+                PairingCollaborators(machine = PairingStateMachine(), linkStore = store),
+            )
+
+        assertEquals(PairingUiState.Reconnecting(sessionId), viewModel.uiState.value)
+        viewModel.onEvent(PairingEvent.QrScanned("twinpad://v1#s=127.0.0.1&p=8422&t=$nonceStr"))
+
+        assertEquals(PairingUiState.Reconnecting(sessionId), viewModel.uiState.value)
+        assertTrue(viewModel.pendingLinkWaiting.value)
+    }
+
     /** TEST-0195 — verifies CR-094 §2.3 + CR-102 (SPEC-001 §8.3):
      * «Desconectar» envía `pair_revoke` por un socket nuevo (proof válido
      * sobre la session_key guardada), cierra la sesión y quita la vinculación

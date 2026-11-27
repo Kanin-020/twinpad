@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.twinpad.android.app.R
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.roundToInt
 
 /** Resoluciones seleccionables (16:9, CR-001). */
@@ -63,6 +64,10 @@ internal interface SettingsDrawerHost {
 internal class SettingsDrawerController(
     private val activity: AppCompatActivity,
     private val host: SettingsDrawerHost,
+    /** CR-137: ajuste «Activar envío NFC» vigente; lo consume el lector
+     * `amiibo_tag` (CR-126). Se pasa como estado para no sumar otra función a
+     * la interfaz del drawer (detekt TooManyFunctions). */
+    private val nfcSend: MutableStateFlow<Boolean>,
 ) {
     private val store = AndroidSettingsStore(activity)
 
@@ -116,6 +121,9 @@ internal class SettingsDrawerController(
             if (settings.cameraLens == CameraLens.FRONT) R.id.camera_lens_front else R.id.camera_lens_back
         activity.findViewById<RadioButton>(lensButtonId).isChecked = true
         host.onCameraStreamToggled(settings.cameraStream, settings.cameraLens)
+        // CR-137: interruptor del envío NFC debajo de la cámara.
+        activity.findViewById<SwitchMaterial>(R.id.switch_nfc_send).isChecked = settings.nfcSend
+        nfcSend.value = settings.nfcSend
         host.applyVideoScale(settings)
     }
 
@@ -217,6 +225,13 @@ internal class SettingsDrawerController(
         activity.findViewById<SwitchMaterial>(R.id.switch_metrics_slider)
             .setOnCheckedChangeListener { _, checked ->
                 updateStreamSettings { it.copy(metricsSliderOverStream = checked) }
+            }
+        // CR-137: el envío NFC persiste y el lector lo observa; apagarlo
+        // desmonta el tag vigente (CR-126).
+        activity.findViewById<SwitchMaterial>(R.id.switch_nfc_send)
+            .setOnCheckedChangeListener { _, checked ->
+                nfcSend.value = checked
+                persist { it.copy(nfcSend = checked) }
             }
     }
 

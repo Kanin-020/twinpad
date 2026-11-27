@@ -24,7 +24,8 @@ import java.io.IOException
  * Lector NFC de Amiibo (CR-126). Solo lectura: nunca escribe el tag físico.
  *
  * El lector se activa únicamente mientras la Activity está visible (`start`),
- * la sesión está vinculada y el juego «cemu» está seleccionado (`setEnabled`).
+ * la sesión está vinculada, el juego «cemu» está seleccionado y el ajuste
+ * «Activar envío NFC» está activado (CR-137) (`setEnabled`).
  * Cada Amiibo presentado envía una línea `amiibo_tag` con su volcado NTAG215;
  * al retirarlo se envía `present:false`. Una lectura fallida no envía nada.
  */
@@ -42,10 +43,11 @@ class AmiiboNfcController(
         owner: LifecycleOwner,
         uiState: StateFlow<PairingUiState>,
         selectedGameId: StateFlow<String?>,
+        nfcSend: StateFlow<Boolean>,
     ) {
         owner.lifecycleScope.launch {
-            combine(uiState, selectedGameId) { state, gameId ->
-                state is PairingUiState.Linked && gameId == "cemu"
+            combine(uiState, selectedGameId, nfcSend) { state, gameId, send ->
+                state is PairingUiState.Linked && gameId == "cemu" && send
             }.collectLatest { setEnabled(it) }
         }
         owner.lifecycle.addObserver(
@@ -224,9 +226,10 @@ class AmiiboNfcController(
         internal fun attach(
             activity: Activity,
             viewModel: PairingViewModel,
+            nfcSend: StateFlow<Boolean>,
         ) {
             AmiiboNfcController(activity, viewModel::sendSessionLine)
-                .bind(activity as LifecycleOwner, viewModel.uiState, viewModel.selectedGameId)
+                .bind(activity as LifecycleOwner, viewModel.uiState, viewModel.selectedGameId, nfcSend)
         }
     }
 }

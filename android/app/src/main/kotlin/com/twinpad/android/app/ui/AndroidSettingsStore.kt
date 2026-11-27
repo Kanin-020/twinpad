@@ -32,6 +32,10 @@ data class AndroidSettings(
     val cameraStream: Boolean = false,
     /** CR-034: lente usada cuando [cameraStream] está activada. */
     val cameraLens: CameraLens = CameraLens.FRONT,
+    /** CR-137: envío del tag NFC/Amiibo al GamePad (CR-126). Nace apagado
+     * (opt-in, decisión del owner): sin marcar no se activa el lector ni se
+     * manda `amiibo_tag`; al apagarlo con un tag montado, se desmonta. */
+    val nfcSend: Boolean = false,
     /** CR-054: bloque «Métricas avanzadas» del HUD con las etapas del
      * pipeline del Plugin (`video_stage_stats`); opt-in del drawer. */
     val showAdvancedMetrics: Boolean = false,
@@ -106,6 +110,7 @@ internal class AndroidSettingsStore(context: Context) {
                 } else {
                     CameraLens.FRONT
                 },
+            nfcSend = preferences.getBoolean(KEY_NFC_SEND, false),
             // CR-054: métricas avanzadas opt-in, off por defecto.
             showAdvancedMetrics = preferences.getBoolean(KEY_ADVANCED_METRICS, false),
             // CR-077: los gauges muestran la PC por defecto (CR-076 v2).
@@ -139,6 +144,7 @@ internal class AndroidSettingsStore(context: Context) {
             .putBoolean(KEY_MICROPHONE_STREAM, settings.microphoneStream)
             .putBoolean(KEY_CAMERA_STREAM, settings.cameraStream)
             .putString(KEY_CAMERA_LENS, settings.cameraLens.name)
+            .putBoolean(KEY_NFC_SEND, settings.nfcSend)
             .putBoolean(KEY_ADVANCED_METRICS, settings.showAdvancedMetrics)
             .putBoolean(KEY_METRICS_SOURCE_HOST, settings.metricsSourceHost)
             .putBoolean(KEY_METRICS_SLIDER_OVER_STREAM, settings.metricsSliderOverStream)
@@ -158,6 +164,7 @@ internal class AndroidSettingsStore(context: Context) {
         const val KEY_MICROPHONE_STREAM = "microphone_stream"
         const val KEY_CAMERA_STREAM = "camera_stream"
         const val KEY_CAMERA_LENS = "camera_lens"
+        const val KEY_NFC_SEND = "nfc_send"
         const val KEY_ADVANCED_METRICS = "show_advanced_metrics"
         const val KEY_METRICS_SOURCE_HOST = "metrics_source_host"
         const val KEY_METRICS_SLIDER_OVER_STREAM = "metrics_slider_over_stream"

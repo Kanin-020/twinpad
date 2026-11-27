@@ -179,15 +179,15 @@
             android:text="@string/settings_gamepad_mapper" />
 
 
-        <!-- CR-090: sección del micrófono, justo ENCIMA de la de cámara y con
-             su mismo patrón (título + interruptor). La captura sigue siendo
-             bajo demanda: el interruptor se suma al juego seleccionado y a
-             `mic_request` (CR-035); desmarcado no se graba nada. -->
+        <!-- CR-139: un solo apartado para los envíos del dispositivo
+             (micrófono, cámara y NFC). El micrófono sigue siendo bajo demanda:
+             el interruptor se suma al juego seleccionado y a `mic_request`
+             (CR-035); desmarcado no se graba nada. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="@string/settings_microphone"
+            android:text="@string/settings_device_send"
             android:textColor="@color/design_misted_slate"
             android:textAppearance="?attr/textAppearanceLabelLarge" />
 
@@ -197,14 +197,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_microphone_stream" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/settings_camera"
-            android:textColor="@color/design_misted_slate"
-            android:textAppearance="?attr/textAppearanceLabelLarge" />
 
         <!-- CR-034: opt-in del stream de cámara; los frames solo salen con
              el juego seleccionado Y demanda vigente (CR-038). -->
@@ -233,6 +225,16 @@
                 android:layout_height="wrap_content"
                 android:text="@string/settings_camera_back" />
         </RadioGroup>
+
+        <!-- CR-137: envío del tag NFC/Amiibo al GamePad (CR-126); CR-139 lo
+             agrupa con micrófono y cámara en «Envío de datos del dispositivo». -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            style="@style/Widget.Twinpad.Switch"
+            android:id="@+id/switch_nfc_send"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_nfc_send" />
 
         <!-- CR-075: instrumentación de diagnóstico al final del drawer. -->
         <TextView

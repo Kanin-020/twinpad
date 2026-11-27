@@ -44,6 +44,7 @@ import com.twinpad.android.app.pairing.PairingViewModel
 import com.twinpad.android.app.session.SessionForegroundService
 import com.twinpad.android.app.session.SessionNotificationSync
 import com.twinpad.android.app.stream.StreamState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -107,6 +108,11 @@ class PairingActivity : AppCompatActivity() {
     private var cameraStreamSettingsLoaded = false
     private var cameraStreamEnabled = false
     private var cameraStreamLens = CameraLens.FRONT
+
+    /** CR-137: ajuste «Activar envío NFC» vigente (opt-in, apagado por
+     * defecto); gatea el relay `amiibo_tag` de [AmiiboNfcController] (CR-126)
+     * y se actualiza desde el drawer. */
+    private val nfcSendEnabled = MutableStateFlow(false)
 
     /** CR-090: último ajuste notificado por el drawer; permite distinguir un
      * cambio de la tupla de video (reenvía `video_config`) de uno que solo
@@ -365,7 +371,7 @@ class PairingActivity : AppCompatActivity() {
             KeyboardOverlayController(this) { line ->
                 viewModel.sendSessionLine(line)
             }
-        drawer = SettingsDrawerController(this, drawerHost)
+        drawer = SettingsDrawerController(this, drawerHost, nfcSendEnabled)
         gaugePanel = WaitingGaugePanel(this)
         metricsSlider = MetricsSliderController(this)
         sessionView<SurfaceView>(R.id.video_view).holder.addCallback(mediaSurfaceCallback)
@@ -412,7 +418,7 @@ class PairingActivity : AppCompatActivity() {
         panelView<Button>(R.id.btn_scan).setOnClickListener {
             // CR-108: con sesión viva el enlace pedido se guarda para cuando
             // la sesión termine; no abre un intento nuevo en la máquina.
-            if (viewModel.uiState.value is PairingUiState.Linked) {
+            if (viewModel.sessionAlive()) {
                 startLinkedScan()
             } else {
                 viewModel.onEvent(PairingEvent.ScanRequested)
@@ -426,8 +432,9 @@ class PairingActivity : AppCompatActivity() {
         panelView<Button>(R.id.btn_cancel).setOnClickListener {
             if (linkedScanActive) stopLinkedScan() else viewModel.onEvent(PairingEvent.Cancelled)
         }
-        panelView<Button>(R.id.btn_disconnect).setOnClickListener {
-            viewModel.onDisconnectRequested() // CR-094
+        // CR-135: cancelar la reconexión desde la vista de sesión.
+        findViewById<Button>(R.id.btn_reconnect_cancel).setOnClickListener {
+            viewModel.onEvent(PairingEvent.Cancelled)
         }
         panelView<Button>(R.id.btn_retry).setOnClickListener {
             viewModel.onEvent(PairingEvent.Retry)
@@ -553,7 +560,7 @@ class PairingActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
-            renderLinked()
+            renderState(viewModel.uiState.value)
             cameraController.bind(panelView<PreviewView>(R.id.camera_preview), this)
         } else {
             permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -568,7 +575,7 @@ class PairingActivity : AppCompatActivity() {
             linkedScanActive = false
             cameraController.stop()
         }
-        if (viewModel.uiState.value is PairingUiState.Linked) renderLinked()
+        renderState(viewModel.uiState.value)
     }
 
     /** CR-035/CR-090/CR-115: el gate y la captura viven en el controlador. */
@@ -604,13 +611,8 @@ class PairingActivity : AppCompatActivity() {
                 applyLinkedState(state)
             }
         }
-        // CR-108: al guardarse el enlace pendiente se cierra la cámara y se
-        // avisa que se conectará cuando termine la sesión actual.
-        lifecycleScope.launch {
-            viewModel.pendingLinkWaiting.collectLatest { waiting ->
-                if (waiting) stopLinkedScan()
-            }
-        }
+        // CR-108/CR-134: registrado el enlace, cierra la cámara y vuelve a la sesión.
+        observePendingLink(lifecycleScope, viewModel.pendingLinkWaiting, stopLinkedScan, connectionTabs::showSession)
         observeSelectedGame()
         lifecycleScope.launch {
             viewModel.selectionRequest.collectLatest { games ->
@@ -684,7 +686,8 @@ class PairingActivity : AppCompatActivity() {
         // en espera u hoja arrastrable en transmisión); las decida el controlador.
         metricsSlider.setStreaming(streaming, drawer.load().metricsSliderOverStream)
         keepDisplayAwake(viewModel.uiState.value is PairingUiState.Linked)
-        // El punto verde de la conexión activa sigue el inicio/fin del stream.
+        // CR-138: el punto verde ya no depende del stream, pero la lista se
+        // repinta para refrescar acciones/estado de la conexión activa.
         if (viewModel.uiState.value is PairingUiState.Linked) renderSavedDevicesNow()
     }
 
@@ -771,7 +774,8 @@ class PairingActivity : AppCompatActivity() {
             if (state is PairingUiState.Failure) getString(state.error.resId()) else ""
         txtError.isVisible = state is PairingUiState.Failure
         panelView<View>(R.id.btn_retry).isVisible = state is PairingUiState.Failure
-        panelView<View>(R.id.btn_typed_code).isVisible = state == PairingUiState.Idle
+        panelView<View>(R.id.btn_typed_code).isVisible =
+            (state == PairingUiState.Idle || state is PairingUiState.Reconnecting) && !linkedScanActive
     }
 
     /** U1 idle → U5 failure: visibilidad de cada sección (SPEC-002 §6).
@@ -782,8 +786,6 @@ class PairingActivity : AppCompatActivity() {
             activity = this,
             container = findViewById(R.id.saved_devices_container),
             viewModel = viewModel,
-            // Punto verde solo con la transmisión de esta conexión viva.
-            isStreaming = { viewModel.streamState.value.state == StreamState.STREAMING },
             rerender = { renderSavedDevicesNow() },
         )
     }
@@ -821,7 +823,9 @@ class PairingActivity : AppCompatActivity() {
                 // guardado para cuando termine la sesión.
                 linkedScanActive -> getString(R.string.pairing_scanning)
                 viewModel.pendingLinkWaiting.value -> getString(R.string.pairing_pending_link)
-                else -> getString(R.string.pairing_linked)
+                // CR-140: sin texto de estado «Vinculado» en el panel; la
+                // sesión viva ya se muestra en «Sesión actual».
+                else -> ""
             }
         panelView<PreviewView>(R.id.camera_preview).isVisible = linkedScanActive
         panelView<View>(R.id.btn_cancel).isVisible = linkedScanActive
@@ -833,11 +837,9 @@ class PairingActivity : AppCompatActivity() {
 
     private fun renderState(state: PairingUiState) {
         savedDevices.render(state)
-        connectionTabs.renderSwitch(sessionLinked = state is PairingUiState.Linked)
+        connectionTabs.renderSwitch(state)
         // CR-097: con sesión activa el panel no muestra Escanear ni Desconectar;
         // Desconectar vive en la fila de la conexión activa (columna de guardados).
-        // Reconectando no hay vista de sesión: el panel ofrece Desconectar.
-        panelView<View>(R.id.btn_disconnect).isVisible = state is PairingUiState.Reconnecting
         val title = panelView<View>(R.id.pairing_title)
         val btnScan = panelView<View>(R.id.btn_scan)
         val preview = panelView<PreviewView>(R.id.camera_preview)
@@ -871,17 +873,15 @@ class PairingActivity : AppCompatActivity() {
                 btnCancel.isVisible = true
             }
             is PairingUiState.Reconnecting -> {
-                // CR-056 (U6, SPEC-001 §8.2): sesión retenida en el server;
-                // la app reanuda sin QR. El video del server también puede
-                // seguir vivo (SPEC-003 §3: retención viva).
-                // Sin video ni métricas durante el reintento: pantalla inicial
-                // con el aviso, para no quedar en una vista de sesión vacía.
+                // CR-056 (U6) + CR-135/CR-136: el loader de reconexión vive en
+                // la vista de sesión, pero «Nueva conexión» sigue ofreciendo QR
+                // y código; el enlace se guarda como pendiente (U6 es sesión viva).
                 title.isVisible = true
-                btnScan.isVisible = false
-                preview.isVisible = false
-                txtStatus.text = getString(R.string.pairing_reconnecting)
-                progress.isVisible = true
-                btnCancel.isVisible = true
+                btnScan.isVisible = !linkedScanActive
+                preview.isVisible = linkedScanActive
+                txtStatus.text = if (linkedScanActive) getString(R.string.pairing_scanning) else ""
+                progress.isVisible = false
+                btnCancel.isVisible = linkedScanActive
                 SessionForegroundService.start(this@PairingActivity)
             }
             is PairingUiState.Linked -> renderLinked()
@@ -899,7 +899,7 @@ class PairingActivity : AppCompatActivity() {
 
     /** Efectos de cámara (DES-002 §4): permiso y Start/Stop. */
     private fun observeCameraEffects() {
-        AmiiboNfcController.attach(this, viewModel)
+        AmiiboNfcController.attach(this, viewModel, nfcSendEnabled)
         lifecycleScope.launch {
             viewModel.cameraEffects.collect { effect ->
                 when (effect) {

@@ -4,7 +4,7 @@
 
 | Type | Next |
 |---|---|
-| CR | CR-133 |
+| CR | CR-141 |
 
 ## Open / In review
 
@@ -71,6 +71,14 @@
 | ID | Title | Targets | Status | Author | File |
 |---|---|---|---|---|---|
 | CR-129 | Simplificar las opciones del menú del tray: «Abrir interfaz de gestión» sin icono y quitar «¿Dónde está el URI?» | SPEC-010 0.6.0 (§4/§5 W1/W3), DES-005 0.5.0, `server/src/tray.rs` | Approved / applied (2026-11-26) | Buffy (agente) | [CR-129-tray-management-menu.md](CR-129-tray-management-menu.md) |
+| CR-133 | Android: «Sesión actual» y «Nueva conexión» dejan de compartir vista — sin sesión viva la vista de sesión muestra su estado vacío (nunca el panel de QR/código) y al perder la sesión se vuelve al panel con error/Reintentar | DES-002, `ui/ConnectionTabsController.kt`, `activity_pairing.xml`, `strings.xml`, traceability (TEST-0232) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-133-session-view-independent-from-pairing-panel.md](CR-133-session-view-independent-from-pairing-panel.md) |
+| CR-140 | Android: el panel de conexión deja de mostrar el texto «Vinculado»; solo quedan los avisos de escaneo y de enlace pendiente | DES-002, `ui/PairingActivity`, `strings.xml`, traceability (historial) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-140-remove-linked-label.md](CR-140-remove-linked-label.md) |
+| CR-139 | Android: micrófono, cámara y NFC quedan en un solo apartado del drawer, «Envío de datos del dispositivo» | DES-002, `drawer_settings.xml`, `strings.xml`, traceability (historial) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-139-device-send-section.md](CR-139-device-send-section.md) |
+| CR-138 | Android: la lista de conexiones guardadas marca la conexión activa con un punto verde siempre que la sesión esté vigente (U4/U6), no solo con la transmisión en marcha | DES-002, `ui/ConnectionTabsController`, `ui/SavedDevicesRenderer`, `ui/PairingActivity`, `item_saved_device.xml`, traceability (TEST-0236) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-138-active-connection-dot.md](CR-138-active-connection-dot.md) |
+| CR-137 | Android 0.12.0 + ajuste «Activar envío NFC» en el drawer, justo debajo de la cámara: `AndroidSettings.nfcSend` (apagado por defecto, opt-in) gatea el lector `amiibo_tag` de CR-126 y lo desmonta al apagarlo | SPEC-006, DES-002, `AndroidSettingsStore`, `SettingsDrawerController`, `AmiiboNfcController`, `PairingActivity`, `drawer_settings.xml`, `build.gradle.kts`, traceability (TEST-069 extendido) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-137-nfc-send-toggle-and-android-version.md](CR-137-nfc-send-toggle-and-android-version.md) |
+| CR-136 | Android: la vista de agregar mantiene «Escanear QR» y «Vincular sin cámara» en cualquier estado (en U6 el QR se guarda como pendiente) y «Cancelar» queda anclado abajo, visible sobre la cámara en landscape | DES-002, `pairing/PairingViewModel`, `ui/PairingActivity`, `fragment_pairing.xml`, traceability (TEST-0235) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-136-add-view-qr-buttons-and-cancel.md](CR-136-add-view-qr-buttons-and-cancel.md) |
+| CR-135 | Android: el loader de reconexión con la PC (U6) se pinta en la vista de sesión (`session_reconnect_container` con Cancelar), no en el panel «Nueva conexión»; la navegación considera U6 sesión viva y el video conserva su Surface | DES-002, `ui/ConnectionTabsController`, `ui/PairingActivity`, `activity_pairing.xml`, `fragment_pairing.xml`, traceability (TEST-0234) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-135-reconnecting-loader-in-session-view.md](CR-135-reconnecting-loader-in-session-view.md) |
+| CR-134 | Android: «Conectar» en las tarjetas de conexiones guardadas (junto a «Olvidar») y enlace pedido con sesión viva desde la lista — se registra como pendiente, la navegación vuelve a «Sesión actual» y se ejecuta al terminar la sesión, también tras una caída (U5) | DES-002, `core/PendingLink`, `pairing/PairingViewModel`, `ui/SavedDevicesRenderer`, `ui/PairingActivity`, `item_saved_device.xml`, `strings.xml`, traceability (TEST-0207/0233) | Approved / applied (2026-11-27) | Buffy (agente) | [CR-134-saved-device-connect-and-pending-link.md](CR-134-saved-device-connect-and-pending-link.md) |
 
 | ID | Title | Targets | Decided | File |
 |---|---|---|---|---|

@@ -15,6 +15,7 @@ import com.twinpad.android.app.core.Effect
 import com.twinpad.android.app.core.PairingEvent
 import com.twinpad.android.app.core.PairingStateMachine
 import com.twinpad.android.app.core.PairingUiState
+import com.twinpad.android.app.core.PendingLinkRequest
 import com.twinpad.android.app.hid.InputTransport
 import com.twinpad.android.app.pairing.network.TcpPairingClient
 import com.twinpad.android.app.ui.AndroidSettingsStore
@@ -413,8 +414,8 @@ internal class PairingViewModel(
     fun onEvent(event: PairingEvent) {
         // CR-108: con sesión viva el escaneo no abre un intento nuevo; queda
         // registrado para ejecutarse al terminar la sesión.
-        if (event is PairingEvent.QrScanned && _uiState.value is PairingUiState.Linked) {
-            pendingLink.save(event.raw)
+        if (event is PairingEvent.QrScanned && sessionAlive()) {
+            pendingLink.saveQr(event.raw)
             _pendingLinkWaiting.value = true
             return
         }
@@ -492,8 +493,20 @@ internal class PairingViewModel(
     /** Identificador de la vinculación actualmente conectada (si la hay). */
     fun activeSessionId(): String? = (_uiState.value as? PairingUiState.Linked)?.sessionId
 
-    /** Conecta a un dispositivo guardado (fila activa): reanuda con `pair_resume`. */
-    fun connectSavedLink(sessionId: String) = savedLinks.connect(sessionId)
+    /** Conecta a un dispositivo guardado: reanuda con `pair_resume`. Con una
+     * sesión viva el enlace se registra y se ejecuta cuando esta termine
+     * (CR-134), sin interrumpir la sesión activa. */
+    fun connectSavedLink(sessionId: String) {
+        if (sessionAlive()) {
+            pendingLink.saveSavedDevice(sessionId)
+            _pendingLinkWaiting.value = true
+            return
+        }
+        // Tras un error la máquina está en U5 y `resumeFromLink` solo acepta
+        // Idle: igual que «Reintentar», se limpia el error antes de conectar.
+        if (_uiState.value is PairingUiState.Failure) feed(PairingEvent.Retry)
+        savedLinks.connect(sessionId)
+    }
 
     /** Olvida un dispositivo guardado (fila inactiva). */
     fun forgetSavedLink(sessionId: String) = savedLinks.forget(sessionId)
@@ -530,14 +543,22 @@ internal class PairingViewModel(
     /** CR-108: al quedarse sin sesión se ejecuta el enlace que esperaba.
      * (Lambda, patrón de [handleKeyboardRequest]: detekt TooManyFunctions.) */
     private val runPendingLink: () -> Unit = {
-        val state = _uiState.value
-        // U6 reconectando todavía es sesión viva (puede volver a U4).
-        val sessionAlive = state is PairingUiState.Linked || state is PairingUiState.Reconnecting
-        val pending = pendingLink.takeWhenSessionEnded(sessionAlive)
+        val pending = pendingLink.takeWhenSessionEnded(sessionAlive())
         if (pending != null) {
             _pendingLinkWaiting.value = false
-            feed(PairingEvent.QrScanned(pending))
+            // La sesión pudo terminar en U5 (caída): se vuelve a Idle igual que
+            // «Reintentar» antes de iniciar el enlace guardado (CR-108 §6).
+            if (_uiState.value is PairingUiState.Failure) feed(PairingEvent.Retry)
+            when (pending) {
+                is PendingLinkRequest.Qr -> feed(PairingEvent.QrScanned(pending.payload))
+                is PendingLinkRequest.SavedDevice -> savedLinks.connect(pending.sessionId)
+            }
         }
+    }
+
+    /** U4 vinculado o U6 reconectando: todavía hay sesión viva. */
+    val sessionAlive: () -> Boolean = {
+        _uiState.value is PairingUiState.Linked || _uiState.value is PairingUiState.Reconnecting
     }
 
     /** Temporizador U6 (CR-056, SPEC-001 §8.2): mientras la máquina esté en

@@ -15,14 +15,14 @@ import com.twinpad.android.app.pairing.PairingViewModel
  * CR-097: pinta la lista de conexiones guardadas dentro de
  * `saved_devices_container` (fragment_saved_devices.xml). Mantiene la fila
  * expandida; las acciones delegan en el [PairingViewModel] y piden un nuevo
- * render con [rerender]. La conexión activa muestra un punto verde cuando su
- * transmisión está viva ([isStreaming]).
+ * render con [rerender]. La conexión activa (U4/U6) muestra un punto verde,
+ * esté o no transmitiendo (CR-138). CR-134: las conexiones inactivas ofrecen
+ * «Conectar» (reanudar sin QR) además de «Olvidar».
  */
 internal class SavedDevicesRenderer(
     private val activity: PairingActivity,
     private val container: View,
     private val viewModel: PairingViewModel,
-    private val isStreaming: () -> Boolean,
     private val rerender: () -> Unit,
 ) {
     private var expandedSavedId: String? = null
@@ -30,12 +30,7 @@ internal class SavedDevicesRenderer(
     fun render(state: PairingUiState) {
         val list = container.findViewById<LinearLayout>(R.id.saved_devices_list) ?: return
         val saved = viewModel.savedLinks()
-        val activeId =
-            when (state) {
-                is PairingUiState.Linked -> state.sessionId
-                is PairingUiState.Reconnecting -> state.sessionId
-                else -> null
-            }
+        val activeId = activeSavedSessionId(state)
         list.removeAllViews()
         if (saved.isEmpty()) {
             list.addView(
@@ -54,7 +49,6 @@ internal class SavedDevicesRenderer(
                     link.addr,
                     link.sessionId,
                     isActive,
-                    isActive && isStreaming(),
                 ),
             )
         }
@@ -66,28 +60,37 @@ internal class SavedDevicesRenderer(
         addr: String,
         sessionId: String,
         isActive: Boolean,
-        showStreaming: Boolean,
     ): View {
         val card =
             LayoutInflater.from(activity).inflate(R.layout.item_saved_device, container as ViewGroup, false)
                 as MaterialCardView
         card.findViewById<TextView>(R.id.saved_device_name).text = label
         card.findViewById<TextView>(R.id.saved_device_addr).text = addr
+        // CR-138: el punto verde marca la conexión de la sesión vigente.
         card.findViewById<View>(R.id.saved_device_status)
-            .visibility = if (showStreaming) View.VISIBLE else View.GONE
+            .visibility = if (isActive) View.VISIBLE else View.GONE
+        val expanded = sessionId == expandedSavedId
         val action = card.findViewById<Button>(R.id.saved_device_action)
-        action.visibility = if (sessionId == expandedSavedId) View.VISIBLE else View.GONE
-        action.text =
-            activity.getString(
-                if (isActive) R.string.pairing_saved_disconnect else R.string.pairing_saved_forget,
-            )
+        action.visibility = if (isActive && expanded) View.VISIBLE else View.GONE
+        action.text = activity.getString(R.string.pairing_saved_disconnect)
         action.setOnClickListener {
             expandedSavedId = null
-            if (isActive) {
-                viewModel.onDisconnectRequested()
-            } else {
-                viewModel.forgetSavedLink(sessionId)
-            }
+            viewModel.onDisconnectRequested()
+            rerender()
+        }
+        // CR-134: una conexión inactiva se puede conectar (reanudar sin QR) o
+        // olvidar; con otra sesión viva «Conectar» queda registrado para cuando
+        // esa sesión termine, sin interrumpirla.
+        card.findViewById<View>(R.id.saved_device_actions).visibility =
+            if (!isActive && expanded) View.VISIBLE else View.GONE
+        card.findViewById<Button>(R.id.saved_device_connect).setOnClickListener {
+            expandedSavedId = null
+            viewModel.connectSavedLink(sessionId)
+            rerender()
+        }
+        card.findViewById<Button>(R.id.saved_device_forget).setOnClickListener {
+            expandedSavedId = null
+            viewModel.forgetSavedLink(sessionId)
             rerender()
         }
         card.setOnClickListener {

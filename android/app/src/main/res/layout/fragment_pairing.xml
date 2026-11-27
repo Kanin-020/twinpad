@@ -45,11 +45,15 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btn_scan" />
 
+    <!-- CR-136: modo compatible (TextureView). En modo performance la
+         SurfaceView se dibuja en una capa por encima de las vistas y tapaba
+         «Cancelar» con la cámara abierta. -->
     <androidx.camera.view.PreviewView
         android:id="@+id/camera_preview"
         android:layout_width="0dp"
         android:layout_height="320dp"
         android:visibility="gone"
+        app:implementationMode="compatible"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -79,29 +83,20 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/progress_pairing" />
 
+    <!-- CR-136: anclado abajo para que siga visible bajo la cámara (el preview
+         de 320 dp lo empujaba fuera de la pantalla en landscape). -->
     <Button
         android:id="@+id/btn_cancel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginBottom="24dp"
         style="@style/Widget.Twinpad.Button.Filled"
+        android:elevation="8dp"
         android:text="@string/pairing_cancel_button"
         android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/txt_status" />
-
-    <Button
-        android:id="@+id/btn_disconnect"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        style="@style/Widget.Twinpad.Button.Filled"
-        android:text="@string/pairing_disconnect_button"
-        android:visibility="gone"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btn_cancel" />
+        app:layout_constraintStart_toStartOf="parent" />
 
     <Button
         android:id="@+id/btn_retry"

@@ -42,6 +42,92 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <!-- CR-133: «Sesión actual» sin sesión viva es una vista propia (este
+             estado vacío), nunca el panel de vinculación de Nueva conexión. -->
+        <FrameLayout
+            android:id="@+id/session_empty_container"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/inter"
+                    android:text="@string/session_empty_title"
+                    android:textColor="@color/design_cloud_white"
+                    android:textFontWeight="500"
+                    android:textSize="24sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:fontFamily="@font/inter"
+                    android:text="@string/session_empty_hint"
+                    android:textColor="@color/design_misted_slate"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </FrameLayout>
+
+
+        <!-- CR-135: la reconexión (U6) es parte de la sesión: loader, aviso y
+             Cancelar sobre el contenedor del video, nunca en el panel de QR. -->
+        <FrameLayout
+            android:id="@+id/session_reconnect_container"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@color/design_void_canvas"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/design_signal_violet" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:fontFamily="@font/inter"
+                    android:text="@string/pairing_reconnecting"
+                    android:textColor="@color/design_cloud_white"
+                    android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/btn_reconnect_cancel"
+                    style="@style/Widget.Twinpad.Button.Filled"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/pairing_cancel_button" />
+            </LinearLayout>
+        </FrameLayout>
 
         <com.twinpad.android.app.ui.GyroMonitorView
             android:id="@+id/gyro_monitor"
