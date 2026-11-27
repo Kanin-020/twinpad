@@ -446,11 +446,10 @@ class PairingViewModelTest {
     private fun awaitAudioPlaying(viewModel: PairingViewModel) {
         runBlocking {
             withTimeout(30_000) {
-                    while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
-                        delay(20)
-                    }
+                while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
+                    delay(20)
                 }
-
+            }
         }
     }
 
