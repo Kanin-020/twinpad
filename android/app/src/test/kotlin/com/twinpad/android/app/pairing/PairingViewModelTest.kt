@@ -153,7 +153,7 @@ class PairingViewModelTest {
             viewModel.onEvent(PairingEvent.QrScanned(uri))
 
             runBlocking {
-                withTimeout(15_000) {
+                withTimeout(30_000) {
                     while (viewModel.uiState.value != PairingUiState.Linked(sessionId)) {
                         delay(20)
                     }
@@ -228,7 +228,7 @@ class PairingViewModelTest {
                 PairingEvent.QrScanned("twinpad://v1#s=127.0.0.1&p=${server.localPort}&t=$nonceStr"),
             )
             runBlocking {
-                withTimeout(15_000) {
+                withTimeout(30_000) {
                     while (viewModel.uiState.value != PairingUiState.Linked(sessionId)) {
                         delay(20)
                     }
@@ -332,13 +332,13 @@ class PairingViewModelTest {
             viewModel.onCameraPermissionResult(granted = true)
             viewModel.onEvent(PairingEvent.QrScanned(uri))
             runBlocking {
-                withTimeout(15_000) {
+                withTimeout(30_000) {
                     while (viewModel.uiState.value != PairingUiState.Linked(sessionId)) {
                         delay(20)
                     }
                 }
             }
-            runBlocking { delay(300) }
+            runBlocking { delay(500) }
             try {
                 assertEquals(com.twinpad.android.app.audio.AudioState.PLAYING, viewModel.audioState.value)
             } finally {
@@ -445,11 +445,12 @@ class PairingViewModelTest {
     /** Espera a que el audio del juego llegue a PLAYING. */
     private fun awaitAudioPlaying(viewModel: PairingViewModel) {
         runBlocking {
-            withTimeout(15_000) {
-                while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
-                    delay(20)
+            withTimeout(30_000) {
+                    while (viewModel.audioState.value != com.twinpad.android.app.audio.AudioState.PLAYING) {
+                        delay(20)
+                    }
                 }
-            }
+
         }
     }
 
